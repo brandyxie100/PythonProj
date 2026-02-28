@@ -383,6 +383,9 @@ def sling_action() -> None:
     # Position along the rope at maximum stretch
     pu = (uv1 * rope_lenght + sling_x, uv2 * rope_lenght + sling_y)
     bigger_rope = 102  # Extended rope length for visual line drawing
+    # Visual rope end: slight extension when not clamped (do NOT mutate mouse_distance;
+    # trajectory and launch must use raw distance for accurate match)
+    visual_distance = mouse_distance + 10 if not is_clamped else mouse_distance
 
     # Bird sprite offset (center the 40x40 sprite)
     x_redbird = x_mouse - 20
@@ -402,8 +405,7 @@ def sling_action() -> None:
         pygame.draw.line(screen, (0, 0, 0), (sling_x, sling_y), pu2, 5)
     else:
         # Mouse is within rope length: bird follows the mouse
-        mouse_distance += 10  # Slight offset for visual rope end
-        pu3 = (uv1 * mouse_distance + sling_x, uv2 * mouse_distance + sling_y)
+        pu3 = (uv1 * visual_distance + sling_x, uv2 * visual_distance + sling_y)
         pygame.draw.line(screen, (0, 0, 0), (sling2_x, sling2_y), pu3, 5)
         screen.blit(redbird, (x_redbird, y_redbird))
         pygame.draw.line(screen, (0, 0, 0), (sling_x, sling_y), pu3, 5)
@@ -415,24 +417,15 @@ def sling_action() -> None:
         dx = 0.00000000000001  # Avoid division by zero
     angle = math.atan((float(dy)) / dx)
 
-    # Parabolic trajectory: same effective distance and sign as when Bird is launched
+    # Parabolic trajectory: same effective distance and sign as when Bird is launched.
+    # Use raw mouse_distance (not visual_distance) so preview matches actual flight.
     launch_distance = min(mouse_distance, rope_lenght)
     if x_mouse >= sling_x + 5:
         launch_distance = -launch_distance
     trajectory_points = compute_trajectory_points(launch_distance, angle, space.gravity)
 
-    # Align trajectory start with bird's visual center (trajectory uses spawn 154,156 in pymunk)
-    bird_center_x = pu[0] if is_clamped else x_mouse
-    bird_center_y = pu[1] if is_clamped else y_mouse
-    trajectory_start_screen = to_pygame(
-        pm.Vec2d(BIRD_SPAWN_X_PYMUNK, BIRD_SPAWN_Y_PYMUNK)
-    )
-    offset_x = bird_center_x - trajectory_start_screen[0]
-    offset_y = bird_center_y - trajectory_start_screen[1]
-    trajectory_points = [
-        (int(x + offset_x), int(y + offset_y)) for x, y in trajectory_points
-    ]
-
+    # Bird always spawns at (BIRD_SPAWN_X_PYMUNK, BIRD_SPAWN_Y_PYMUNK); trajectory is
+    # computed from there. Do NOT offset—draw trajectory at its true screen position.
     draw_trajectory_curve(trajectory_points)
 
 
