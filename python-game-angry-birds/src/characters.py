@@ -16,7 +16,7 @@ import pymunk as pm
 from pymunk import Vec2d
 
 
-class Bird():
+class Bird:
     """A launchable bird projectile with physics properties.
 
     The bird is created at a fixed spawn point near the slingshot and
@@ -30,8 +30,9 @@ class Bird():
         shape (pm.Circle): The pymunk circle collision shape.
     """
 
-    def __init__(self, distance: float, angle: float, x: float, y: float,
-                 space: pm.Space) -> None:
+    def __init__(
+        self, distance: float, angle: float, x: float, y: float, space: pm.Space
+    ) -> None:
         """Create a new Bird and launch it with an impulse.
 
         Args:
@@ -45,8 +46,8 @@ class Bird():
         self.life: int = 20
 
         # Physics body configuration
-        mass: float = 5          # Bird mass in arbitrary units
-        radius: float = 12       # Collision circle radius in pixels
+        mass: float = 5  # Bird mass in arbitrary units
+        radius: float = 12  # Collision circle radius in pixels
         inertia: float = pm.moment_for_circle(mass, 0, radius, (0, 0))
         body: pm.Body = pm.Body(mass, inertia)
         body.position = x, y
@@ -60,8 +61,8 @@ class Bird():
 
         # Collision shape configuration
         shape: pm.Circle = pm.Circle(body, radius, (0, 0))
-        shape.elasticity = 0.95   # High bounciness
-        shape.friction = 1        # Full friction
+        shape.elasticity = 0.95  # High bounciness
+        shape.friction = 1  # Full friction
         shape.collision_type = 0  # Type 0 = Bird (used by collision handlers)
 
         # Add the body and shape to the physics space
@@ -72,7 +73,7 @@ class Bird():
         self.shape: pm.Circle = shape
 
 
-class Pig():
+class Pig:
     """A destructible pig target that the player must eliminate.
 
     Pigs are static targets placed in each level. They can be destroyed
@@ -96,16 +97,16 @@ class Pig():
         self.life: int = 20
 
         # Physics body configuration
-        mass: float = 5          # Pig mass in arbitrary units
-        radius: float = 14       # Collision circle radius (slightly larger than bird)
+        mass: float = 5  # Pig mass in arbitrary units
+        radius: float = 14  # Collision circle radius (slightly larger than bird)
         inertia: float = pm.moment_for_circle(mass, 0, radius, (0, 0))
         body: pm.Body = pm.Body(mass, inertia)
         body.position = x, y
 
         # Collision shape configuration
         shape: pm.Circle = pm.Circle(body, radius, (0, 0))
-        shape.elasticity = 0.95   # High bounciness
-        shape.friction = 1        # Full friction
+        shape.elasticity = 0.95  # High bounciness
+        shape.friction = 1  # Full friction
         shape.collision_type = 1  # Type 1 = Pig (used by collision handlers)
 
         # Add the body and shape to the physics space

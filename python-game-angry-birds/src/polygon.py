@@ -36,7 +36,7 @@ def _res(relative_path: str) -> str:
     return os.path.join(_RESOURCE_DIR, relative_path)
 
 
-class Polygon():
+class Polygon:
     """A wooden structural element (beam or column) with physics and rendering.
 
     Polygons are rectangular pymunk bodies that form the destructible
@@ -56,8 +56,14 @@ class Polygon():
         column_image (pygame.Surface): Texture sprite for vertical columns.
     """
 
-    def __init__(self, pos: tuple[float, float], length: int, height: int,
-                 space: pm.Space, mass: float = 5.0) -> None:
+    def __init__(
+        self,
+        pos: tuple[float, float],
+        length: int,
+        height: int,
+        space: pm.Space,
+        mass: float = 5.0,
+    ) -> None:
         """Create a new wooden Polygon (beam or column).
 
         Args:
@@ -74,7 +80,7 @@ class Polygon():
 
         # Create a box-shaped collision polygon
         shape: pm.Poly = pm.Poly.create_box(body, (length, height))
-        shape.friction = 0.5      # Moderate friction for wood surfaces
+        shape.friction = 0.5  # Moderate friction for wood surfaces
         shape.collision_type = 2  # Type 2 = Wood (used by collision handlers)
 
         # Add the body and shape to the physics space
@@ -141,7 +147,7 @@ class Polygon():
         color = (255, 0, 0)
         pygame.draw.lines(screen, color, False, ps)
 
-        if element == 'beams':
+        if element == "beams":
             # Render the horizontal beam wood texture
             p = poly.body.position
             p = Vec2d(*self.to_pygame(p))
@@ -149,29 +155,25 @@ class Polygon():
             # Rotate the texture to match the physics body rotation
             # Add 180 degrees to correct texture orientation
             angle_degrees = math.degrees(poly.body.angle) + 180
-            rotated_logo_img = pygame.transform.rotate(
-                self.beam_image, angle_degrees
-            )
+            rotated_logo_img = pygame.transform.rotate(self.beam_image, angle_degrees)
 
             # Center the rotated image on the body's position
-            offset = Vec2d(*rotated_logo_img.get_size()) / 2.
+            offset = Vec2d(*rotated_logo_img.get_size()) / 2.0
             p = p - offset
             np = p
             screen.blit(rotated_logo_img, (np.x, np.y))
 
-        if element == 'columns':
+        if element == "columns":
             # Render the vertical column wood texture
             p = poly.body.position
             p = Vec2d(*self.to_pygame(p))
 
             # Rotate the texture to match the physics body rotation
             angle_degrees = math.degrees(poly.body.angle) + 180
-            rotated_logo_img = pygame.transform.rotate(
-                self.column_image, angle_degrees
-            )
+            rotated_logo_img = pygame.transform.rotate(self.column_image, angle_degrees)
 
             # Center the rotated image on the body's position
-            offset = Vec2d(*rotated_logo_img.get_size()) / 2.
+            offset = Vec2d(*rotated_logo_img.get_size()) / 2.0
             p = p - offset
             np = p
             screen.blit(rotated_logo_img, (np.x, np.y))
