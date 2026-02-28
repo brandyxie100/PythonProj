@@ -22,7 +22,6 @@ Updated for Python 3.12+ and Pymunk 7.x / Pygame 2.6.x compatibility.
 """
 
 import os
-import sys
 import math
 import time
 
@@ -32,6 +31,7 @@ import pymunk as pm
 # Import custom game modules
 from characters import Bird
 from level import Level
+from utils import distance, unit_vector, vector
 
 # ---------------------------------------------------------------------------
 # Resource Path Helper
@@ -108,11 +108,11 @@ stars: pygame.Surface = pygame.image.load(
 
 # Extract individual star images from the combined star sprite sheet
 rect = pygame.Rect(0, 0, 200, 200)
-star1: pygame.Surface = stars.subsurface(rect).copy()       # 1-star rating
+star1: pygame.Surface = stars.subsurface(rect).copy()  # 1-star rating
 rect = pygame.Rect(204, 0, 200, 200)
-star2: pygame.Surface = stars.subsurface(rect).copy()       # 2-star rating
+star2: pygame.Surface = stars.subsurface(rect).copy()  # 2-star rating
 rect = pygame.Rect(426, 0, 200, 200)
-star3: pygame.Surface = stars.subsurface(rect).copy()       # 3-star rating
+star3: pygame.Surface = stars.subsurface(rect).copy()  # 3-star rating
 
 # Extract individual UI button images from the buttons sprite sheet
 rect = pygame.Rect(164, 10, 60, 60)
@@ -141,27 +141,27 @@ space.gravity = (0.0, -700.0)  # Gravity pointing downward (pymunk Y-axis)
 # Game Object Lists
 # ---------------------------------------------------------------------------
 # These lists hold references to game objects for rendering and collision
-pigs: list = []       # Active pig characters in the level
-birds: list = []      # Birds currently in flight (launched)
-balls: list = []      # Unused; reserved for future use
-polys: list = []      # Unused; reserved for future use
-beams: list = []      # Horizontal wooden beams in the level
-columns: list = []    # Vertical wooden columns in the level
+pigs: list = []  # Active pig characters in the level
+birds: list = []  # Birds currently in flight (launched)
+balls: list = []  # Unused; reserved for future use
+polys: list = []  # Unused; reserved for future use
+beams: list = []  # Horizontal wooden beams in the level
+columns: list = []  # Vertical wooden columns in the level
 poly_points: list = []  # Unused; reserved for polygon vertex storage
 
 # ---------------------------------------------------------------------------
 # Slingshot & Input State Variables
 # ---------------------------------------------------------------------------
-ball_number: int = 0           # Unused; reserved for future use
-polys_dict: dict = {}          # Unused; reserved for future use
-mouse_distance: float = 0     # Distance from mouse to sling anchor
-rope_lenght: int = 90         # Maximum sling rope stretch length (pixels)
-angle: float = 0              # Launch angle (radians) calculated from sling
-x_mouse: int = 0              # Current mouse X position
-y_mouse: int = 0              # Current mouse Y position
-count: int = 0                # Frame counter for bird trail dots
-mouse_pressed: bool = False   # Whether the mouse is being held in sling area
-t1: float = 0                 # Timestamp (ms) of the last bird launch
+ball_number: int = 0  # Unused; reserved for future use
+polys_dict: dict = {}  # Unused; reserved for future use
+mouse_distance: float = 0  # Distance from mouse to sling anchor
+rope_lenght: int = 90  # Maximum sling rope stretch length (pixels)
+angle: float = 0  # Launch angle (radians) calculated from sling
+x_mouse: int = 0  # Current mouse X position
+y_mouse: int = 0  # Current mouse Y position
+count: int = 0  # Frame counter for bird trail dots
+mouse_pressed: bool = False  # Whether the mouse is being held in sling area
+t1: float = 0  # Timestamp (ms) of the last bird launch
 tick_to_next_circle: int = 10  # Unused; reserved for future use
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ WHITE: tuple = (255, 255, 255)
 # Slingshot Anchor Positions (screen coordinates)
 # ---------------------------------------------------------------------------
 # Two anchor points form the Y-shaped sling; birds are pulled between them
-sling_x, sling_y = 135, 450   # Left/back arm of the sling
+sling_x, sling_y = 135, 450  # Left/back arm of the sling
 sling2_x, sling2_y = 160, 450  # Right/front arm of the sling
 
 # Trajectory: must match Bird exactly (spawn, mass, power factor)
@@ -192,9 +192,9 @@ AIM_TRAJECTORY_MAX_T: float = 1.5
 # Drawing (trajectory as dots): half the dots, gradient colors
 AIM_DOT_SKIP: int = 4  # Draw every Nth point (2 = half the dots)
 AIM_DOT_COLORS: list[tuple[int, int, int]] = [
-    (255, 220, 80),   # Yellow (near bird)
-    (255, 150, 50),   # Orange
-    (255, 80, 120),   # Pink
+    (255, 220, 80),  # Yellow (near bird)
+    (255, 150, 50),  # Orange
+    (255, 80, 120),  # Pink
     (100, 200, 255),  # Cyan
     (120, 255, 180),  # Mint
 ]
@@ -205,12 +205,12 @@ AIM_DOT_OUTLINE_WIDTH: int = 1
 # ---------------------------------------------------------------------------
 # Scoring & Game State
 # ---------------------------------------------------------------------------
-score: int = 0           # Player's current score
-game_state: int = 0      # 0=playing, 1=paused, 3=failed, 4=cleared
-bird_path: list = []     # Trail points left by launched birds
-counter: int = 0         # Frame counter for adding trail dots
-restart_counter: bool = False   # Flag to reset the trail counter
-bonus_score_once: bool = True   # Ensure bonus points are awarded only once
+score: int = 0  # Player's current score
+game_state: int = 0  # 0=playing, 1=paused, 3=failed, 4=cleared
+bird_path: list = []  # Trail points left by launched birds
+counter: int = 0  # Frame counter for adding trail dots
+restart_counter: bool = False  # Flag to reset the trail counter
+bonus_score_once: bool = True  # Ensure bonus points are awarded only once
 
 # ---------------------------------------------------------------------------
 # Font Setup for UI Text
@@ -231,20 +231,16 @@ wall: bool = True  # Whether the right-side wall is active
 static_body: pm.Body = pm.Body(body_type=pm.Body.STATIC)
 
 # Floor: horizontal line at y=60 spanning the full screen width
-static_lines: list = [
-    pm.Segment(static_body, (0.0, 60.0), (1200.0, 60.0), 0.0)
-]
+static_lines: list = [pm.Segment(static_body, (0.0, 60.0), (1200.0, 60.0), 0.0)]
 
 # Right wall: vertical line from floor to top (only active when wall=True)
-static_lines1: list = [
-    pm.Segment(static_body, (1200.0, 60.0), (1200.0, 800.0), 0.0)
-]
+static_lines1: list = [pm.Segment(static_body, (1200.0, 60.0), (1200.0, 800.0), 0.0)]
 
 # Configure physics properties for the floor segment
 for line in static_lines:
-    line.elasticity = 0.95    # High bounce factor
-    line.friction = 1         # Full friction
-    line.collision_type = 3   # Type 3 = static environment (no handler needed)
+    line.elasticity = 0.95  # High bounce factor
+    line.friction = 1  # Full friction
+    line.collision_type = 3  # Type 3 = static environment (no handler needed)
 
 # Configure physics properties for the wall segment
 for line in static_lines1:
@@ -265,6 +261,7 @@ for line in static_lines1:
 # Utility Functions
 # ===========================================================================
 
+
 def to_pygame(p: pm.Vec2d) -> tuple[int, int]:
     """Convert pymunk physics coordinates to pygame screen coordinates.
 
@@ -279,58 +276,6 @@ def to_pygame(p: pm.Vec2d) -> tuple[int, int]:
         A (x, y) tuple in pygame screen coordinates.
     """
     return int(p.x), int(-p.y + 600)
-
-
-def vector(p0: tuple, p1: tuple) -> tuple[float, float]:
-    """Calculate the direction vector from point p0 to point p1.
-
-    Args:
-        p0: Starting point as (x0, y0).
-        p1: Ending point as (x1, y1).
-
-    Returns:
-        A tuple (dx, dy) representing the direction vector.
-    """
-    a = p1[0] - p0[0]
-    b = p1[1] - p0[1]
-    return (a, b)
-
-
-def unit_vector(v: tuple[float, float]) -> tuple[float, float]:
-    """Normalize a 2D vector to unit length.
-
-    Args:
-        v: A 2D vector as (a, b).
-
-    Returns:
-        The unit vector (ua, ub) with length 1.
-        If the input vector has zero length, returns a near-zero result
-        to avoid division by zero.
-    """
-    h = ((v[0] ** 2) + (v[1] ** 2)) ** 0.5
-    if h == 0:
-        h = 0.000000000000001  # Prevent division by zero
-    ua = v[0] / h
-    ub = v[1] / h
-    return (ua, ub)
-
-
-def distance(xo: float, yo: float, x: float, y: float) -> float:
-    """Calculate the Euclidean distance between two points.
-
-    Args:
-        xo: X coordinate of the first point.
-        yo: Y coordinate of the first point.
-        x: X coordinate of the second point.
-        y: Y coordinate of the second point.
-
-    Returns:
-        The straight-line distance between the two points.
-    """
-    dx = x - xo
-    dy = y - yo
-    d = ((dx ** 2) + (dy ** 2)) ** 0.5
-    return d
 
 
 def compute_trajectory_points(
@@ -390,8 +335,11 @@ def draw_trajectory_curve(points: list[tuple[int, int]]) -> None:
         color_idx = int((i / max(n - 1, 1)) * (len(AIM_DOT_COLORS) - 1) + 0.5)
         color = AIM_DOT_COLORS[min(color_idx, len(AIM_DOT_COLORS) - 1)]
         pygame.draw.circle(
-            screen, AIM_DOT_OUTLINE_COLOR, (x, y),
-            AIM_DOT_RADIUS + AIM_DOT_OUTLINE_WIDTH, AIM_DOT_OUTLINE_WIDTH
+            screen,
+            AIM_DOT_OUTLINE_COLOR,
+            (x, y),
+            AIM_DOT_RADIUS + AIM_DOT_OUTLINE_WIDTH,
+            AIM_DOT_OUTLINE_WIDTH,
         )
         pygame.draw.circle(screen, color, (x, y), AIM_DOT_RADIUS)
 
@@ -402,7 +350,7 @@ def load_music() -> None:
     The music file is loaded from the resources/sounds directory.
     The -1 argument to play() means the music loops indefinitely.
     """
-    song1 = _res('sounds/angry-birds.ogg')
+    song1 = _res("sounds/angry-birds.ogg")
     pygame.mixer.music.load(song1)
     pygame.mixer.music.play(-1)
 
@@ -471,17 +419,19 @@ def sling_action() -> None:
     launch_distance = min(mouse_distance, rope_lenght)
     if x_mouse >= sling_x + 5:
         launch_distance = -launch_distance
-    trajectory_points = compute_trajectory_points(
-        launch_distance, angle, space.gravity
-    )
+    trajectory_points = compute_trajectory_points(launch_distance, angle, space.gravity)
 
     # Align trajectory start with bird's visual center (trajectory uses spawn 154,156 in pymunk)
     bird_center_x = pu[0] if is_clamped else x_mouse
     bird_center_y = pu[1] if is_clamped else y_mouse
-    trajectory_start_screen = to_pygame(pm.Vec2d(BIRD_SPAWN_X_PYMUNK, BIRD_SPAWN_Y_PYMUNK))
+    trajectory_start_screen = to_pygame(
+        pm.Vec2d(BIRD_SPAWN_X_PYMUNK, BIRD_SPAWN_Y_PYMUNK)
+    )
     offset_x = bird_center_x - trajectory_start_screen[0]
     offset_y = bird_center_y - trajectory_start_screen[1]
-    trajectory_points = [(int(x + offset_x), int(y + offset_y)) for x, y in trajectory_points]
+    trajectory_points = [
+        (int(x + offset_x), int(y + offset_y)) for x, y in trajectory_points
+    ]
 
     draw_trajectory_curve(trajectory_points)
 
@@ -601,6 +551,7 @@ def restart() -> None:
 # Pymunk calls these functions when specific shape types collide.
 # Collision types: 0 = Bird, 1 = Pig, 2 = Wood, 3 = Static environment
 
+
 def post_solve_bird_pig(arbiter, space, _) -> None:
     """Handle collision aftermath between a bird and a pig.
 
@@ -715,16 +666,16 @@ def post_solve_pig_wood(arbiter, space, _) -> None:
 # space.add_collision_handler().post_solve pattern.
 # Collision type pairs: (Bird=0, Pig=1), (Bird=0, Wood=2), (Pig=1, Wood=2)
 
-space.on_collision(0, 1, post_solve=post_solve_bird_pig)    # Bird vs Pig
-space.on_collision(0, 2, post_solve=post_solve_bird_wood)   # Bird vs Wood
-space.on_collision(1, 2, post_solve=post_solve_pig_wood)    # Pig vs Wood
+space.on_collision(0, 1, post_solve=post_solve_bird_pig)  # Bird vs Pig
+space.on_collision(0, 2, post_solve=post_solve_bird_wood)  # Bird vs Wood
+space.on_collision(1, 2, post_solve=post_solve_pig_wood)  # Pig vs Wood
 
 # ---------------------------------------------------------------------------
 # Start Background Music & Load First Level
 # ---------------------------------------------------------------------------
 load_music()
 level: Level = Level(pigs, columns, beams, space)
-level.number = 0    # Start at level 0
+level.number = 0  # Start at level 0
 level.load_level()  # Build the initial level layout
 
 # ===========================================================================
@@ -756,7 +707,7 @@ while running:
 
         # Zero gravity mode with 'S' key
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_s:
-            space.gravity = (0.0, -10.0)   # Near-zero gravity
+            space.gravity = (0.0, -10.0)  # Near-zero gravity
             level.bool_space = True
 
         # Normal gravity mode with 'N' key
@@ -765,13 +716,17 @@ while running:
             level.bool_space = False
 
         # Detect mouse press in the slingshot interaction area
-        if (pygame.mouse.get_pressed()[0] and x_mouse > 100 and
-                x_mouse < 250 and y_mouse > 370 and y_mouse < 550):
+        if (
+            pygame.mouse.get_pressed()[0]
+            and x_mouse > 100
+            and x_mouse < 250
+            and y_mouse > 370
+            and y_mouse < 550
+        ):
             mouse_pressed = True
 
         # Mouse release: launch the bird from the slingshot
-        if (event.type == pygame.MOUSEBUTTONUP and
-                event.button == 1 and mouse_pressed):
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and mouse_pressed:
             mouse_pressed = False
 
             if level.number_of_birds > 0:
@@ -802,7 +757,7 @@ while running:
         # Handle UI button clicks
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             # Pause button (top-left corner)
-            if (x_mouse < 60 and y_mouse < 155 and y_mouse > 90):
+            if x_mouse < 60 and y_mouse < 155 and y_mouse > 90:
                 game_state = 1  # Enter paused state
 
             if game_state == 1:
@@ -880,8 +835,9 @@ while running:
             screen.blit(redbird, (130, 426))
         else:
             # Draw the sling rope without a bird (just after launch)
-            pygame.draw.line(screen, (0, 0, 0), (sling_x, sling_y - 8),
-                             (sling2_x, sling2_y - 7), 5)
+            pygame.draw.line(
+                screen, (0, 0, 0), (sling_x, sling_y - 8), (sling2_x, sling2_y - 7), 5
+            )
 
     # -------------------------------------------------------------------
     # Update & Draw Active Birds
@@ -965,9 +921,9 @@ while running:
     # Draw Wooden Structures (Columns & Beams)
     # -------------------------------------------------------------------
     for column in columns:
-        column.draw_poly('columns', screen)
+        column.draw_poly("columns", screen)
     for beam in beams:
-        beam.draw_poly('beams', screen)
+        beam.draw_poly("beams", screen)
 
     # -------------------------------------------------------------------
     # Physics Step (Two sub-steps per frame for stability)
@@ -1007,7 +963,7 @@ while running:
         screen.blit(replay_button, (500, 300))
 
     draw_level_cleared()  # Check and draw "level cleared" overlay
-    draw_level_failed()   # Check and draw "level failed" overlay
+    draw_level_failed()  # Check and draw "level failed" overlay
 
     # -------------------------------------------------------------------
     # Flip Display & Cap Frame Rate

@@ -30,7 +30,7 @@ from characters import Pig
 from polygon import Polygon
 
 
-class Level():
+class Level:
     """Manages level construction, scoring thresholds, and bird counts.
 
     The Level class holds references to the shared game object lists
@@ -51,8 +51,7 @@ class Level():
                            (doubles bird count when True).
     """
 
-    def __init__(self, pigs: list, columns: list, beams: list,
-                 space: pm.Space) -> None:
+    def __init__(self, pigs: list, columns: list, beams: list, space: pm.Space) -> None:
         """Initialize the Level manager.
 
         Args:
@@ -208,8 +207,8 @@ class Level():
         Difficulty: Easy (4 birds, standard health pigs).
         """
         # Place pigs inside the structure
-        pig1 = Pig(980, 100, self.space)    # Ground floor pig
-        pig2 = Pig(985, 182, self.space)    # Second floor pig
+        pig1 = Pig(980, 100, self.space)  # Ground floor pig
+        pig2 = Pig(985, 182, self.space)  # Second floor pig
         self.pigs.append(pig1)
         self.pigs.append(pig2)
 
@@ -272,7 +271,7 @@ class Level():
         The right tower is taller than the left.
         Difficulty: Easy-Medium (4 birds).
         """
-        pig1 = Pig(880, 180, self.space)   # Left tower pig
+        pig1 = Pig(880, 180, self.space)  # Left tower pig
         self.pigs.append(pig1)
         pig2 = Pig(1000, 230, self.space)  # Right tower pig (higher)
         self.pigs.append(pig2)
@@ -373,7 +372,7 @@ class Level():
         protective structures. Tests precision aiming.
         Difficulty: Medium (requires accurate shots at moving targets).
         """
-        pig = Pig(900, 300, self.space)   # High pig
+        pig = Pig(900, 300, self.space)  # High pig
         self.pigs.append(pig)
         pig = Pig(1000, 500, self.space)  # Very high pig
         self.pigs.append(pig)
@@ -392,9 +391,9 @@ class Level():
         the right has a shorter wall (4 beams) with a frame on top.
         Difficulty: Medium (need to break through beam walls).
         """
-        pig = Pig(900, 70, self.space)     # Behind left beam wall
+        pig = Pig(900, 70, self.space)  # Behind left beam wall
         self.pigs.append(pig)
-        pig = Pig(1000, 152, self.space)   # Inside right structure
+        pig = Pig(1000, 152, self.space)  # Inside right structure
         self.pigs.append(pig)
 
         # Left beam wall: 9 stacked horizontal beams
@@ -497,8 +496,8 @@ class Level():
 
         # Staircase: tallest on the right, shortest on the left
         self.open_flat(1050, 0, 3)  # 3-story (right)
-        self.open_flat(963, 0, 2)   # 2-story (center)
-        self.open_flat(880, 0, 1)   # 1-story (left)
+        self.open_flat(963, 0, 2)  # 2-story (center)
+        self.open_flat(880, 0, 1)  # 1-story (left)
 
         self.number_of_birds = 4
         if self.bool_space:
@@ -520,9 +519,9 @@ class Level():
 
         # Four towers spanning the right side of the screen
         self.open_flat(1050, 0, 3)  # Right-most (3 stories)
-        self.open_flat(963, 0, 2)   # Center-right (2 stories)
-        self.open_flat(880, 0, 2)   # Center-left (2 stories)
-        self.open_flat(790, 0, 3)   # Left-most (3 stories)
+        self.open_flat(963, 0, 2)  # Center-right (2 stories)
+        self.open_flat(880, 0, 2)  # Center-left (2 stories)
+        self.open_flat(790, 0, 3)  # Left-most (3 stories)
 
         self.number_of_birds = 4
         if self.bool_space:
@@ -541,7 +540,7 @@ class Level():
         self.pigs.append(pig)
         pig = Pig(820, 160, self.space)  # Left barrier pig
         self.pigs.append(pig)
-        pig = Pig(1100, 160, self.space) # Right barrier pig
+        pig = Pig(1100, 160, self.space)  # Right barrier pig
         self.pigs.append(pig)
 
         # Central structure: four vertical column piles
@@ -554,7 +553,7 @@ class Level():
         self.horizontal_pile(970, 250, 2)
 
         # Side beam barriers protecting outer pigs
-        self.horizontal_pile(820, 0, 4)   # Left barrier
+        self.horizontal_pile(820, 0, 4)  # Left barrier
         self.horizontal_pile(1100, 0, 4)  # Right barrier
 
         self.number_of_birds = 4
@@ -582,8 +581,8 @@ class Level():
         self.pigs.append(pig)
 
         # Horizontal beam piles of decreasing height
-        self.horizontal_pile(800, 0, 5)   # Left (tallest)
-        self.horizontal_pile(950, 0, 3)   # Center
+        self.horizontal_pile(800, 0, 5)  # Left (tallest)
+        self.horizontal_pile(950, 0, 3)  # Center
         self.horizontal_pile(1100, 0, 2)  # Right (shortest)
 
         # Vertical column piles for structural support
@@ -613,18 +612,18 @@ class Level():
         flank pigs first.
         Difficulty: Advanced (5 birds, 1 reinforced pig).
         """
-        pig = Pig(960, 180, self.space)   # Center tower (middle height)
+        pig = Pig(960, 180, self.space)  # Center tower (middle height)
         pig.life = 30  # Reinforced - hardest to reach
         self.pigs.append(pig)
-        pig = Pig(850, 280, self.space)    # Left flank tower
+        pig = Pig(850, 280, self.space)  # Left flank tower
         self.pigs.append(pig)
-        pig = Pig(1070, 280, self.space)   # Right flank tower
+        pig = Pig(1070, 280, self.space)  # Right flank tower
         self.pigs.append(pig)
 
         # Five-tower castle: tallest on edges, dip in middle
-        self.open_flat(790, 0, 4)   # Far left (4 stories)
-        self.open_flat(880, 0, 3)   # Left-center (3 stories)
-        self.open_flat(950, 0, 2)   # Center - lowest (2 stories)
+        self.open_flat(790, 0, 4)  # Far left (4 stories)
+        self.open_flat(880, 0, 3)  # Left-center (3 stories)
+        self.open_flat(950, 0, 2)  # Center - lowest (2 stories)
         self.open_flat(1020, 0, 3)  # Right-center (3 stories)
         self.open_flat(1090, 0, 4)  # Far right (4 stories)
 
@@ -643,10 +642,10 @@ class Level():
         find angles to hit pigs through gaps.
         Difficulty: Advanced (5 birds, 2 reinforced pigs).
         """
-        pig = Pig(860, 320, self.space)   # Left fortress (inside closed frame)
+        pig = Pig(860, 320, self.space)  # Left fortress (inside closed frame)
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(940, 320, self.space)   # Left fortress second pig
+        pig = Pig(940, 320, self.space)  # Left fortress second pig
         self.pigs.append(pig)
         pig = Pig(1040, 320, self.space)  # Right fortress (inside closed frame)
         pig.life = 30
@@ -655,12 +654,12 @@ class Level():
         self.pigs.append(pig)
 
         # Left closed fortress (2 stories) on top of beam barrier
-        self.horizontal_pile(860, 0, 5)   # Left beam wall
-        self.closed_flat(835, 230, 2)      # Left closed structure
+        self.horizontal_pile(860, 0, 5)  # Left beam wall
+        self.closed_flat(835, 230, 2)  # Left closed structure
 
         # Right closed fortress
-        self.horizontal_pile(1040, 0, 5)   # Right beam wall
-        self.closed_flat(1015, 230, 2)     # Right closed structure
+        self.horizontal_pile(1040, 0, 5)  # Right beam wall
+        self.closed_flat(1015, 230, 2)  # Right closed structure
 
         self.number_of_birds = 5
         if self.bool_space:
@@ -677,21 +676,21 @@ class Level():
         upper structures to damage lower pigs - chain reaction required.
         Difficulty: Advanced (5 birds, mixed reinforcement).
         """
-        pig = Pig(820, 80, self.space)    # Ground level left
+        pig = Pig(820, 80, self.space)  # Ground level left
         self.pigs.append(pig)
-        pig = Pig(960, 180, self.space)   # Mid-height center
+        pig = Pig(960, 180, self.space)  # Mid-height center
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(1100, 80, self.space)   # Ground level right
+        pig = Pig(1100, 80, self.space)  # Ground level right
         self.pigs.append(pig)
-        pig = Pig(960, 380, self.space)   # High center (above zigzag)
+        pig = Pig(960, 380, self.space)  # High center (above zigzag)
         self.pigs.append(pig)
 
         # Zigzag: left low, center high, right low (staggered)
-        self.open_flat(800, 0, 1)    # Left (1 story - low)
-        self.open_flat(930, 0, 3)    # Center (3 stories - high)
-        self.open_flat(1060, 0, 1)   # Right (1 story - low)
-        self.open_flat(930, 250, 2)   # Top center (2 stories above)
+        self.open_flat(800, 0, 1)  # Left (1 story - low)
+        self.open_flat(930, 0, 3)  # Center (3 stories - high)
+        self.open_flat(1060, 0, 1)  # Right (1 story - low)
+        self.open_flat(930, 250, 2)  # Top center (2 stories above)
 
         # Vertical column supports between structures
         self.vertical_pile(870, 0, 2)
@@ -716,17 +715,17 @@ class Level():
         one structure can help reach others. 5 pigs with 2 reinforced.
         Difficulty: Strategic (5 birds, plan your approach).
         """
-        pig = Pig(780, 200, self.space)    # Left fortress
+        pig = Pig(780, 200, self.space)  # Left fortress
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(960, 250, self.space)   # Center fortress (reinforced)
+        pig = Pig(960, 250, self.space)  # Center fortress (reinforced)
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(1140, 200, self.space)   # Right fortress
+        pig = Pig(1140, 200, self.space)  # Right fortress
         self.pigs.append(pig)
-        pig = Pig(870, 350, self.space)   # Left upper
+        pig = Pig(870, 350, self.space)  # Left upper
         self.pigs.append(pig)
-        pig = Pig(1050, 350, self.space)   # Right upper
+        pig = Pig(1050, 350, self.space)  # Right upper
         self.pigs.append(pig)
 
         # Left fortress: beam pile + closed flat
@@ -756,24 +755,24 @@ class Level():
         some vulnerable to falling debris. Requires domino planning.
         Difficulty: Strategic (5 birds, chain-reaction focus).
         """
-        pig = Pig(750, 90, self.space)     # Far left
+        pig = Pig(750, 90, self.space)  # Far left
         self.pigs.append(pig)
-        pig = Pig(900, 180, self.space)   # Left-center
+        pig = Pig(900, 180, self.space)  # Left-center
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(960, 270, self.space)   # Center (high)
+        pig = Pig(960, 270, self.space)  # Center (high)
         self.pigs.append(pig)
-        pig = Pig(1020, 180, self.space)   # Right-center
+        pig = Pig(1020, 180, self.space)  # Right-center
         self.pigs.append(pig)
-        pig = Pig(1150, 90, self.space)    # Far right
+        pig = Pig(1150, 90, self.space)  # Far right
         self.pigs.append(pig)
 
         # Domino layout: beams that can topple into each other
-        self.horizontal_pile(750, 0, 6)    # Left wall
-        self.horizontal_pile(900, 0, 5)    # Left-center
-        self.vertical_pile(955, 0, 3)      # Center support
-        self.horizontal_pile(1020, 0, 5)   # Right-center
-        self.horizontal_pile(1150, 0, 6)    # Right wall
+        self.horizontal_pile(750, 0, 6)  # Left wall
+        self.horizontal_pile(900, 0, 5)  # Left-center
+        self.vertical_pile(955, 0, 3)  # Center support
+        self.horizontal_pile(1020, 0, 5)  # Right-center
+        self.horizontal_pile(1150, 0, 6)  # Right wall
 
         # Bridging beams that connect structures
         p = (875, 140)
@@ -799,30 +798,30 @@ class Level():
         the mid-level pigs through structure gaps.
         Difficulty: Strategic (5 birds, 3 reinforced pigs).
         """
-        pig = Pig(880, 550, self.space)    # Left tower top
+        pig = Pig(880, 550, self.space)  # Left tower top
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(960, 400, self.space)    # Center mid-level
+        pig = Pig(960, 400, self.space)  # Center mid-level
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(1040, 550, self.space)   # Right tower top
+        pig = Pig(1040, 550, self.space)  # Right tower top
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(920, 250, self.space)    # Left lower
+        pig = Pig(920, 250, self.space)  # Left lower
         self.pigs.append(pig)
-        pig = Pig(1000, 250, self.space)   # Right lower
+        pig = Pig(1000, 250, self.space)  # Right lower
         self.pigs.append(pig)
 
         # Three tall towers (6 columns each) with open frames on top
         self.vertical_pile(860, 0, 6)
-        self.open_flat(845, 400, 2)       # Left tower cap
+        self.open_flat(845, 400, 2)  # Left tower cap
 
         self.vertical_pile(940, 0, 6)
-        self.vertical_pile(960, 0, 4)     # Center double-stack
-        self.open_flat(945, 350, 1)      # Center cap
+        self.vertical_pile(960, 0, 4)  # Center double-stack
+        self.open_flat(945, 350, 1)  # Center cap
 
         self.vertical_pile(1020, 0, 6)
-        self.open_flat(1005, 400, 2)      # Right tower cap
+        self.open_flat(1005, 400, 2)  # Right tower cap
 
         self.number_of_birds = 5
         if self.bool_space:
@@ -844,29 +843,29 @@ class Level():
         barriers. No single shot wins; sustained assault required.
         Difficulty: Expert (6 birds, 2 reinforced).
         """
-        pig = Pig(760, 90, self.space)     # Far left
+        pig = Pig(760, 90, self.space)  # Far left
         self.pigs.append(pig)
-        pig = Pig(860, 200, self.space)   # Left-center
+        pig = Pig(860, 200, self.space)  # Left-center
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(960, 280, self.space)   # Center
+        pig = Pig(960, 280, self.space)  # Center
         self.pigs.append(pig)
-        pig = Pig(1060, 200, self.space)   # Right-center
+        pig = Pig(1060, 200, self.space)  # Right-center
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(1160, 90, self.space)   # Far right
+        pig = Pig(1160, 90, self.space)  # Far right
         self.pigs.append(pig)
-        pig = Pig(960, 150, self.space)   # Center high
+        pig = Pig(960, 150, self.space)  # Center high
         self.pigs.append(pig)
 
         # Full gauntlet layout
-        self.horizontal_pile(760, 0, 6)    # Left barrier
+        self.horizontal_pile(760, 0, 6)  # Left barrier
         self.vertical_pile(820, 0, 3)
-        self.closed_flat(870, 100, 2)      # Left closed block
-        self.vertical_pile(955, 0, 4)      # Center support
-        self.closed_flat(1005, 100, 2)      # Right closed block
+        self.closed_flat(870, 100, 2)  # Left closed block
+        self.vertical_pile(955, 0, 4)  # Center support
+        self.closed_flat(1005, 100, 2)  # Right closed block
         self.vertical_pile(1090, 0, 3)
-        self.horizontal_pile(1140, 0, 6)   # Right barrier
+        self.horizontal_pile(1140, 0, 6)  # Right barrier
 
         # Cross beams
         p = (920, 330)
@@ -890,27 +889,27 @@ class Level():
         a bird; must weaken the base before targeting the boss.
         Difficulty: Expert (6 birds, boss pig 40 HP).
         """
-        pig = Pig(960, 500, self.space)    # Boss at peak
+        pig = Pig(960, 500, self.space)  # Boss at peak
         pig.life = 40
         self.pigs.append(pig)
-        pig = Pig(880, 350, self.space)   # Left support
+        pig = Pig(880, 350, self.space)  # Left support
         pig.life = 30
         self.pigs.append(pig)
         pig = Pig(1040, 350, self.space)  # Right support
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(920, 200, self.space)   # Left base
+        pig = Pig(920, 200, self.space)  # Left base
         self.pigs.append(pig)
         pig = Pig(1000, 200, self.space)  # Right base
         self.pigs.append(pig)
 
         # Pyramid-style boss fortress
-        self.closed_flat(935, 0, 2)       # Base layer
-        self.closed_flat(945, 180, 2)     # Second layer
-        self.open_flat(955, 350, 2)       # Top layer (boss chamber)
-        self.vertical_pile(900, 0, 4)    # Left reinforcement
-        self.vertical_pile(1020, 0, 4)   # Right reinforcement
-        self.horizontal_pile(960, 420, 2) # Boss platform beams
+        self.closed_flat(935, 0, 2)  # Base layer
+        self.closed_flat(945, 180, 2)  # Second layer
+        self.open_flat(955, 350, 2)  # Top layer (boss chamber)
+        self.vertical_pile(900, 0, 4)  # Left reinforcement
+        self.vertical_pile(1020, 0, 4)  # Right reinforcement
+        self.horizontal_pile(960, 420, 2)  # Boss platform beams
 
         self.number_of_birds = 6
         if self.bool_space:
@@ -928,32 +927,32 @@ class Level():
         chain reactions and precise aim to clear with minimal birds.
         Difficulty: Expert (6 birds, 2 boss pigs, maximum strategy).
         """
-        pig = Pig(880, 450, self.space)    # Left boss
+        pig = Pig(880, 450, self.space)  # Left boss
         pig.life = 40
         self.pigs.append(pig)
         pig = Pig(1040, 450, self.space)  # Right boss
         pig.life = 40
         self.pigs.append(pig)
-        pig = Pig(920, 280, self.space)   # Left support
+        pig = Pig(920, 280, self.space)  # Left support
         pig.life = 30
         self.pigs.append(pig)
         pig = Pig(1000, 280, self.space)  # Right support
         pig.life = 30
         self.pigs.append(pig)
-        pig = Pig(960, 150, self.space)   # Center base
+        pig = Pig(960, 150, self.space)  # Center base
         self.pigs.append(pig)
-        pig = Pig(960, 350, self.space)   # Center mid (between bosses)
+        pig = Pig(960, 350, self.space)  # Center mid (between bosses)
         self.pigs.append(pig)
 
         # Ultimate fortress: dual towers with shared base
-        self.horizontal_pile(800, 0, 5)    # Left barrier
-        self.horizontal_pile(1120, 0, 5)   # Right barrier
-        self.closed_flat(890, 0, 2)       # Left base structure
-        self.closed_flat(1010, 0, 2)      # Right base structure
-        self.vertical_pile(930, 180, 4)   # Left tower
-        self.vertical_pile(990, 180, 4)   # Right tower
-        self.open_flat(935, 350, 2)       # Left boss platform
-        self.open_flat(985, 350, 2)       # Right boss platform
+        self.horizontal_pile(800, 0, 5)  # Left barrier
+        self.horizontal_pile(1120, 0, 5)  # Right barrier
+        self.closed_flat(890, 0, 2)  # Left base structure
+        self.closed_flat(1010, 0, 2)  # Right base structure
+        self.vertical_pile(930, 180, 4)  # Left tower
+        self.vertical_pile(990, 180, 4)  # Right tower
+        self.open_flat(935, 350, 2)  # Left boss platform
+        self.open_flat(985, 350, 2)  # Right boss platform
         # Bridging beams that connect the two boss platforms
         p = (960, 420)
         self.beams.append(Polygon(p, 85, 20, self.space))
