@@ -1,4 +1,5 @@
 .DS_Store
-/venv
 /Python-Core-50Courses
 /Python-100-Days
+/.venv
+/.cursor
