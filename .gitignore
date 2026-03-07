@@ -4,3 +4,6 @@
 
 /.venv
 /.cursor
+/FlyCode/flappybird/__pycache__
+/FlyCode/ship/__pycache__
+/FlyCode/ship/component/__pycache__

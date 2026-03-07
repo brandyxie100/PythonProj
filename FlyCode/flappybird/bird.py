@@ -1,8 +1,8 @@
 """
 Flappy Bird Clone - Main Game Module
 =====================================
-A Flappy Bird-style game using Pygame. The bird flaps to avoid pipes;
-game continues until collision with pipe or ground.
+An infinite Flappy Bird-style game with escalating difficulty.
+Pipes wobble and tilt as the score increases.
 
 Controls:
     - Mouse click: Start game and flap.
@@ -14,8 +14,10 @@ Run from project root: python bird.py
 
 from __future__ import annotations
 
+import math
 import os
 import random
+from dataclasses import dataclass
 from typing import Literal
 
 import pygame
@@ -39,20 +41,40 @@ FLAP_VELOCITY: float = -10.0
 BIRD_ROTATION_FACTOR: float = -5.0
 GAME_OVER_ROTATION: float = -90.0
 
-# Pipe config
-SCROLL_SPEED: int = 6
+# Pipe config (base values; scaled by difficulty)
+SCROLL_SPEED_BASE: int = 6
+SCROLL_SPEED_MAX: int = 12
 PIPE_GAP_BASE: int = 200
-PIPE_GAP_VARIANCE: int = 40
-PIPE_SPAWN_INTERVAL_MIN: int = 80
-PIPE_SPAWN_INTERVAL_MAX: int = 120
+PIPE_GAP_MIN: int = 120
+PIPE_SPAWN_INTERVAL_BASE: tuple[int, int] = (80, 120)
+PIPE_SPAWN_INTERVAL_MIN: tuple[int, int] = (50, 70)
 PIPE_SPAWN_OFFSET: int = 50
 PIPE_GAP_CENTER_MIN: int = 200
 PIPE_GAP_CENTER_MAX: int = 450
+
+# Difficulty tiers (score thresholds)
+TIER_EASY: int = 10
+TIER_MEDIUM: int = 30
+TIER_HARD: int = 60
+
+# Wobble (Phase 2)
+WOBBLE_AMPLITUDE_BASE: int = 20
+WOBBLE_AMPLITUDE_MAX: int = 60
+WOBBLE_FREQUENCY: float = 0.08
+
+# Tilt (Phase 3)
+TILT_AMPLITUDE: float = 15.0
 
 # Animation
 FLAP_COOLDOWN_FRAMES: int = 5
 AUTO_PLAY_FLAP_VELOCITY_THRESHOLD: float = 3.0
 AUTO_PLAY_CENTER_OFFSET: int = 30
+
+# UI
+FONT_SIZE_SCORE: int = 48
+FONT_SIZE_GAME_OVER: int = 64
+FONT_SIZE_RESTART: int = 32
+GAME_OVER_OVERLAY_ALPHA: int = 180
 
 # Pipe position enum (top pipe vs bottom pipe)
 PipePosition = Literal[1, -1]
@@ -66,6 +88,78 @@ def _res(path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Phase 1: Difficulty scaling
+# ---------------------------------------------------------------------------
+@dataclass
+class DifficultyParams:
+    """Difficulty parameters scaled by score."""
+
+    scroll_speed: int
+    pipe_gap: int
+    spawn_interval_range: tuple[int, int]
+    gap_center_min: int
+    gap_center_max: int
+    wobble_amplitude: int
+    wobble_enabled: bool
+    tilt_enabled: bool
+
+
+def get_difficulty_params(score: int) -> DifficultyParams:
+    """Compute difficulty parameters based on current score.
+
+    Args:
+        score: Current player score.
+
+    Returns:
+        DifficultyParams with scaled values.
+    """
+    # Linear scaling per 5 points
+    t = min(score / 5.0, 12.0)  # Cap at ~60 pts for max scaling
+    scroll_speed = min(
+        SCROLL_SPEED_BASE + int(t * 0.5),
+        SCROLL_SPEED_MAX
+    )
+    pipe_gap = max(
+        PIPE_GAP_BASE - int(t * 5),
+        PIPE_GAP_MIN
+    )
+    si_base = PIPE_SPAWN_INTERVAL_BASE
+    si_min = PIPE_SPAWN_INTERVAL_MIN
+    spawn_lo = max(si_base[0] - int(t * 2), si_min[0])
+    spawn_hi = max(si_base[1] - int(t * 2), si_min[1])
+    spawn_interval_range = (spawn_lo, spawn_hi)
+
+    # Narrow gap center range as score rises (harder angles)
+    center_range = PIPE_GAP_CENTER_MAX - PIPE_GAP_CENTER_MIN
+    shrink = int(min(t * 5, center_range // 2))
+    gap_center_min = PIPE_GAP_CENTER_MIN + shrink // 2
+    gap_center_max = PIPE_GAP_CENTER_MAX - shrink // 2
+
+    # Wobble: enable from tier 2, amplitude scales with score
+    wobble_enabled = score >= TIER_EASY
+    wobble_amplitude = 0
+    if wobble_enabled:
+        wobble_amplitude = min(
+            WOBBLE_AMPLITUDE_BASE + int(t * 3),
+            WOBBLE_AMPLITUDE_MAX
+        )
+
+    # Tilt: enable from tier 3
+    tilt_enabled = score >= TIER_MEDIUM
+
+    return DifficultyParams(
+        scroll_speed=scroll_speed,
+        pipe_gap=pipe_gap,
+        spawn_interval_range=spawn_interval_range,
+        gap_center_min=gap_center_min,
+        gap_center_max=gap_center_max,
+        wobble_amplitude=wobble_amplitude,
+        wobble_enabled=wobble_enabled,
+        tilt_enabled=tilt_enabled,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pygame setup
 # ---------------------------------------------------------------------------
 pygame.init()
@@ -76,13 +170,18 @@ pygame.display.set_caption("Flappy Bird")
 bg: pygame.Surface = pygame.image.load(_res("bg.png"))
 ground_img: pygame.Surface = pygame.image.load(_res("ground.png"))
 
-# Game state (module-level for sprite update callbacks; refactor to GameState class later)
+# Game state (module-level for sprite update callbacks)
 ground_scroll: int = 0
 flying: bool = False
 game_over: bool = False
 auto_play: bool = False
 pipe_spawn_timer: int = 0
 pipe_spawn_interval: int = 90
+score: int = 0
+high_score: int = 0
+passed_pair_ids: set[int] = set()
+next_pair_id: int = 0
+scroll_speed: int = SCROLL_SPEED_BASE  # Updated each frame from difficulty
 
 
 # ---------------------------------------------------------------------------
@@ -170,37 +269,106 @@ class Bird(pygame.sprite.Sprite):
 
 
 # ---------------------------------------------------------------------------
-# Pipe Sprite
+# Pipe Sprite (Phase 2: wobble, Phase 3: tilt)
 # ---------------------------------------------------------------------------
+# Cache pipe image to avoid loading per pipe
+_pipe_image_cache: pygame.Surface | None = None
+
+
+def _get_pipe_image() -> pygame.Surface:
+    """Load and cache the pipe image."""
+    global _pipe_image_cache
+    if _pipe_image_cache is None:
+        _pipe_image_cache = pygame.image.load(_res("pipe.png"))
+    return _pipe_image_cache
+
+
 class Pipe(pygame.sprite.Sprite):
     """Obstacle pipe (top or bottom half of a pipe pair).
 
-    Attributes:
-        image: Pipe texture (flipped for top pipe).
-        rect: Collision and draw rectangle.
+    Supports vertical wobble and tilt based on difficulty tier.
     """
 
-    def __init__(self, x: int, y: int, position: PipePosition) -> None:
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        position: PipePosition,
+        pair_id: int,
+        phase: float,
+        wobble_amplitude: int,
+        wobble_enabled: bool,
+        tilt_enabled: bool,
+    ) -> None:
         """Create a pipe at the given position.
 
         Args:
             x: Left edge X in screen coordinates.
             y: For top pipe: bottom edge Y. For bottom pipe: top edge Y.
             position: PIPE_TOP (1) or PIPE_BOTTOM (-1).
+            pair_id: Unique id for this pipe pair (for scoring).
+            phase: Shared phase for wobble (radians).
+            wobble_amplitude: Vertical oscillation amplitude (pixels).
+            wobble_enabled: Whether to apply wobble.
+            tilt_enabled: Whether to apply tilt.
         """
         super().__init__()
-        self.image = pygame.image.load(_res("pipe.png"))
-        self.rect = self.image.get_rect()
+        base = _get_pipe_image().copy()
         if position == PIPE_TOP:
-            self.image = pygame.transform.flip(self.image, False, True)
+            base = pygame.transform.flip(base, False, True)
+            self._anchor_bottomleft = True
+        else:
+            self._anchor_bottomleft = False
+
+        self._base_image: pygame.Surface = base
+        self.image: pygame.Surface = base
+        self.rect: pygame.Rect = base.get_rect()
+        if position == PIPE_TOP:
             self.rect.bottomleft = (x, y)
-        elif position == PIPE_BOTTOM:
+        else:
             self.rect.topleft = (x, y)
 
+        self._base_x: float = float(x)
+        self._base_y: float = float(y)
+        self.pair_id: int = pair_id
+        self._phase: float = phase
+        self._wobble_amplitude: int = wobble_amplitude
+        self._wobble_enabled: bool = wobble_enabled
+        self._tilt_enabled: bool = tilt_enabled
+        self._tilt_angle: float = 0.0
+
     def update(self) -> None:
-        """Move pipe left; remove when off-screen."""
+        """Move pipe left; apply wobble and tilt; remove when off-screen."""
+        global scroll_speed, game_over
+
         if not game_over:
-            self.rect.x -= SCROLL_SPEED
+            self._base_x -= scroll_speed
+        self.rect.x = int(self._base_x)
+
+        # Phase 2: vertical wobble (sine-wave oscillation)
+        if self._wobble_enabled and self._wobble_amplitude > 0:
+            self._phase += WOBBLE_FREQUENCY
+            offset_y = self._wobble_amplitude * math.sin(self._phase)
+            current_y = self._base_y + offset_y
+        else:
+            current_y = self._base_y
+
+        if self._anchor_bottomleft:
+            self.rect.bottom = int(current_y)
+        else:
+            self.rect.top = int(current_y)
+
+        # Phase 3: tilt (oscillating rotation)
+        if self._tilt_enabled:
+            self._tilt_angle = TILT_AMPLITUDE * math.sin(self._phase)
+            self.image = pygame.transform.rotate(
+                self._base_image, self._tilt_angle
+            )
+            center = self.rect.center
+            self.rect = self.image.get_rect(center=center)
+        else:
+            self.image = self._base_image
+
         if self.rect.right < 0:
             self.kill()
 
@@ -213,33 +381,66 @@ pipe_group: pygame.sprite.Group = pygame.sprite.Group()
 flappy: Bird = Bird(100, SCREEN_HEIGHT // 2)
 bird_group.add(flappy)
 
+# Font for score and game over (Phase 4)
+font_score: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_SCORE, bold=True)
+font_game_over: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_GAME_OVER, bold=True)
+font_restart: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_RESTART)
 
-def spawn_pipes(x: int, gap: int) -> None:
+
+def spawn_pipes(
+    x: int,
+    gap: int,
+    gap_center_min: int,
+    gap_center_max: int,
+    params: DifficultyParams,
+) -> None:
     """Spawn a top and bottom pipe pair with a vertical gap.
 
     Args:
         x: Spawn X position (left edge of pipes).
         gap: Vertical gap between top and bottom pipes.
+        gap_center_min: Min Y for gap center.
+        gap_center_max: Max Y for gap center.
+        params: Current difficulty params (wobble, tilt).
     """
-    center_y = random.randint(PIPE_GAP_CENTER_MIN, PIPE_GAP_CENTER_MAX)
+    global next_pair_id
+
+    center_y = random.randint(gap_center_min, gap_center_max)
     top_y = center_y - gap // 2
     bottom_y = center_y + gap // 2
-    top = Pipe(x, top_y, PIPE_TOP)
-    bottom = Pipe(x, bottom_y, PIPE_BOTTOM)
+    pair_id = next_pair_id
+    next_pair_id += 1
+    phase = random.uniform(0, 2 * math.pi)  # Random phase per pair
+
+    top = Pipe(
+        x, top_y, PIPE_TOP,
+        pair_id, phase,
+        params.wobble_amplitude,
+        params.wobble_enabled,
+        params.tilt_enabled,
+    )
+    bottom = Pipe(
+        x, bottom_y, PIPE_BOTTOM,
+        pair_id, phase,
+        params.wobble_amplitude,
+        params.wobble_enabled,
+        params.tilt_enabled,
+    )
     pipe_group.add(top)
     pipe_group.add(bottom)
 
 
 def restart_game(extra_distance: int = 400) -> None:
-    """Reset game state and spawn initial pipes.
-
-    Args:
-        extra_distance: X offset for first pipe spawn (beyond screen).
-    """
+    """Reset game state and spawn initial pipes."""
     global game_over, flying, pipe_spawn_timer, pipe_spawn_interval
+    global score, passed_pair_ids, scroll_speed
 
     game_over = False
     flying = False
+    score = 0
+    passed_pair_ids.clear()
+    scroll_speed = SCROLL_SPEED_BASE
+
     flappy.rect.center = (100, SCREEN_HEIGHT // 2)
     flappy.vel = 0.0
     flappy.index = 0
@@ -247,26 +448,67 @@ def restart_game(extra_distance: int = 400) -> None:
 
     pipe_group.empty()
     pipe_spawn_timer = 0
-    pipe_spawn_interval = random.randint(
-        PIPE_SPAWN_INTERVAL_MIN, PIPE_SPAWN_INTERVAL_MAX
+    params = get_difficulty_params(0)
+    lo, hi = params.spawn_interval_range
+    pipe_spawn_interval = random.randint(lo, hi)
+    spawn_pipes(
+        SCREEN_WIDTH + extra_distance,
+        params.pipe_gap,
+        params.gap_center_min,
+        params.gap_center_max,
+        params,
     )
-    spawn_pipes(SCREEN_WIDTH + extra_distance, PIPE_GAP_BASE)
+
+
+def draw_game_over_screen() -> None:
+    """Draw semi-transparent overlay with score and restart hint."""
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    overlay.set_alpha(GAME_OVER_OVERLAY_ALPHA)
+    overlay.fill((0, 0, 0))
+    screen.blit(overlay, (0, 0))
+
+    text_go = font_game_over.render("Game Over", True, (255, 255, 255))
+    text_score = font_score.render(f"Score: {score}", True, (255, 255, 255))
+    text_high = font_score.render(f"Best: {high_score}", True, (255, 220, 100))
+    text_restart = font_restart.render("Press R to restart", True, (200, 200, 200))
+
+    rect_go = text_go.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80))
+    rect_score = text_score.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20))
+    rect_high = text_high.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
+    rect_restart = text_restart.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80))
+
+    screen.blit(text_go, rect_go)
+    screen.blit(text_score, rect_score)
+    screen.blit(text_high, rect_high)
+    screen.blit(text_restart, rect_restart)
 
 
 # ---------------------------------------------------------------------------
 # Main Loop
 # ---------------------------------------------------------------------------
-spawn_pipes(300, PIPE_GAP_BASE)
+params_init = get_difficulty_params(0)
+spawn_pipes(300, params_init.pipe_gap, params_init.gap_center_min, params_init.gap_center_max, params_init)
 run: bool = True
 
 while run:
     clock.tick(FPS)
     screen.blit(bg, (0, 0))
 
+    # Phase 1: update difficulty and scroll speed from score
+    params = get_difficulty_params(score)
+    scroll_speed = params.scroll_speed
+
     bird_group.draw(screen)
     bird_group.update()
     pipe_group.draw(screen)
     pipe_group.update()
+
+    # Phase 1: score when bird passes a pipe pair
+    for pipe in pipe_group.sprites():
+        if pipe.pair_id not in passed_pair_ids and flappy.rect.left > pipe.rect.right:
+            passed_pair_ids.add(pipe.pair_id)
+            score += 1
+            high_score = max(high_score, score)
 
     # Collision: end game when bird hits any pipe
     if pygame.sprite.spritecollide(flappy, pipe_group, False):
@@ -281,18 +523,31 @@ while run:
         flying = False
 
     if not game_over:
-        ground_scroll -= SCROLL_SPEED
+        ground_scroll -= scroll_speed
         if abs(ground_scroll) > GROUND_TILE_WIDTH:
             ground_scroll = 0
 
         pipe_spawn_timer += 1
         if pipe_spawn_timer > pipe_spawn_interval:
-            gap = PIPE_GAP_BASE + random.randint(-PIPE_GAP_VARIANCE, PIPE_GAP_VARIANCE)
-            spawn_pipes(SCREEN_WIDTH + PIPE_SPAWN_OFFSET, gap)
-            pipe_spawn_timer = 0
-            pipe_spawn_interval = random.randint(
-                PIPE_SPAWN_INTERVAL_MIN, PIPE_SPAWN_INTERVAL_MAX
+            spawn_pipes(
+                SCREEN_WIDTH + PIPE_SPAWN_OFFSET,
+                params.pipe_gap,
+                params.gap_center_min,
+                params.gap_center_max,
+                params,
             )
+            pipe_spawn_timer = 0
+            lo, hi = params.spawn_interval_range
+            pipe_spawn_interval = random.randint(lo, hi)
+    else:
+        # Phase 4: game over screen
+        draw_game_over_screen()
+
+    # Draw score (top-center) when playing
+    if not game_over:
+        text_score = font_score.render(str(score), True, (255, 255, 255))
+        rect_score = text_score.get_rect(midtop=(SCREEN_WIDTH // 2, 20))
+        screen.blit(text_score, rect_score)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -309,7 +564,7 @@ while run:
             if event.key == pygame.K_d:
                 candidates = [p for p in pipe_group.sprites() if p.rect.right > 0]
                 if candidates:
-                    first_x = min(candidate.rect.x for candidate in candidates)
+                    first_x = min(p.rect.x for p in candidates)
                     for p in pipe_group.sprites():
                         if p.rect.x == first_x:
                             p.kill()

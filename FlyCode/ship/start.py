@@ -1,285 +1,169 @@
-import pygame
-import random
+"""
+Ship Shooter Game - Main Entry Point
+=====================================
+A top-down shooter where the player moves left/right, shoots bullets,
+and avoids descending enemies. Health decreases on enemy collision.
+
+Controls:
+    - LEFT/RIGHT arrows: Move player.
+    - SPACE: Shoot bullet.
+
+Run from project root: python FlyCode/ship/start.py
+Or from ship dir: python start.py
+"""
+
+from __future__ import annotations
+
 import math
+import os
 
+import pygame
 
-
-from component.player import Player
-from component.enemy  import Enemy
 from component.bullet import Bullet
+from component.enemy import Enemy
+from component.player import Player
+from config import res as _res
 
+
+# ---------------------------------------------------------------------------
+# Constants (extract magic numbers per project rules)
+# ---------------------------------------------------------------------------
+SCREEN_WIDTH: int = 800
+SCREEN_HEIGHT: int = 600
+NUMBER_OF_ENEMIES: int = 1000
+COLLISION_RADIUS: int = 40
+BULLET_OFFSCREEN_THRESHOLD: int = -40
+PLAYER_X_MIN: int = -45
+PLAYER_X_MAX: int = 645
+ENEMY_RESET_Y_THRESHOLD: int = 600
+PLAYER_DAMAGE_PER_HIT: int = 10
+
+# ---------------------------------------------------------------------------
+# Pygame setup
+# ---------------------------------------------------------------------------
 pygame.init()
-bg = pygame.image.load('asset/bg3.jpg')
-screen = pygame.display.set_mode((800,600))
+bg: pygame.Surface = pygame.image.load(_res("bg3.jpg"))
+screen: pygame.Surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-pygame.mixer.music.load('asset/background-music.mp3')
-pygame.mixer.music.play(-1) 
+# Background music (optional; skip if file missing)
+_music_path = _res("background-music.mp3")
+if os.path.exists(_music_path):
+    pygame.mixer.music.load(_music_path)
+    pygame.mixer.music.play(-1)
+
+player: Player = Player()
+enemys: list[Enemy] = [Enemy() for _ in range(NUMBER_OF_ENEMIES)]
+bullets: list[Bullet] = []
 
 
-number_of_enemies=1000
-playerStep = 0
-running = True
+def is_collision(
+    x1: float, y1: float, x2: float, y2: float, radius: int = COLLISION_RADIUS
+) -> bool:
+    """Check if two points are within collision radius.
 
-player = Player()
-# create enemies
-enemys=[]
-bullets = []
+    Args:
+        x1: First point X.
+        y1: First point Y.
+        x2: Second point X.
+        y2: Second point Y.
+        radius: Collision radius in pixels.
 
-for i in range(number_of_enemies):
-    enemy = Enemy()
-    enemys.append(enemy)
+    Returns:
+        True if distance < radius.
+    """
+    return math.dist((x1, y1), (x2, y2)) < radius
 
-def show_enemies():
+
+def show_enemies() -> None:
+    """Draw and update all enemies; handle collision with player."""
     for e in enemys:
         screen.blit(e.show_ememy(), (e.get_enemy_x(), e.get_enemy_y()))
-        # e.change_x()
-        # if e.get_enemy_x() > 740 or e.get_enemy_x() < -30:
-        #     e.change_step()
-        #     e.change_y()
         e.change_y()
-        if e.get_enemy_y() > 600:
-            e.reset()
-            
-        if is_collision(e.get_enemy_x(), e.get_enemy_y(), player.get_player_x(), player.get_player_y()):
-            player.health -= 10  
-            print("Player hit! Health:", player.health)
-            e.reset()     
 
-def is_collision(x1, y1, x2, y2, radius=40):
-    return math.dist((x1, y1), (x2, y2)) < radius    
-            
-def show_bullet(screen, bullets, enemys):
-    for b in bullets[:]:
+        # Reset enemy when it reaches bottom of screen
+        if e.get_enemy_y() > ENEMY_RESET_Y_THRESHOLD:
+            e.reset()
+
+        # Player hit: deal damage and reset enemy
+        if is_collision(
+            e.get_enemy_x(), e.get_enemy_y(),
+            player.get_player_x(), player.get_player_y(),
+        ):
+            player.health -= PLAYER_DAMAGE_PER_HIT
+            print("Player hit! Health:", player.health)
+            e.reset()
+
+
+def show_bullet(
+    screen_surf: pygame.Surface,
+    bullets_list: list[Bullet],
+    enemies_list: list[Enemy],
+) -> None:
+    """Draw and update bullets; handle hits and off-screen removal."""
+    for b in bullets_list[:]:
         b.move_bullet()
-        screen.blit(b.show_bullet(),(b.get_bullet_x(), b.get_bullet_y()))
-        
-        if b.get_bullet_y() < -40:
-           bullets.remove(b)
-           continue
-        
-        hit_enemy = b.hit(enemys)
+        screen_surf.blit(b.show_bullet(), (b.get_bullet_x(), b.get_bullet_y()))
+
+        # Remove bullet when off top of screen
+        if b.get_bullet_y() < BULLET_OFFSCREEN_THRESHOLD:
+            bullets_list.remove(b)
+            continue
+
+        hit_enemy = b.hit(enemies_list)
         if hit_enemy:
             b.bao_sound()
-            enemys.remove(hit_enemy)
-            bullets.remove(b )
+            enemies_list.remove(hit_enemy)
+            bullets_list.remove(b)
 
-        
-      
-def main():
+
+def main() -> None:
+    """Main game loop."""
     running = True
     while running:
-        screen.blit(bg,(1,2))
-        
+        screen.blit(bg, (1, 2))
+
+        # Event handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type==pygame.KEYDOWN:
-                if event.key==pygame.K_SPACE:
-                    bullet = Bullet(playerX=player.get_player_x(),playerY=player.get_player_y())
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    bullet = Bullet(
+                        playerX=player.get_player_x(),
+                        playerY=player.get_player_y(),
+                    )
                     bullets.append(bullet)
-                    print('shoot')
-        
+                    print("shoot")
+
+        # Continuous key input for movement
         keys = pygame.key.get_pressed()
         if keys[pygame.K_RIGHT]:
             player.move_right()
         if keys[pygame.K_LEFT]:
-            player.move_left()            
-        
-        
-        screen.blit(player.show_player(), (player.get_player_x(), player.get_player_y())) 
+            player.move_left()
+
+        # Draw player and health bar
+        screen.blit(
+            player.show_player(),
+            (player.get_player_x(), player.get_player_y()),
+        )
         player.draw_health_bar(screen)
 
-        
-        if player.get_player_x()>645:  
-            player.x =645
-        if player.get_player_x()<-45:
-            player.x = -45  
-            
-        show_enemies()    
-        show_bullet(screen=screen, bullets=bullets, enemys=enemys)
-        
+        # Clamp player X to screen bounds
+        if player.get_player_x() > PLAYER_X_MAX:
+            player.x = PLAYER_X_MAX
+        if player.get_player_x() < PLAYER_X_MIN:
+            player.x = PLAYER_X_MIN
+
+        show_enemies()
+        show_bullet(screen_surf=screen, bullets_list=bullets, enemies_list=enemys)
+
         if player.health <= 0:
             print("Game Over")
             running = False
+
         pygame.display.update()
-    
+
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-# screen = pygame.display.set_mode((800,600))
-# pygame.display.set_caption('pygame plane')
-# icon = pygame.image.load('ufo.webp')
-# pygame.display.set_icon(icon)
-# bg = pygame.image.load('bg3.jpg')
-
-# player = Player
-# playerImg = player.show_player()
-# # playerImg = pygame.image.load('player-removebg-preview.png')
-
-
-# pygame.mixer.music.load('background-music.mp3')
-# pygame.mixer.music.play(-1) 
-# bao_sound=pygame.mixer.Sound("minecraft-tnt-explosion.mp3")
-
-# score=0
-# font=pygame.font.Font('freesansbold.ttf',32)
-
-
-# number_of_enemies=100
-
-# player_health=100
-# max_health=100
-
-            
-
-    
-
-# def draw_health_bar(x,y,health,max_health):
-#     pygame.draw.rect(screen,(255,0,0),(x,y,200,20))
-#     health_width = int(200*(health/max_health))
-#     pygame.draw.rect(screen,(0,255, 0),(x,y, health_width,20))
-#     health_text=font.render(f"hp:{health}",True,(255,255,255))
-#     screen.blit(health_text,(x+210,y-2))
-
-    
-    
-       
-# def show_score():
-#     text=f"score:{score} "
-#     score_render=font.render(text,True,(0,255,0) )
-#     screen.blit(score_render,(10,10))
-
-
-
-
-
-
-# class Enemy():
-#     def __init__(self):
-#         self.img=pygame.image.load('enemy.png')
-#         self.img = pygame.transform.scale(self.img, (80,80))
-#         self.x = random.randint(300,400)
-#         self.y=random.randint(75,250)
-#         self.step=random.uniform(1,1.5)
-#     def reset(self):    
-#         self.x=random.randint(300,400)
-#         self.y=random.randint(75,250)
-        
-# enemys=[]
-# for i in range(number_of_enemies):
-#     enemys.append(Enemy())
-
-
-# def distance(bx,by,ex,ey):
-#     a=bx-ex
-#     b=by-ey
-#     return math.sqrt(a*a+b*b) 
-# class Bullet():
-#     def __init__(self):
-#         self.img=pygame.image.load('bullet_resized.png')
-#         self.img = pygame.transform.scale(self.img, (40,40))
-#         self.x =playerX+75
-#         self.y=playerY - 2
-#         self.step=2
-    
-#     def hit(self):
-#         global score, player_health
-#         for e in enemys:
-#             if (distance(self.x, self.y, e.x, e.y)<30):
-#                 bao_sound.play()
-#                 player_health -=10
-#                 e.reset()
-#                 score+=1
-#                 if player_health<=0:
-#                     print("Game Over ")
-#                 print(score)
-#                 return True
-#         return False
-# bullets = []        
-    
-    
-# def show_bullets():
-#     global bullets
-#     new_bullets=[]
-#     for b in bullets:
-        
-#         hit=b.hit()
-#         b.y-=b.step
-#         if not hit and b.y>0:
-#             new_bullets.append(b)
-#         screen.blit(b.img,(b.x, b.y))    
-#     bullets=new_bullets
-    
-        
-        
-# def show_enemy():
-   
-#     for e in enemys:    
-#         screen.blit(e.img,(e.x, e.y))
-#         e.x+=e.step
-#         if (e.x>655 or e.x<-30 ):
-#             e.step *= -1 
-#             e.y += 30 
-            
-
-
-      
-    
-
-# while running:
-
-#     screen.blit(bg,(1,2))
-#     show_score()
-#     draw_health_bar(10, 50, player_health, max_health)
-
-#     # process_event()
-#     for event in pygame.event.get():
-#         if event.type == pygame.QUIT:
-#             running = False
-#         if event.type==pygame.KEYDOWN:
-#             if event.key==pygame.K_RIGHT:
-#                  playerStep=1.5
-#             elif event.key == pygame.K_LEFT:      
-#                 playerStep =-1.5
-#             elif event.key==pygame.K_SPACE:
-#                 print('shoot')
-#                 bullets.append(Bullet())
-#         if event.type==pygame.KEYUP:
-#             playerStep=0   
-#     screen.blit(playerImg, (playerX,playerY)) 
-#     playerX += playerStep
-    
-#     if playerX>645:  
-#         playerX =645
-#     if playerX<-45:
-#         playerX = -45    
-#     show_bullets()   
-#     show_enemy() 
-#     pygame.display.update()
-    
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
