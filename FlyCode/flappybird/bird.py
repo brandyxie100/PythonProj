@@ -83,6 +83,16 @@ RESTART_BTN_COLOR: tuple[int, int, int] = (70, 130, 180)
 RESTART_BTN_HOVER_COLOR: tuple[int, int, int] = (100, 160, 210)
 RESTART_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
+# Ability (invisibility + invincibility)
+ABILITY_DURATION_MS: int = 3000  # 3 seconds
+ABILITY_BTN_WIDTH: int = 64
+ABILITY_BTN_HEIGHT: int = 64
+ABILITY_BTN_MARGIN: int = 12
+ABILITY_BTN_COLOR: tuple[int, int, int] = (40, 160, 40)
+ABILITY_BTN_HOVER_COLOR: tuple[int, int, int] = (60, 190, 60)
+ABILITY_BTN_ACTIVE_COLOR: tuple[int, int, int] = (120, 120, 120)
+ABILITY_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
 RESTART_BTN_HEIGHT: int = 56
@@ -197,6 +207,10 @@ next_pair_id: int = 0
 scroll_speed: int = SCROLL_SPEED_BASE  # Updated each frame from difficulty
 # Rectangle for restart button (set when drawing game-over screen)
 restart_button_rect: pygame.Rect | None = None
+# Ability state
+ability_active: bool = False
+ability_end_time: int = 0
+ability_button_rect: pygame.Rect | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +266,17 @@ class Bird(pygame.sprite.Sprite):
                 self.images[self.index], GAME_OVER_ROTATION
             )
             self.rect = self.image.get_rect(center=self.rect.center)
+            # honor ability invisibility while on the game-over display
+            if ability_active:
+                try:
+                    self.image.set_alpha(128)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.image.set_alpha(255)
+                except Exception:
+                    pass
 
     def _handle_flap_input(self) -> None:
         """Process flap input (auto-play heuristic or mouse click)."""
@@ -281,6 +306,18 @@ class Bird(pygame.sprite.Sprite):
             self.images[self.index], self.vel * BIRD_ROTATION_FACTOR
         )
         self.rect = self.image.get_rect(center=self.rect.center)
+
+        # If ability is active, make bird semi-transparent; otherwise fully visible
+        if ability_active:
+            try:
+                self.image.set_alpha(128)
+            except Exception:
+                pass
+        else:
+            try:
+                self.image.set_alpha(255)
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +548,27 @@ def draw_game_over_screen() -> None:
     screen.blit(text_btn, rect_btn)
 
 
+def draw_ability_button() -> None:
+    """Draw ability button at the top-right corner and update rect."""
+    global ability_button_rect, ability_active
+
+    margin = ABILITY_BTN_MARGIN
+    ability_button_rect = pygame.Rect(0, 0, ABILITY_BTN_WIDTH, ABILITY_BTN_HEIGHT)
+    ability_button_rect.topright = (SCREEN_WIDTH - margin, margin)
+    mouse_pos = pygame.mouse.get_pos()
+    hover = ability_button_rect.collidepoint(mouse_pos)
+
+    if ability_active:
+        btn_color = ABILITY_BTN_ACTIVE_COLOR
+    else:
+        btn_color = ABILITY_BTN_HOVER_COLOR if hover else ABILITY_BTN_COLOR
+
+    pygame.draw.rect(screen, btn_color, ability_button_rect, border_radius=8)
+    text_btn = font_restart.render("Inv", True, ABILITY_BTN_TEXT_COLOR)
+    rect_btn = text_btn.get_rect(center=ability_button_rect.center)
+    screen.blit(text_btn, rect_btn)
+
+
 # ---------------------------------------------------------------------------
 # Main Loop
 # ---------------------------------------------------------------------------
@@ -531,6 +589,14 @@ while run:
     pipe_group.draw(screen)
     pipe_group.update()
 
+    # Ability timer: disable after duration
+    if ability_active and pygame.time.get_ticks() >= ability_end_time:
+        ability_active = False
+
+    # Draw ability button (top-right)
+    if not game_over:
+        draw_ability_button()
+
     # Phase 1: score when bird passes a pipe pair
     for pipe in pipe_group.sprites():
         if pipe.pair_id not in passed_pair_ids and flappy.rect.left > pipe.rect.right:
@@ -538,8 +604,8 @@ while run:
             score += 1
             high_score = max(high_score, score)
 
-    # Collision: end game when bird hits any pipe
-    if pygame.sprite.spritecollide(flappy, pipe_group, False):
+    # Collision: end game when bird hits any pipe (skip if ability active)
+    if not ability_active and pygame.sprite.spritecollide(flappy, pipe_group, False):
         game_over = True
         flying = False
 
@@ -586,6 +652,11 @@ while run:
             and not game_over
         ):
             flying = True
+        # Ability button click (only while playing)
+        if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
+            if ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
+                ability_active = True
+                ability_end_time = pygame.time.get_ticks() + ABILITY_DURATION_MS
         # If we're on the game over screen, clicking the restart button restarts
         if event.type == pygame.MOUSEBUTTONDOWN and game_over:
             if restart_button_rect and restart_button_rect.collidepoint(event.pos):
