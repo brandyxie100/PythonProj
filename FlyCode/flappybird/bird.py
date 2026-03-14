@@ -76,6 +76,17 @@ FONT_SIZE_GAME_OVER: int = 64
 FONT_SIZE_RESTART: int = 32
 GAME_OVER_OVERLAY_ALPHA: int = 180
 
+# Restart button styling
+RESTART_BTN_WIDTH: int = 240
+RESTART_BTN_HEIGHT: int = 56
+RESTART_BTN_COLOR: tuple[int, int, int] = (70, 130, 180)
+RESTART_BTN_HOVER_COLOR: tuple[int, int, int] = (100, 160, 210)
+RESTART_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
+# Restart button styling
+RESTART_BTN_WIDTH: int = 240
+RESTART_BTN_HEIGHT: int = 56
+RESTART_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # Pipe position enum (top pipe vs bottom pipe)
 PipePosition = Literal[1, -1]
 PIPE_TOP: PipePosition = 1
@@ -182,6 +193,8 @@ high_score: int = 0
 passed_pair_ids: set[int] = set()
 next_pair_id: int = 0
 scroll_speed: int = SCROLL_SPEED_BASE  # Updated each frame from difficulty
+# Rectangle for restart button (set when drawing game-over screen)
+restart_button_rect: pygame.Rect | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -482,6 +495,19 @@ def draw_game_over_screen() -> None:
     screen.blit(text_high, rect_high)
     screen.blit(text_restart, rect_restart)
 
+    # Draw a clickable Restart button below the text
+    global restart_button_rect
+    mouse_pos = pygame.mouse.get_pos()
+    btn_center_y = SCREEN_HEIGHT // 2 + 140
+    restart_button_rect = pygame.Rect(0, 0, RESTART_BTN_WIDTH, RESTART_BTN_HEIGHT)
+    restart_button_rect.center = (SCREEN_WIDTH // 2, btn_center_y)
+    hover = restart_button_rect.collidepoint(mouse_pos)
+    btn_color = RESTART_BTN_HOVER_COLOR if hover else RESTART_BTN_COLOR
+    pygame.draw.rect(screen, btn_color, restart_button_rect, border_radius=8)
+    text_btn = font_restart.render("Restart", True, RESTART_BTN_TEXT_COLOR)
+    rect_btn = text_btn.get_rect(center=restart_button_rect.center)
+    screen.blit(text_btn, rect_btn)
+
 
 # ---------------------------------------------------------------------------
 # Main Loop
@@ -558,6 +584,10 @@ while run:
             and not game_over
         ):
             flying = True
+        # If we're on the game over screen, clicking the restart button restarts
+        if event.type == pygame.MOUSEBUTTONDOWN and game_over:
+            if restart_button_rect and restart_button_rect.collidepoint(event.pos):
+                restart_game(extra_distance=400)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_r:
                 restart_game(extra_distance=400)
