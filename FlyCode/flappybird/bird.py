@@ -424,12 +424,61 @@ class Pipe(pygame.sprite.Sprite):
         if self.rect.right < 0:
             self.kill()
 
+    def break_pipe(self) -> None:
+        """Break this pipe into particles and remove the pipe sprite."""
+        # Spawn a burst of particles from the pipe bounds
+        rect = self.rect
+        # Use pipe color sampled from the pipe image (approximate)
+        try:
+            color = self._base_image.get_at((0, 0))
+        except Exception:
+            color = (80, 180, 80)
+
+        for _ in range(12):
+            px = random.randint(rect.left, rect.right)
+            py = random.randint(rect.top, rect.bottom)
+            vx = random.uniform(-4.0, 4.0) - (scroll_speed * 0.02)
+            vy = random.uniform(-6.0, -1.0)
+            particle = _Particle(px, py, color, vx, vy)
+            particle_group.add(particle)
+
+        # remove pipe
+        self.kill()
+
+
+# ---------------------------------------------------------------------------
+# Particle effect for broken pipes
+# ---------------------------------------------------------------------------
+class _Particle(pygame.sprite.Sprite):
+    """Small physics particle used to visualize broken pipe fragments."""
+
+    def __init__(self, x: int, y: int, color: tuple[int, int, int], vx: float, vy: float) -> None:
+        super().__init__()
+        self.image = pygame.Surface((6, 6), pygame.SRCALPHA)
+        try:
+            pygame.draw.rect(self.image, color, self.image.get_rect())
+        except Exception:
+            self.image.fill((120, 200, 120))
+        self.rect = self.image.get_rect(center=(x, y))
+        self.vx = vx
+        self.vy = vy
+        self.life = random.randint(30, 60)
+
+    def update(self) -> None:
+        self.vy += GRAVITY * 0.4
+        self.rect.x += int(self.vx)
+        self.rect.y += int(self.vy)
+        self.life -= 1
+        if self.life <= 0 or self.rect.top > SCREEN_HEIGHT:
+            self.kill()
+
 
 # ---------------------------------------------------------------------------
 # Game Setup
 # ---------------------------------------------------------------------------
 bird_group: pygame.sprite.Group = pygame.sprite.Group()
 pipe_group: pygame.sprite.Group = pygame.sprite.Group()
+particle_group: pygame.sprite.Group = pygame.sprite.Group()
 flappy: Bird = Bird(100, SCREEN_HEIGHT // 2)
 bird_group.add(flappy)
 
@@ -588,6 +637,9 @@ while run:
     bird_group.update()
     pipe_group.draw(screen)
     pipe_group.update()
+    # update and draw particles (from broken pipes)
+    particle_group.update()
+    particle_group.draw(screen)
 
     # Ability timer: disable after duration
     if ability_active and pygame.time.get_ticks() >= ability_end_time:
@@ -604,10 +656,18 @@ while run:
             score += 1
             high_score = max(high_score, score)
 
-    # Collision: end game when bird hits any pipe (skip if ability active)
-    if not ability_active and pygame.sprite.spritecollide(flappy, pipe_group, False):
-        game_over = True
-        flying = False
+    # Collision: when bird hits any pipe
+    collided = pygame.sprite.spritecollide(flappy, pipe_group, False)
+    if collided:
+        if ability_active:
+            for p in collided:
+                try:
+                    p.break_pipe()
+                except Exception:
+                    p.kill()
+        else:
+            game_over = True
+            flying = False
 
     screen.blit(ground_img, (ground_scroll, GROUND_Y))
 
