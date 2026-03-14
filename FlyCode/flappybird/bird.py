@@ -86,6 +86,8 @@ RESTART_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
 RESTART_BTN_HEIGHT: int = 56
+RESTART_BTN_COLOR: tuple[int, int, int] = (70, 130, 180)
+RESTART_BTN_HOVER_COLOR: tuple[int, int, int] = (100, 160, 210)
 RESTART_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # Pipe position enum (top pipe vs bottom pipe)
 PipePosition = Literal[1, -1]
