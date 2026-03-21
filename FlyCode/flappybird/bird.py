@@ -92,6 +92,8 @@ ABILITY_BTN_COLOR: tuple[int, int, int] = (40, 160, 40)
 ABILITY_BTN_HOVER_COLOR: tuple[int, int, int] = (60, 190, 60)
 ABILITY_BTN_ACTIVE_COLOR: tuple[int, int, int] = (120, 120, 120)
 ABILITY_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+# Cooldown after ability ends (milliseconds)
+ABILITY_COOLDOWN_MS: int = 10000  # 10 seconds
 
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
@@ -211,6 +213,7 @@ restart_button_rect: pygame.Rect | None = None
 ability_active: bool = False
 ability_end_time: int = 0
 ability_button_rect: pygame.Rect | None = None
+ability_cooldown_until: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +476,52 @@ class _Particle(pygame.sprite.Sprite):
             self.kill()
 
 
+class _RedSplashParticle(pygame.sprite.Sprite):
+    """Larger red splash particle used when the bird hits a pipe."""
+
+    def __init__(self, x: int, y: int) -> None:
+        super().__init__()
+        self.radius = random.randint(6, 14)
+        size = self.radius * 2
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        color = (200, 24, 30, 220)
+        try:
+            pygame.draw.circle(self.image, color, (self.radius, self.radius), self.radius)
+        except Exception:
+            self.image.fill((200, 24, 30))
+        self.rect = self.image.get_rect(center=(x, y))
+        # initial velocity gives a burst outward
+        self.vx = random.uniform(-6.0, 6.0) - (scroll_speed * 0.03)
+        self.vy = random.uniform(-8.0, -2.0)
+        self.life = random.randint(28, 48)
+
+    def update(self) -> None:
+        self.vy += GRAVITY * 0.5
+        self.rect.x += int(self.vx)
+        self.rect.y += int(self.vy)
+        self.life -= 1
+        # fade out by lowering alpha
+        if self.life > 0:
+            alpha = int(220 * (self.life / 48))
+            try:
+                self.image.set_alpha(alpha)
+            except Exception:
+                pass
+        if self.life <= 0 or self.rect.top > SCREEN_HEIGHT:
+            self.kill()
+
+
+def spawn_red_splash(x: int, y: int) -> None:
+    """Spawn a burst of red splash particles at (x, y)."""
+    count = random.randint(10, 18)
+    for _ in range(count):
+        # slight random offset so splashes aren't perfectly centered
+        ox = x + random.randint(-8, 8)
+        oy = y + random.randint(-8, 8)
+        p = _RedSplashParticle(ox, oy)
+        particle_group.add(p)
+
+
 # ---------------------------------------------------------------------------
 # Game Setup
 # ---------------------------------------------------------------------------
@@ -547,6 +596,12 @@ def restart_game(extra_distance: int = 400) -> None:
     flappy.index = 0
     flappy.counter = 0
 
+    # reset ability state and cooldown on restart
+    global ability_active, ability_end_time, ability_cooldown_until
+    ability_active = False
+    ability_end_time = 0
+    ability_cooldown_until = 0
+
     pipe_group.empty()
     pipe_spawn_timer = 0
     params = get_difficulty_params(0)
@@ -607,13 +662,25 @@ def draw_ability_button() -> None:
     mouse_pos = pygame.mouse.get_pos()
     hover = ability_button_rect.collidepoint(mouse_pos)
 
+    now = pygame.time.get_ticks()
+    # Active state
     if ability_active:
         btn_color = ABILITY_BTN_ACTIVE_COLOR
+        label = "Inv"
     else:
-        btn_color = ABILITY_BTN_HOVER_COLOR if hover else ABILITY_BTN_COLOR
+        # If cooldown is in effect, show disabled styling and remaining seconds
+        if now < ability_cooldown_until:
+            btn_color = ABILITY_BTN_ACTIVE_COLOR
+            # remaining seconds (ceil)
+            rem_ms = ability_cooldown_until - now
+            rem_s = (rem_ms + 999) // 1000
+            label = f"{rem_s}s"
+        else:
+            btn_color = ABILITY_BTN_HOVER_COLOR if hover else ABILITY_BTN_COLOR
+            label = "Inv"
 
     pygame.draw.rect(screen, btn_color, ability_button_rect, border_radius=8)
-    text_btn = font_restart.render("Inv", True, ABILITY_BTN_TEXT_COLOR)
+    text_btn = font_restart.render(label, True, ABILITY_BTN_TEXT_COLOR)
     rect_btn = text_btn.get_rect(center=ability_button_rect.center)
     screen.blit(text_btn, rect_btn)
 
@@ -666,6 +733,12 @@ while run:
                 except Exception:
                     p.kill()
         else:
+            # spawn a red splash at the bird's location
+            try:
+                cx, cy = flappy.rect.center
+                spawn_red_splash(cx, cy)
+            except Exception:
+                pass
             game_over = True
             flying = False
 
@@ -714,9 +787,14 @@ while run:
             flying = True
         # Ability button click (only while playing)
         if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
-            if ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
-                ability_active = True
-                ability_end_time = pygame.time.get_ticks() + ABILITY_DURATION_MS
+                if ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
+                    now = pygame.time.get_ticks()
+                    # only allow activation if cooldown has expired
+                    if now >= ability_cooldown_until:
+                        ability_active = True
+                        ability_end_time = now + ABILITY_DURATION_MS
+                        # start cooldown after ability ends
+                        ability_cooldown_until = ability_end_time + ABILITY_COOLDOWN_MS
         # If we're on the game over screen, clicking the restart button restarts
         if event.type == pygame.MOUSEBUTTONDOWN and game_over:
             if restart_button_rect and restart_button_rect.collidepoint(event.pos):
