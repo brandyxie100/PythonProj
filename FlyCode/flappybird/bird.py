@@ -9,6 +9,11 @@ Controls:
     - R: Restart game.
     - D: Delete nearest pipe pair (debug).
 
+Features:
+    - Every 3 seconds a duplicate bird spawns directly below the lowest bird.
+    - All birds share the same flap input (mouse).
+    - Game over only when every bird has been eliminated.
+
 Run from project root: python bird.py
 """
 
@@ -69,6 +74,10 @@ TILT_AMPLITUDE: float = 15.0
 FLAP_COOLDOWN_FRAMES: int = 5
 AUTO_PLAY_FLAP_VELOCITY_THRESHOLD: float = 3.0
 AUTO_PLAY_CENTER_OFFSET: int = 30
+
+# Multi-bird: duplicate spawn below the lowest bird
+DUPLICATE_SPAWN_INTERVAL_MS: int = 3000
+DUPLICATE_VERTICAL_GAP_PX: int = 6
 
 # UI
 FONT_SIZE_SCORE: int = 48
@@ -214,6 +223,8 @@ ability_active: bool = False
 ability_end_time: int = 0
 ability_button_rect: pygame.Rect | None = None
 ability_cooldown_until: int = 0
+# Next pygame tick (ms) when to spawn a duplicate bird; 0 = not scheduled
+duplicate_next_spawn_ms: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +542,32 @@ particle_group: pygame.sprite.Group = pygame.sprite.Group()
 flappy: Bird = Bird(100, SCREEN_HEIGHT // 2)
 bird_group.add(flappy)
 
+
+def spawn_duplicate_bird_below_lowest() -> None:
+    """Add a new bird directly below the lowest (max bottom) live bird.
+
+    Copies horizontal center and vertical velocity so the flock stays aligned;
+    flap input is shared via the same mouse handling as all birds.
+    """
+    sprites = bird_group.sprites()
+    if not sprites:
+        return
+    ref = max(sprites, key=lambda b: b.rect.bottom)
+    half_h = max(ref.rect.height // 2, 12)
+    new_y = ref.rect.bottom + DUPLICATE_VERTICAL_GAP_PX + half_h
+    new_bird = Bird(ref.rect.centerx, new_y)
+    new_bird.vel = ref.vel
+    new_bird.clicked = ref.clicked
+    bird_group.add(new_bird)
+
+
+def _end_game_if_no_birds() -> None:
+    """Set game over when the last bird is eliminated."""
+    global game_over, flying
+    if len(bird_group) == 0:
+        game_over = True
+        flying = False
+
 # Font for score and game over (Phase 4)
 font_score: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_SCORE, bold=True)
 font_game_over: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_GAME_OVER, bold=True)
@@ -584,17 +621,18 @@ def restart_game(extra_distance: int = 400) -> None:
     """Reset game state and spawn initial pipes."""
     global game_over, flying, pipe_spawn_timer, pipe_spawn_interval
     global score, passed_pair_ids, scroll_speed
+    global flappy, duplicate_next_spawn_ms
 
     game_over = False
     flying = False
     score = 0
     passed_pair_ids.clear()
     scroll_speed = SCROLL_SPEED_BASE
+    duplicate_next_spawn_ms = 0
 
-    flappy.rect.center = (100, SCREEN_HEIGHT // 2)
-    flappy.vel = 0.0
-    flappy.index = 0
-    flappy.counter = 0
+    bird_group.empty()
+    flappy = Bird(100, SCREEN_HEIGHT // 2)
+    bird_group.add(flappy)
 
     # reset ability state and cooldown on restart
     global ability_active, ability_end_time, ability_cooldown_until
@@ -716,38 +754,54 @@ while run:
     if not game_over:
         draw_ability_button()
 
-    # Phase 1: score when bird passes a pipe pair
+    # Phase 1: score when any live bird passes a pipe pair
     for pipe in pipe_group.sprites():
-        if pipe.pair_id not in passed_pair_ids and flappy.rect.left > pipe.rect.right:
-            passed_pair_ids.add(pipe.pair_id)
-            score += 1
-            high_score = max(high_score, score)
+        if pipe.pair_id not in passed_pair_ids:
+            if any(
+                b.rect.left > pipe.rect.right for b in bird_group.sprites()
+            ):
+                passed_pair_ids.add(pipe.pair_id)
+                score += 1
+                high_score = max(high_score, score)
 
-    # Collision: when bird hits any pipe
-    collided = pygame.sprite.spritecollide(flappy, pipe_group, False)
-    if collided:
-        if ability_active:
-            for p in collided:
+    # Periodic duplicate bird (every 3 s while flying)
+    if flying and not game_over and bird_group.sprites():
+        now_ms = pygame.time.get_ticks()
+        if duplicate_next_spawn_ms and now_ms >= duplicate_next_spawn_ms:
+            spawn_duplicate_bird_below_lowest()
+            duplicate_next_spawn_ms = now_ms + DUPLICATE_SPAWN_INTERVAL_MS
+
+    # Collision: each bird independently; game over only when all are gone
+    for bird in list(bird_group.sprites()):
+        collided = pygame.sprite.spritecollide(bird, pipe_group, False)
+        if collided:
+            if ability_active:
+                for p in collided:
+                    try:
+                        p.break_pipe()
+                    except Exception:
+                        p.kill()
+            else:
                 try:
-                    p.break_pipe()
+                    cx, cy = bird.rect.center
+                    spawn_red_splash(cx, cy)
                 except Exception:
-                    p.kill()
-        else:
-            # spawn a red splash at the bird's location
-            try:
-                cx, cy = flappy.rect.center
-                spawn_red_splash(cx, cy)
-            except Exception:
-                pass
-            game_over = True
-            flying = False
+                    pass
+                bird.kill()
+                _end_game_if_no_birds()
 
     screen.blit(ground_img, (ground_scroll, GROUND_Y))
 
-    # Ground collision
-    if flappy.rect.bottom > GROUND_Y:
-        game_over = True
-        flying = False
+    # Ground collision: eliminate birds that hit the ground
+    for bird in list(bird_group.sprites()):
+        if bird.rect.bottom > GROUND_Y:
+            try:
+                cx, cy = bird.rect.center
+                spawn_red_splash(cx, cy)
+            except Exception:
+                pass
+            bird.kill()
+            _end_game_if_no_birds()
 
     if not game_over:
         ground_scroll -= scroll_speed
@@ -785,6 +839,10 @@ while run:
             and not game_over
         ):
             flying = True
+            # Schedule first duplicate spawn 3 seconds after play starts
+            duplicate_next_spawn_ms = (
+                pygame.time.get_ticks() + DUPLICATE_SPAWN_INTERVAL_MS
+            )
         # Ability button click (only while playing)
         if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
                 if ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
