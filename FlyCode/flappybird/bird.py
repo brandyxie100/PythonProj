@@ -103,6 +103,14 @@ ABILITY_BTN_ACTIVE_COLOR: tuple[int, int, int] = (120, 120, 120)
 ABILITY_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # Cooldown after ability ends (milliseconds)
 ABILITY_COOLDOWN_MS: int = 10000  # 10 seconds
+# Fast ability: increases apparent forward speed
+FAST_DURATION_MS: int = 3000  # 3 seconds
+FAST_COOLDOWN_MS: int = 12000  # 12 seconds
+FAST_SPEED_MULTIPLIER: float = 2.0
+FAST_BTN_COLOR: tuple[int, int, int] = (200, 80, 30)
+FAST_BTN_HOVER_COLOR: tuple[int, int, int] = (230, 100, 50)
+FAST_BTN_ACTIVE_COLOR: tuple[int, int, int] = (140, 60, 30)
+FAST_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
@@ -223,6 +231,11 @@ ability_active: bool = False
 ability_end_time: int = 0
 ability_button_rect: pygame.Rect | None = None
 ability_cooldown_until: int = 0
+# Fast ability state
+ability_fast_active: bool = False
+ability_fast_end_time: int = 0
+ability_fast_button_rect: pygame.Rect | None = None
+ability_fast_cooldown_until: int = 0
 # Next pygame tick (ms) when to spawn a duplicate bird; 0 = not scheduled
 duplicate_next_spawn_ms: int = 0
 
@@ -636,9 +649,13 @@ def restart_game(extra_distance: int = 400) -> None:
 
     # reset ability state and cooldown on restart
     global ability_active, ability_end_time, ability_cooldown_until
+    global ability_fast_active, ability_fast_end_time, ability_fast_cooldown_until
     ability_active = False
     ability_end_time = 0
     ability_cooldown_until = 0
+    ability_fast_active = False
+    ability_fast_end_time = 0
+    ability_fast_cooldown_until = 0
 
     pipe_group.empty()
     pipe_spawn_timer = 0
@@ -692,35 +709,62 @@ def draw_game_over_screen() -> None:
 
 def draw_ability_button() -> None:
     """Draw ability button at the top-right corner and update rect."""
-    global ability_button_rect, ability_active
+    global ability_button_rect, ability_active, ability_fast_button_rect, ability_fast_active
 
     margin = ABILITY_BTN_MARGIN
+    spacing = 8
+    mouse_pos = pygame.mouse.get_pos()
+    # inv button (rightmost)
     ability_button_rect = pygame.Rect(0, 0, ABILITY_BTN_WIDTH, ABILITY_BTN_HEIGHT)
     ability_button_rect.topright = (SCREEN_WIDTH - margin, margin)
-    mouse_pos = pygame.mouse.get_pos()
-    hover = ability_button_rect.collidepoint(mouse_pos)
+    hover_inv = ability_button_rect.collidepoint(mouse_pos)
+    # fast button (left of inv)
+    ability_fast_button_rect = pygame.Rect(0, 0, ABILITY_BTN_WIDTH, ABILITY_BTN_HEIGHT)
+    ability_fast_button_rect.topright = (
+        SCREEN_WIDTH - margin - (ABILITY_BTN_WIDTH + spacing), margin
+    )
+    hover_fast = ability_fast_button_rect.collidepoint(mouse_pos)
 
     now = pygame.time.get_ticks()
-    # Active state
+
+    # INV button appearance
     if ability_active:
-        btn_color = ABILITY_BTN_ACTIVE_COLOR
-        label = "Inv"
+        inv_color = ABILITY_BTN_ACTIVE_COLOR
+        inv_label = "Inv"
     else:
-        # If cooldown is in effect, show disabled styling and remaining seconds
         if now < ability_cooldown_until:
-            btn_color = ABILITY_BTN_ACTIVE_COLOR
-            # remaining seconds (ceil)
+            inv_color = ABILITY_BTN_ACTIVE_COLOR
             rem_ms = ability_cooldown_until - now
             rem_s = (rem_ms + 999) // 1000
-            label = f"{rem_s}s"
+            inv_label = f"{rem_s}s"
         else:
-            btn_color = ABILITY_BTN_HOVER_COLOR if hover else ABILITY_BTN_COLOR
-            label = "Inv"
+            inv_color = ABILITY_BTN_HOVER_COLOR if hover_inv else ABILITY_BTN_COLOR
+            inv_label = "Inv"
 
-    pygame.draw.rect(screen, btn_color, ability_button_rect, border_radius=8)
-    text_btn = font_restart.render(label, True, ABILITY_BTN_TEXT_COLOR)
-    rect_btn = text_btn.get_rect(center=ability_button_rect.center)
-    screen.blit(text_btn, rect_btn)
+    # FAST button appearance
+    if ability_fast_active:
+        fast_color = FAST_BTN_ACTIVE_COLOR
+        fast_label = "Fast"
+    else:
+        if now < ability_fast_cooldown_until:
+            fast_color = FAST_BTN_ACTIVE_COLOR
+            rem_ms = ability_fast_cooldown_until - now
+            rem_s = (rem_ms + 999) // 1000
+            fast_label = f"{rem_s}s"
+        else:
+            fast_color = FAST_BTN_HOVER_COLOR if hover_fast else FAST_BTN_COLOR
+            fast_label = "Fast"
+
+    # Draw buttons
+    pygame.draw.rect(screen, fast_color, ability_fast_button_rect, border_radius=8)
+    fb_text = font_restart.render(fast_label, True, FAST_BTN_TEXT_COLOR)
+    fb_rect = fb_text.get_rect(center=ability_fast_button_rect.center)
+    screen.blit(fb_text, fb_rect)
+
+    pygame.draw.rect(screen, inv_color, ability_button_rect, border_radius=8)
+    ib_text = font_restart.render(inv_label, True, ABILITY_BTN_TEXT_COLOR)
+    ib_rect = ib_text.get_rect(center=ability_button_rect.center)
+    screen.blit(ib_text, ib_rect)
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +781,12 @@ while run:
     # Phase 1: update difficulty and scroll speed from score
     params = get_difficulty_params(score)
     scroll_speed = params.scroll_speed
+    # Apply fast ability multiplier to global scroll speed
+    if ability_fast_active:
+        try:
+            scroll_speed = int(scroll_speed * FAST_SPEED_MULTIPLIER)
+        except Exception:
+            pass
 
     bird_group.draw(screen)
     bird_group.update()
@@ -749,6 +799,8 @@ while run:
     # Ability timer: disable after duration
     if ability_active and pygame.time.get_ticks() >= ability_end_time:
         ability_active = False
+    if ability_fast_active and pygame.time.get_ticks() >= ability_fast_end_time:
+        ability_fast_active = False
 
     # Draw ability button (top-right)
     if not game_over:
@@ -845,14 +897,22 @@ while run:
             )
         # Ability button click (only while playing)
         if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
-                if ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
-                    now = pygame.time.get_ticks()
-                    # only allow activation if cooldown has expired
-                    if now >= ability_cooldown_until:
-                        ability_active = True
-                        ability_end_time = now + ABILITY_DURATION_MS
-                        # start cooldown after ability ends
-                        ability_cooldown_until = ability_end_time + ABILITY_COOLDOWN_MS
+            # Fast button clicked?
+            if ability_fast_button_rect and ability_fast_button_rect.collidepoint(event.pos) and not ability_fast_active:
+                now = pygame.time.get_ticks()
+                if now >= ability_fast_cooldown_until:
+                    ability_fast_active = True
+                    ability_fast_end_time = now + FAST_DURATION_MS
+                    ability_fast_cooldown_until = ability_fast_end_time + FAST_COOLDOWN_MS
+            # Inv button clicked?
+            elif ability_button_rect and ability_button_rect.collidepoint(event.pos) and not ability_active:
+                now = pygame.time.get_ticks()
+                # only allow activation if cooldown has expired
+                if now >= ability_cooldown_until:
+                    ability_active = True
+                    ability_end_time = now + ABILITY_DURATION_MS
+                    # start cooldown after ability ends
+                    ability_cooldown_until = ability_end_time + ABILITY_COOLDOWN_MS
         # If we're on the game over screen, clicking the restart button restarts
         if event.type == pygame.MOUSEBUTTONDOWN and game_over:
             if restart_button_rect and restart_button_rect.collidepoint(event.pos):
