@@ -41,10 +41,11 @@ GROUND_TILE_WIDTH: int = 35
 
 # Bird physics
 GRAVITY: float = 0.5
-MAX_FALL_VELOCITY: float = 8.0
-FLAP_VELOCITY: float = -10.0
+MAX_FALL_VELOCITY: float = 12.0
+FLAP_VELOCITY: float = -15.0
 BIRD_ROTATION_FACTOR: float = -5.0
 GAME_OVER_ROTATION: float = -90.0
+BIRD_SCALE: float = 1.0  # Scale factor for bird size
 
 # Pipe config (base values; scaled by difficulty)
 SCROLL_SPEED_BASE: int = 6
@@ -111,6 +112,13 @@ FAST_BTN_COLOR: tuple[int, int, int] = (200, 80, 30)
 FAST_BTN_HOVER_COLOR: tuple[int, int, int] = (230, 100, 50)
 FAST_BTN_ACTIVE_COLOR: tuple[int, int, int] = (140, 60, 30)
 FAST_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
+# Missile ability: shoot missiles with 'f' key
+MISSILE_SPEED: int = 15
+MISSILE_COOLDOWN_MS: int = 300  # Cooldown between shots
+MISSILE_COLOR: tuple[int, int, int] = (255, 50, 50)  # Red
+MISSILE_WIDTH: int = 8
+MISSILE_HEIGHT: int = 4
 
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
@@ -265,6 +273,10 @@ class Bird(pygame.sprite.Sprite):
         self.images: list[pygame.Surface] = []
         for i in range(1, 4):
             img = pygame.image.load(_res(f"bird{i}.png"))
+            # Scale the bird image to make it massive
+            scaled_width = int(img.get_width() * BIRD_SCALE)
+            scaled_height = int(img.get_height() * BIRD_SCALE)
+            img = pygame.transform.scale(img, (scaled_width, scaled_height))
             self.images.append(img)
         self.index: int = 0
         self.counter: int = 0
@@ -272,6 +284,10 @@ class Bird(pygame.sprite.Sprite):
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
         self.vel: float = 0.0
         self.clicked: bool = False
+
+    def _create_car_image(self) -> pygame.Surface:
+        """Placeholder method (not used)."""
+        return pygame.Surface((1, 1))
 
     def update(self) -> None:
         """Update bird physics, input, and animation."""
@@ -547,13 +563,43 @@ def spawn_red_splash(x: int, y: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Missile Sprite
+# ---------------------------------------------------------------------------
+class Missile(pygame.sprite.Sprite):
+    """A projectile missile that destroys pipes."""
+
+    def __init__(self, x: int, y: int) -> None:
+        """Create a new Missile at the given position.
+
+        Args:
+            x: Initial center X.
+            y: Initial center Y.
+        """
+        super().__init__()
+        self.image = pygame.Surface((MISSILE_WIDTH, MISSILE_HEIGHT))
+        self.image.fill(MISSILE_COLOR)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.vel_x: float = MISSILE_SPEED
+
+    def update(self) -> None:
+        """Move missile to the right and remove if off-screen."""
+        self.rect.x += self.vel_x
+        if self.rect.left > SCREEN_WIDTH:
+            self.kill()
+
+
+# ---------------------------------------------------------------------------
 # Game Setup
 # ---------------------------------------------------------------------------
 bird_group: pygame.sprite.Group = pygame.sprite.Group()
 pipe_group: pygame.sprite.Group = pygame.sprite.Group()
 particle_group: pygame.sprite.Group = pygame.sprite.Group()
+missile_group: pygame.sprite.Group = pygame.sprite.Group()
 flappy: Bird = Bird(100, SCREEN_HEIGHT // 2)
 bird_group.add(flappy)
+
+# Missile cooldown tracking
+missile_last_shot_ms: int = 0
 
 
 def spawn_duplicate_bird_below_lowest() -> None:
@@ -658,6 +704,7 @@ def restart_game(extra_distance: int = 400) -> None:
     ability_fast_cooldown_until = 0
 
     pipe_group.empty()
+    missile_group.empty()
     pipe_spawn_timer = 0
     params = get_difficulty_params(0)
     lo, hi = params.spawn_interval_range
@@ -795,12 +842,26 @@ while run:
     # update and draw particles (from broken pipes)
     particle_group.update()
     particle_group.draw(screen)
+    # update and draw missiles
+    missile_group.update()
+    missile_group.draw(screen)
 
     # Ability timer: disable after duration
     if ability_active and pygame.time.get_ticks() >= ability_end_time:
         ability_active = False
     if ability_fast_active and pygame.time.get_ticks() >= ability_fast_end_time:
         ability_fast_active = False
+
+    # Missile collision detection: destroy pipes on impact
+    for missile in list(missile_group.sprites()):
+        collided_pipes = pygame.sprite.spritecollide(missile, pipe_group, False)
+        for pipe in collided_pipes:
+            try:
+                pipe.break_pipe()
+            except Exception:
+                pipe.kill()
+            missile.kill()
+            break
 
     # Draw ability button (top-right)
     if not game_over:
@@ -927,6 +988,16 @@ while run:
                     for p in pipe_group.sprites():
                         if p.rect.x == first_x:
                             p.kill()
+            # Fire missile with 'f' key
+            if event.key == pygame.K_f and not game_over and flying:
+                current_time = pygame.time.get_ticks()
+                if current_time - missile_last_shot_ms > MISSILE_COOLDOWN_MS:
+                    # Fire missile from the average position of all live birds
+                    if bird_group.sprites():
+                        avg_y = sum(b.rect.centery for b in bird_group.sprites()) / len(bird_group.sprites())
+                        missile = Missile(bird_group.sprites()[0].rect.centerx + 20, int(avg_y))
+                        missile_group.add(missile)
+                        missile_last_shot_ms = current_time
 
     pygame.display.update()
 
