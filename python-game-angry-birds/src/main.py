@@ -148,6 +148,7 @@ polys: list = []  # Unused; reserved for future use
 beams: list = []  # Horizontal wooden beams in the level
 columns: list = []  # Vertical wooden columns in the level
 poly_points: list = []  # Unused; reserved for polygon vertex storage
+explosions: list = []  # Active explosion effects
 
 # ---------------------------------------------------------------------------
 # Slingshot & Input State Variables
@@ -185,7 +186,7 @@ BIRD_SPAWN_X_PYMUNK: float = 154.0
 BIRD_SPAWN_Y_PYMUNK: float = 156.0
 BIRD_MASS: float = 5.0
 BIRD_RADIUS: float = 12.0
-POWER_FACTOR: float = 53.0
+POWER_FACTOR: float = 80.0
 # Trajectory: use same physics step as game (dt=0.01, 2 substeps per frame)
 AIM_PHYSICS_DT: float = 0.01  # Matches space.step(dt)
 AIM_TRAJECTORY_MAX_T: float = 1.5
@@ -276,6 +277,120 @@ def to_pygame(p: pm.Vec2d) -> tuple[int, int]:
         A (x, y) tuple in pygame screen coordinates.
     """
     return int(p.x), int(-p.y + 600)
+
+class Explosion:
+    """An explosion effect with particles and mushroom cloud."""
+
+    def __init__(self, x: int, y: int, radius: int = 80) -> None:
+        """Create a new explosion at the given position.
+
+        Args:
+            x: Center X position (screen coordinates).
+            y: Center Y position (screen coordinates).
+            radius: Radius of the explosion effect.
+        """
+        self.x = x
+        self.y = y
+        self.radius = radius
+        self.max_radius = radius
+        self.life = 60  # Frames until explosion fades
+        self.max_life = 60
+        self.particles = []
+
+        # Create particle burst
+        import random
+        for _ in range(30):
+            px = x + random.randint(-radius, radius)
+            py = y + random.randint(-radius // 2, radius // 2)
+            vx = random.uniform(-8, 8)
+            vy = random.uniform(-12, -2)
+            color = random.choice(
+                [(255, 100, 0), (255, 150, 0), (255, 200, 0), (200, 50, 0)]
+            )
+            self.particles.append({"x": px, "y": py, "vx": vx, "vy": vy, "color": color})
+
+    def update(self) -> None:
+        """Update explosion animation state."""
+        self.life -= 1
+        self.radius = self.max_radius * (self.life / self.max_life)
+
+        # Update particles
+        for p in self.particles:
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+            p["vy"] += 0.3  # Gravity effect on particles
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """Draw the explosion effect."""
+        if self.life <= 0:
+            return
+
+        # Draw mushroom cloud layers
+        progress = 1 - (self.life / self.max_life)
+
+        # Main explosion circle (bright orange/yellow)
+        pygame.draw.circle(
+            surface,
+            (255, 150, 0),
+            (self.x, self.y),
+            int(self.radius),
+            2,
+        )
+
+        # Mushroom cloud stem (expanding upward)
+        stem_height = int(self.radius * 1.5 * progress)
+        line_width = max(1, int(8 * (self.life / self.max_life)))
+        pygame.draw.line(
+            surface,
+            (200, 100, 0),
+            (self.x, self.y),
+            (self.x, self.y - stem_height),
+            line_width,
+        )
+
+        # Mushroom cap layers
+        cap_y = self.y - stem_height
+        cap_radius = int(self.radius * 0.8 * progress)
+        if cap_radius > 5:
+            pygame.draw.circle(
+                surface, (255, 120, 0), (self.x, cap_y), cap_radius, 1
+            )
+            pygame.draw.circle(
+                surface, (200, 80, 0), (self.x - cap_radius // 2, cap_y), cap_radius // 2, 1
+            )
+            pygame.draw.circle(
+                surface, (200, 80, 0), (self.x + cap_radius // 2, cap_y), cap_radius // 2, 1
+            )
+
+        # Draw explosion particles
+        for p in self.particles:
+            size = max(2, int(5 * (self.life / self.max_life)))
+            pygame.draw.circle(surface, p["color"], (int(p["x"]), int(p["y"])), size)
+
+
+def draw_nuke(surface: pygame.Surface, x: int, y: int) -> None:
+    """Draw a nuke bird (rectangle with semicircle on top).
+    
+    Args:
+        surface: The pygame surface to draw on.
+        x: Center X position.
+        y: Center Y position.
+    """
+    # Rectangle body of the nuke (yellow-green)
+    rect_width = 28
+    rect_height = 32
+    rect_x = x - rect_width // 2
+    rect_y = y - rect_height // 2
+    pygame.draw.rect(surface, (200, 220, 0), (rect_x, rect_y, rect_width, rect_height))
+    pygame.draw.rect(surface, (150, 170, 0), (rect_x, rect_y, rect_width, rect_height), 2)
+    
+    # Semicircle on top (mushroom cloud head - orange)
+    semi_radius = 16
+    semi_center_x = x
+    semi_center_y = y - rect_height // 2
+    # Draw semicircle as an arc
+    pygame.draw.circle(surface, (255, 140, 0), (semi_center_x, semi_center_y), semi_radius, 0)
+    pygame.draw.circle(surface, (200, 100, 0), (semi_center_x, semi_center_y), semi_radius, 2)
 
 
 def compute_trajectory_points(
@@ -394,20 +509,18 @@ def sling_action() -> None:
     if is_clamped:
         # Mouse is beyond max rope length: clamp bird to rope end
         pux, puy = pu
-        pux -= 20  # Center the sprite horizontally
-        puy -= 20  # Center the sprite vertically
-        pul = pux, puy
-        screen.blit(redbird, pul)
+        # Draw nuke at clamped position (convert from sprite offset to center)
+        draw_nuke(screen, pux, puy)
         # Draw the extended rope from the sling arms to the clamped position
         pu2 = (uv1 * bigger_rope + sling_x, uv2 * bigger_rope + sling_y)
         pygame.draw.line(screen, (0, 0, 0), (sling2_x, sling2_y), pu2, 5)
-        screen.blit(redbird, pul)
+        draw_nuke(screen, pux, puy)
         pygame.draw.line(screen, (0, 0, 0), (sling_x, sling_y), pu2, 5)
     else:
         # Mouse is within rope length: bird follows the mouse
         pu3 = (uv1 * visual_distance + sling_x, uv2 * visual_distance + sling_y)
         pygame.draw.line(screen, (0, 0, 0), (sling2_x, sling2_y), pu3, 5)
-        screen.blit(redbird, (x_redbird, y_redbird))
+        draw_nuke(screen, x_mouse, y_mouse)
         pygame.draw.line(screen, (0, 0, 0), (sling_x, sling_y), pu3, 5)
 
     # Calculate the launch angle using arctangent of the pull direction
@@ -537,6 +650,9 @@ def restart() -> None:
         space.remove(beam.shape, beam.shape.body)
         beams.remove(beam)
 
+    # Clear any active explosions
+    explosions.clear()
+
 
 # ===========================================================================
 # Collision Handler Callbacks
@@ -545,11 +661,63 @@ def restart() -> None:
 # Collision types: 0 = Bird, 1 = Pig, 2 = Wood, 3 = Static environment
 
 
+def apply_shockwave(explosion_pos: pm.Vec2d, explosion_radius: float, force_magnitude: float = 5000.0) -> None:
+    """Apply a DEVASTATING shockwave force to nearby objects in the physics space.
+    
+    This creates a powerful explosion that sends all nearby objects flying in all directions.
+    
+    Args:
+        explosion_pos: Center position (pymunk coordinates) of the explosion.
+        explosion_radius: Radius of the shockwave effect.
+        force_magnitude: Base force magnitude at the center (VERY HIGH).
+    """
+    # Apply force to pigs
+    for pig in pigs:
+        distance_vec = pig.body.position - explosion_pos
+        distance = distance_vec.length
+        if distance < explosion_radius and distance > 0:
+            # Calculate force magnitude (stronger closer to center)
+            force_scale = max(0.3, 1.0 - (distance / explosion_radius))
+            force = force_scale * force_magnitude
+            # Calculate direction from explosion to object
+            direction = distance_vec.normalized()
+            # Apply massive linear velocity
+            pig.body.velocity = direction * force / pig.body.mass
+            # Apply angular velocity for spin
+            pig.body.angular_velocity = 15.0
+    
+    # Apply force to columns
+    for column in columns:
+        distance_vec = column.body.position - explosion_pos
+        distance = distance_vec.length
+        if distance < explosion_radius and distance > 0:
+            force_scale = max(0.3, 1.0 - (distance / explosion_radius))
+            force = force_scale * force_magnitude
+            direction = distance_vec.normalized()
+            # Apply massive linear velocity (replace instead of add)
+            column.body.velocity = direction * force / column.body.mass
+            # Apply angular velocity for dramatic spinning
+            column.body.angular_velocity = 20.0
+    
+    # Apply force to beams
+    for beam in beams:
+        distance_vec = beam.body.position - explosion_pos
+        distance = distance_vec.length
+        if distance < explosion_radius and distance > 0:
+            force_scale = max(0.3, 1.0 - (distance / explosion_radius))
+            force = force_scale * force_magnitude
+            direction = distance_vec.normalized()
+            # Apply massive linear velocity (replace instead of add)
+            beam.body.velocity = direction * force / beam.body.mass
+            # Apply angular velocity for dramatic spinning
+            beam.body.angular_velocity = 25.0
+
+
 def post_solve_bird_pig(arbiter, space, _) -> None:
     """Handle collision aftermath between a bird and a pig.
 
-    When a bird hits a pig, the pig is immediately destroyed and
-    the player earns 10,000 points per pig eliminated.
+    When a bird hits a pig, the pig is immediately destroyed,
+    an explosion effect is created, the bird disappears, and the player earns 10,000 points.
 
     Args:
         arbiter: Pymunk Arbiter containing collision data.
@@ -561,12 +729,21 @@ def post_solve_bird_pig(arbiter, space, _) -> None:
     bird_body = a.body
     pig_body = b.body
 
-    # Draw collision debug circles at impact positions
+    # Convert collision point to pygame screen coordinates
     p = to_pygame(bird_body.position)
     p2 = to_pygame(pig_body.position)
-    r = 30
-    pygame.draw.circle(surface, BLACK, p, r, 4)
-    pygame.draw.circle(surface, RED, p2, r, 4)
+
+    # Create explosion effect at the pig's position
+    explosion = Explosion(p2[0], p2[1], radius=100)
+    explosions.append(explosion)
+    
+    # Apply DEVASTATING shockwave to nearby objects
+    apply_shockwave(pig_body.position, 250.0, force_magnitude=8000.0)
+
+    # Debug circles (reduced size for cleaner visuals)
+    r = 15
+    pygame.draw.circle(surface, BLACK, p, r, 2)
+    pygame.draw.circle(surface, RED, p2, r, 2)
 
     # Find and remove the pig that was hit
     pigs_to_remove = []
@@ -580,6 +757,16 @@ def post_solve_bird_pig(arbiter, space, _) -> None:
     for pig in pigs_to_remove:
         space.remove(pig.shape, pig.shape.body)
         pigs.remove(pig)
+    
+    # Remove the bird that hit the pig
+    birds_to_remove = []
+    for bird in birds:
+        if bird_body == bird.body:
+            birds_to_remove.append(bird)
+    
+    for bird in birds_to_remove:
+        space.remove(bird.shape, bird.shape.body)
+        birds.remove(bird)
 
 
 def post_solve_bird_wood(arbiter, space, _) -> None:
@@ -587,6 +774,7 @@ def post_solve_bird_wood(arbiter, space, _) -> None:
 
     Wooden beams and columns are destroyed only if the collision impulse
     exceeds a threshold of 1100 units. Each destroyed piece earns 5,000 points.
+    The bird disappears and a shockwave is applied to nearby objects.
 
     Args:
         arbiter: Pymunk Arbiter containing collision data and impulse info.
@@ -594,11 +782,12 @@ def post_solve_bird_wood(arbiter, space, _) -> None:
         _: User data (unused).
     """
     poly_to_remove = []
+    a, b = arbiter.shapes  # a = bird shape, b = wood shape
+    bird_body = a.body
+    wood_body = b.body
 
     # Only destroy wood if the impact is strong enough
     if arbiter.total_impulse.length > 1100:
-        a, b = arbiter.shapes  # a = bird shape, b = wood shape
-
         # Check if the impacted shape belongs to a column or beam
         for column in columns:
             if b == column.shape:
@@ -618,6 +807,24 @@ def post_solve_bird_wood(arbiter, space, _) -> None:
         space.remove(b, b.body)
         global score
         score += 5000  # Award points for destroying wood
+        
+        # Create explosion effect at the wood's position
+        p2 = to_pygame(wood_body.position)
+        explosion = Explosion(p2[0], p2[1], radius=80)
+        explosions.append(explosion)
+        
+        # Apply DEVASTATING shockwave to nearby objects
+        apply_shockwave(wood_body.position, 220.0, force_magnitude=6500.0)
+    
+    # Remove the bird that hit the wood
+    birds_to_remove = []
+    for bird in birds:
+        if bird_body == bird.body:
+            birds_to_remove.append(bird)
+    
+    for bird in birds_to_remove:
+        space.remove(bird.shape, bird.shape.body)
+        birds.remove(bird)
 
 
 def post_solve_pig_wood(arbiter, space, _) -> None:
@@ -847,9 +1054,8 @@ while running:
         # Convert physics position to screen coordinates and draw
         p = to_pygame(bird.shape.body.position)
         x, y = p
-        x -= 22  # Offset sprite to center on physics body
-        y -= 20
-        screen.blit(redbird, (x, y))
+        # Draw nuke shape instead of sprite
+        draw_nuke(screen, x, y)
 
         # Draw a debug circle around the bird (collision radius)
         pygame.draw.circle(screen, BLUE, p, int(bird.shape.radius), 2)
@@ -870,6 +1076,19 @@ while running:
     for pig in pigs_to_remove:
         space.remove(pig.shape, pig.shape.body)
         pigs.remove(pig)
+
+    # -------------------------------------------------------------------
+    # Update & Draw Explosions
+    # -------------------------------------------------------------------
+    explosions_to_remove = []
+    for explosion in explosions:
+        explosion.update()
+        explosion.draw(screen)
+        if explosion.life <= 0:
+            explosions_to_remove.append(explosion)
+
+    for explosion in explosions_to_remove:
+        explosions.remove(explosion)
 
     # -------------------------------------------------------------------
     # Draw Static Physics Lines (Floor)

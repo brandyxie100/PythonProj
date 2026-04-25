@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 # Constants
 BULLET_SIZE: tuple[int, int] = (40, 40)
-BULLET_SPEED: float = 2.0
+BULLET_SPEED: float = 15.0
 BULLET_OFFSET_X: int = 75
 BULLET_OFFSET_Y: int = -2
 HIT_RADIUS: int = 30

@@ -54,7 +54,7 @@ class Bird:
 
         # Calculate and apply launch impulse
         # Power scales linearly with sling pull distance
-        power: float = distance * 53
+        power: float = distance * 80
         impulse: Vec2d = power * Vec2d(1, 0)  # Base impulse along X-axis
         angle = -angle  # Negate angle (screen Y is inverted vs. pymunk Y)
         body.apply_impulse_at_local_point(impulse.rotated(angle))
