@@ -20,7 +20,7 @@ ENEMY_SPAWN_Y_MIN: int = 0
 ENEMY_SPAWN_Y_MAX: int = 10
 ENEMY_STEP_MIN: float = 1.0
 ENEMY_STEP_MAX: float = 1.5
-ENEMY_FALL_SPEED: float = 2.5
+ENEMY_FALL_SPEED: float = 0.2
 
 
 class Enemy:

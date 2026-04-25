@@ -13,7 +13,7 @@ from config import res
 # Constants
 PLAYER_INITIAL_X: int = 400
 PLAYER_INITIAL_Y: int = 450
-PLAYER_STEP: float = 4.0
+PLAYER_STEP: float = 1.5
 HEALTH_BAR_WIDTH: int = 100
 HEALTH_BAR_HEIGHT: int = 10
 HEALTH_BAR_OFFSET_X: int = 50
