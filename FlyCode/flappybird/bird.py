@@ -602,9 +602,16 @@ def _end_game_if_no_birds() -> None:
         flying = False
 
 # Font for score and game over (Phase 4)
-font_score: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_SCORE, bold=True)
-font_game_over: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_GAME_OVER, bold=True)
-font_restart: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_RESTART)
+# Wrap in try-except to handle corrupted Windows font registry entries
+try:
+    font_score: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_SCORE, bold=True)
+    font_game_over: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_GAME_OVER, bold=True)
+    font_restart: pygame.font.Font = pygame.font.SysFont("arial", FONT_SIZE_RESTART)
+except TypeError:
+    # Fallback for Windows registry issues: use default pygame font
+    font_score = pygame.font.Font(None, FONT_SIZE_SCORE)
+    font_game_over = pygame.font.Font(None, FONT_SIZE_GAME_OVER)
+    font_restart = pygame.font.Font(None, FONT_SIZE_RESTART)
 
 
 def spawn_pipes(
@@ -894,20 +901,12 @@ while run:
     for bird in list(bird_group.sprites()):
         collided = pygame.sprite.spritecollide(bird, pipe_group, False)
         if collided:
-            if ability_active:
-                for p in collided:
-                    try:
-                        p.break_pipe()
-                    except Exception:
-                        p.kill()
-            else:
+            # Bird breaks the pipe instead of dying
+            for p in collided:
                 try:
-                    cx, cy = bird.rect.center
-                    spawn_red_splash(cx, cy)
+                    p.break_pipe()
                 except Exception:
-                    pass
-                bird.kill()
-                _end_game_if_no_birds()
+                    p.kill()
 
     screen.blit(ground_img, (ground_scroll, GROUND_Y))
 
