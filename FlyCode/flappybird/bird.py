@@ -112,6 +112,20 @@ FAST_BTN_HOVER_COLOR: tuple[int, int, int] = (230, 100, 50)
 FAST_BTN_ACTIVE_COLOR: tuple[int, int, int] = (140, 60, 30)
 FAST_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
+# Level-up ability: jump player to score 100
+LEVELUP_COOLDOWN_MS: int = 30000  # 30 seconds cooldown
+LEVELUP_BTN_COLOR: tuple[int, int, int] = (120, 80, 200)
+LEVELUP_BTN_HOVER_COLOR: tuple[int, int, int] = (150, 110, 230)
+LEVELUP_BTN_ACTIVE_COLOR: tuple[int, int, int] = (100, 60, 170)
+LEVELUP_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
+# Billion-level ability: jump player to score 1,000,000,000
+BILLION_COOLDOWN_MS: int = 60000  # 60 seconds cooldown
+BILLION_BTN_COLOR: tuple[int, int, int] = (200, 120, 30)
+BILLION_BTN_HOVER_COLOR: tuple[int, int, int] = (230, 150, 50)
+BILLION_BTN_ACTIVE_COLOR: tuple[int, int, int] = (160, 80, 20)
+BILLION_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
+
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
 RESTART_BTN_HEIGHT: int = 56
@@ -236,6 +250,12 @@ ability_fast_active: bool = False
 ability_fast_end_time: int = 0
 ability_fast_button_rect: pygame.Rect | None = None
 ability_fast_cooldown_until: int = 0
+# Level-up ability state
+ability_levelup_button_rect: pygame.Rect | None = None
+ability_levelup_cooldown_until: int = 0
+# Billion-level ability state
+ability_billion_button_rect: pygame.Rect | None = None
+ability_billion_cooldown_until: int = 0
 # Next pygame tick (ms) when to spawn a duplicate bird; 0 = not scheduled
 duplicate_next_spawn_ms: int = 0
 
@@ -650,12 +670,15 @@ def restart_game(extra_distance: int = 400) -> None:
     # reset ability state and cooldown on restart
     global ability_active, ability_end_time, ability_cooldown_until
     global ability_fast_active, ability_fast_end_time, ability_fast_cooldown_until
+    global ability_levelup_cooldown_until, ability_billion_cooldown_until
     ability_active = False
     ability_end_time = 0
     ability_cooldown_until = 0
     ability_fast_active = False
     ability_fast_end_time = 0
     ability_fast_cooldown_until = 0
+    ability_levelup_cooldown_until = 0
+    ability_billion_cooldown_until = 0
 
     pipe_group.empty()
     pipe_spawn_timer = 0
@@ -708,8 +731,10 @@ def draw_game_over_screen() -> None:
 
 
 def draw_ability_button() -> None:
-    """Draw ability button at the top-right corner and update rect."""
+    """Draw ability buttons (1B, Lv100, Fast, Inv) at the top-right corner and update rect."""
     global ability_button_rect, ability_active, ability_fast_button_rect, ability_fast_active
+    global ability_levelup_button_rect, ability_levelup_cooldown_until
+    global ability_billion_button_rect, ability_billion_cooldown_until
 
     margin = ABILITY_BTN_MARGIN
     spacing = 8
@@ -724,22 +749,40 @@ def draw_ability_button() -> None:
         SCREEN_WIDTH - margin - (ABILITY_BTN_WIDTH + spacing), margin
     )
     hover_fast = ability_fast_button_rect.collidepoint(mouse_pos)
+    # level-up button (left of fast)
+    ability_levelup_button_rect = pygame.Rect(0, 0, ABILITY_BTN_WIDTH, ABILITY_BTN_HEIGHT)
+    ability_levelup_button_rect.topright = (
+        SCREEN_WIDTH - margin - (ABILITY_BTN_WIDTH + spacing) * 2, margin
+    )
+    hover_level = ability_levelup_button_rect.collidepoint(mouse_pos)
+    # billion-level button (left of level)
+    ability_billion_button_rect = pygame.Rect(0, 0, ABILITY_BTN_WIDTH, ABILITY_BTN_HEIGHT)
+    ability_billion_button_rect.topright = (
+        SCREEN_WIDTH - margin - (ABILITY_BTN_WIDTH + spacing) * 3, margin
+    )
+    hover_billion = ability_billion_button_rect.collidepoint(mouse_pos)
 
     now = pygame.time.get_ticks()
 
-    # INV button appearance
-    if ability_active:
-        inv_color = ABILITY_BTN_ACTIVE_COLOR
-        inv_label = "Inv"
+    # BILLION button appearance
+    if now < ability_billion_cooldown_until:
+        billion_color = BILLION_BTN_ACTIVE_COLOR
+        rem_ms = ability_billion_cooldown_until - now
+        rem_s = (rem_ms + 999) // 1000
+        billion_label = f"{rem_s}s"
     else:
-        if now < ability_cooldown_until:
-            inv_color = ABILITY_BTN_ACTIVE_COLOR
-            rem_ms = ability_cooldown_until - now
-            rem_s = (rem_ms + 999) // 1000
-            inv_label = f"{rem_s}s"
-        else:
-            inv_color = ABILITY_BTN_HOVER_COLOR if hover_inv else ABILITY_BTN_COLOR
-            inv_label = "Inv"
+        billion_color = BILLION_BTN_HOVER_COLOR if hover_billion else BILLION_BTN_COLOR
+        billion_label = "Lv1B"
+
+    # LEVELUP button appearance
+    if now < ability_levelup_cooldown_until:
+        level_color = LEVELUP_BTN_ACTIVE_COLOR
+        rem_ms = ability_levelup_cooldown_until - now
+        rem_s = (rem_ms + 999) // 1000
+        level_label = f"{rem_s}s"
+    else:
+        level_color = LEVELUP_BTN_HOVER_COLOR if hover_level else LEVELUP_BTN_COLOR
+        level_label = "Lv100"
 
     # FAST button appearance
     if ability_fast_active:
@@ -755,7 +798,31 @@ def draw_ability_button() -> None:
             fast_color = FAST_BTN_HOVER_COLOR if hover_fast else FAST_BTN_COLOR
             fast_label = "Fast"
 
-    # Draw buttons
+    # INV button appearance
+    if ability_active:
+        inv_color = ABILITY_BTN_ACTIVE_COLOR
+        inv_label = "Inv"
+    else:
+        if now < ability_cooldown_until:
+            inv_color = ABILITY_BTN_ACTIVE_COLOR
+            rem_ms = ability_cooldown_until - now
+            rem_s = (rem_ms + 999) // 1000
+            inv_label = f"{rem_s}s"
+        else:
+            inv_color = ABILITY_BTN_HOVER_COLOR if hover_inv else ABILITY_BTN_COLOR
+            inv_label = "Inv"
+
+    # Draw buttons (left-to-right: 1B, level, fast, inv)
+    pygame.draw.rect(screen, billion_color, ability_billion_button_rect, border_radius=8)
+    bl_text = font_restart.render(billion_label, True, BILLION_BTN_TEXT_COLOR)
+    bl_rect = bl_text.get_rect(center=ability_billion_button_rect.center)
+    screen.blit(bl_text, bl_rect)
+
+    pygame.draw.rect(screen, level_color, ability_levelup_button_rect, border_radius=8)
+    lvl_text = font_restart.render(level_label, True, LEVELUP_BTN_TEXT_COLOR)
+    lvl_rect = lvl_text.get_rect(center=ability_levelup_button_rect.center)
+    screen.blit(lvl_text, lvl_rect)
+
     pygame.draw.rect(screen, fast_color, ability_fast_button_rect, border_radius=8)
     fb_text = font_restart.render(fast_label, True, FAST_BTN_TEXT_COLOR)
     fb_rect = fb_text.get_rect(center=ability_fast_button_rect.center)
@@ -897,8 +964,22 @@ while run:
             )
         # Ability button click (only while playing)
         if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
+            # Billion-level button clicked?
+            if ability_billion_button_rect and ability_billion_button_rect.collidepoint(event.pos):
+                now = pygame.time.get_ticks()
+                if now >= ability_billion_cooldown_until:
+                    score = 1_000_000_000
+                    high_score = max(high_score, score)
+                    ability_billion_cooldown_until = now + BILLION_COOLDOWN_MS
+            # Level-up button clicked?
+            elif ability_levelup_button_rect and ability_levelup_button_rect.collidepoint(event.pos):
+                now = pygame.time.get_ticks()
+                if now >= ability_levelup_cooldown_until:
+                    score = 100
+                    high_score = max(high_score, score)
+                    ability_levelup_cooldown_until = now + LEVELUP_COOLDOWN_MS
             # Fast button clicked?
-            if ability_fast_button_rect and ability_fast_button_rect.collidepoint(event.pos) and not ability_fast_active:
+            elif ability_fast_button_rect and ability_fast_button_rect.collidepoint(event.pos) and not ability_fast_active:
                 now = pygame.time.get_ticks()
                 if now >= ability_fast_cooldown_until:
                     ability_fast_active = True
