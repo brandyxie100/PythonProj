@@ -18,17 +18,17 @@
 #     print()  # New line
     
     # Hollow pyramid (only outline stars)
-# height = 10
-# for i in range(height):
-#     for j in range(height - i - 1):
-#         print(" ", end="")
-#     for k in range(2 * i + 1):
-#         # Star only for first/last row or first/last position
-#         if k == 0 or k == 2*i or i == height-1:
-#             print("*", end="")
-#         else:
-#             print(" ", end="")
-#     print()
+height = 10
+for i in range(height):
+    for j in range(height - i - 1):
+        print(" ", end="")
+    for k in range(2 * i + 1):
+        # Star only for first/last row or first/last position
+        if k == 0 or k == 2*i or i == height-1:
+            print("*", end="")
+        else:
+            print(" ", end="")
+    print()
     
     # Diamond = Upward Pyramid + Inverted Pyramid
 # height = 5
@@ -49,14 +49,14 @@
 #     print(" " * (height - 1) + "*")
     
 # 打印乘法口诀表
-for i in range(1, 10):
-    for j in range(1, i + 1):
-        print(f'{i}*{j}={i * j}', end='\t')
-    print()
+# for i in range(1, 10):
+#     for j in range(1, i + 1):
+#         print(f'{i}*{j}={i * j}', end='\t')
+#     print()
     
-items = [1,2,3,4,5,6,7,8,9]
-string = ""
-for i in items:
-    string += str(i)
-print(string)
+# items = [1,2,3,4,5,6,7,8,9]
+# string = ""
+# for i in items:
+#     string += str(i)
+# print(string)
 
