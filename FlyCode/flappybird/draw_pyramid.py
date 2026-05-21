@@ -18,26 +18,26 @@
 #     print()  # New line
     
     # Hollow pyramid (only outline stars)
-height = 10
-for i in range(height):
-    for j in range(height - i - 1):
-        print(" ", end="")
-    for k in range(2 * i + 1):
-        # Star only for first/last row or first/last position
-        if k == 0 or k == 2*i or i == height-1:
-            print("*", end="")
-        else:
-            print(" ", end="")
-    print()
+# height = 10
+# for i in range(height):
+#     for j in range(height - i - 1):
+#         print(" ", end="")
+#     for k in range(2 * i + 1):
+#         # Star only for first/last row or first/last position
+#         if k == 0 or k == 2*i or i == height-1:
+#             print("*", end="")
+#         else:
+#             print(" ", end="")
+#     print()
     
     # Diamond = Upward Pyramid + Inverted Pyramid
-# height = 5
-# # Top half (upward)
-# for i in range(height):
-#     print(" " * (height - i - 1) + "*" * (2 * i + 1))
-# # Bottom half (inverted)
-# for i in range(height-2, -1, -1):
-#     print(" " * (height - i - 1) + "*" * (2 * i + 1))
+height = 5
+# Top half (upward)
+for i in range(height):
+    print(" " * (height - i - 1) + "*" * (2 * i + 1))
+# Bottom half (inverted)
+for i in range(height-2, -1, -1):
+    print(" " * (height - i - 1) + "*" * (2 * i + 1))
 
 # Simple Christmas Tree (easy version)
 # height = 5
