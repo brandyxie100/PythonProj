@@ -1,10 +1,10 @@
 # please draw pyramid wiht "*" in python
 
-# def draw_pyramid(height):
-#     for i in range(height):
-#         print(" " * (height - i - 1) + "*" * (2 * i + 1))
+def draw_pyramid(height):
+    for i in range(height):
+        print(" " * (height - i - 1) + "*" * (2 * i + 1))
 
-# draw_pyramid(10)
+draw_pyramid(10)
 
 # Draw a hollow square (only border stars)
 # size = 5
@@ -31,13 +31,13 @@
 #     print()
     
     # Diamond = Upward Pyramid + Inverted Pyramid
-height = 5
-# Top half (upward)
-for i in range(height):
-    print(" " * (height - i - 1) + "*" * (2 * i + 1))
-# Bottom half (inverted)
-for i in range(height-2, -1, -1):
-    print(" " * (height - i - 1) + "*" * (2 * i + 1))
+# height = 5
+# # Top half (upward)
+# for i in range(height):
+#     print(" " * (height - i - 1) + "*" * (2 * i + 1))
+# # Bottom half (inverted)
+# for i in range(height-2, -1, -1):
+#     print(" " * (height - i - 1) + "*" * (2 * i + 1))
 
 # Simple Christmas Tree (easy version)
 # height = 5
