@@ -30,13 +30,21 @@ from config import res as _res
 # ---------------------------------------------------------------------------
 SCREEN_WIDTH: int = 800
 SCREEN_HEIGHT: int = 600
-NUMBER_OF_ENEMIES: int = 1000
+NUMBER_OF_ENEMIES: int = 100
+
 COLLISION_RADIUS: int = 40
 BULLET_OFFSCREEN_THRESHOLD: int = -40
 PLAYER_X_MIN: int = -45
 PLAYER_X_MAX: int = 645
 ENEMY_RESET_Y_THRESHOLD: int = 600
 PLAYER_DAMAGE_PER_HIT: int = 10
+AUTO_SHOOT_INTERVAL_MS: int = 120  # milliseconds between automatic shots (lower = faster fire)
+MIN_AUTO_SHOOT_MS: int = 50
+MAX_AUTO_SHOOT_MS: int = 1000
+AUTO_SHOOT_STEP_MS: int = 50
+RAPID_FIRE_KEY = pygame.K_LSHIFT
+RAPID_FIRE_DURATION_MS: int = 2000  # how long rapid-fire lasts when activated (ms)
+RAPID_FIRE_COOLDOWN_MS: int = 3000  # cooldown after rapid-fire ends (ms)
 
 # ---------------------------------------------------------------------------
 # Pygame setup
@@ -44,6 +52,7 @@ PLAYER_DAMAGE_PER_HIT: int = 10
 pygame.init()
 bg: pygame.Surface = pygame.image.load(_res("bg3.jpg"))
 screen: pygame.Surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+font = pygame.font.Font(None, 24)
 
 # Background music (optional; skip if file missing)
 _music_path = _res("background-music.mp3")
@@ -78,7 +87,8 @@ def show_enemies() -> None:
     """Draw and update all enemies; handle collision with player."""
     for e in enemys:
         screen.blit(e.show_ememy(), (e.get_enemy_x(), e.get_enemy_y()))
-        e.change_y()
+        # pass player's X so enemies can occasionally steer/attack toward the ship
+        e.change_y(player.get_player_x())
 
         # Reset enemy when it reaches bottom of screen
         if e.get_enemy_y() > ENEMY_RESET_Y_THRESHOLD:
@@ -119,6 +129,13 @@ def show_bullet(
 def main() -> None:
     """Main game loop."""
     running = True
+    global AUTO_SHOOT_INTERVAL_MS
+    # time (ms) of last automatic shot
+    last_shot_time = pygame.time.get_ticks()
+    # rapid-fire runtime state
+    rapid_fire_mode = False
+    rapid_fire_activated_until = 0
+    rapid_fire_cooldown_until = 0
     while running:
         screen.blit(bg, (1, 2))
 
@@ -134,6 +151,31 @@ def main() -> None:
                     )
                     bullets.append(bullet)
                     print("shoot")
+                # Adjust auto-shoot interval: ']' = faster (decrease ms), '[' = slower (increase ms)
+                if event.key == pygame.K_RIGHTBRACKET:
+                    AUTO_SHOOT_INTERVAL_MS = max(MIN_AUTO_SHOOT_MS, AUTO_SHOOT_INTERVAL_MS - AUTO_SHOOT_STEP_MS)
+                    print(f"Auto-shoot interval: {AUTO_SHOOT_INTERVAL_MS} ms")
+                if event.key == pygame.K_LEFTBRACKET:
+                    AUTO_SHOOT_INTERVAL_MS = min(MAX_AUTO_SHOOT_MS, AUTO_SHOOT_INTERVAL_MS + AUTO_SHOOT_STEP_MS)
+                    print(f"Auto-shoot interval: {AUTO_SHOOT_INTERVAL_MS} ms")
+                # Rapid-fire activation on Shift press (only if not cooling down)
+                if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+                    now = pygame.time.get_ticks()
+                    if now >= rapid_fire_cooldown_until:
+                        rapid_fire_mode = True
+                        rapid_fire_activated_until = now + RAPID_FIRE_DURATION_MS
+                        print("Rapid-fire activated")
+                    else:
+                        remaining = (rapid_fire_cooldown_until - now) / 1000.0
+                        print(f"Rapid-fire cooling down: {remaining:.1f}s")
+            if event.type == pygame.KEYUP:
+                # Stop rapid-fire early on Shift release
+                if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+                    now = pygame.time.get_ticks()
+                    if rapid_fire_mode:
+                        rapid_fire_mode = False
+                        rapid_fire_cooldown_until = now + RAPID_FIRE_COOLDOWN_MS
+                        print("Rapid-fire ended, cooldown started")
 
         # Continuous key input for movement
         keys = pygame.key.get_pressed()
@@ -141,6 +183,37 @@ def main() -> None:
             player.move_right()
         if keys[pygame.K_LEFT]:
             player.move_left()
+
+        # Automatic shooting: fire a bullet every AUTO_SHOOT_INTERVAL_MS
+        # Rapid-fire mode shortens the interval while active; it ends when duration expires or on key release
+        now = pygame.time.get_ticks()
+        # expire rapid-fire automatically when its duration passes
+        if rapid_fire_mode and now >= rapid_fire_activated_until:
+            rapid_fire_mode = False
+            rapid_fire_cooldown_until = now + RAPID_FIRE_COOLDOWN_MS
+            print("Rapid-fire duration ended, cooldown started")
+        effective_interval = MIN_AUTO_SHOOT_MS if rapid_fire_mode else AUTO_SHOOT_INTERVAL_MS
+        if now - last_shot_time >= effective_interval:
+            bullet = Bullet(
+                playerX=player.get_player_x(),
+                playerY=player.get_player_y(),
+            )
+            bullets.append(bullet)
+            last_shot_time = now
+            print("auto-shoot")
+
+        # Draw UI: current auto-shoot interval and brief instructions
+        rapid_text = " (RAPID)" if rapid_fire_mode else ""
+        cd_text = ""
+        if now < rapid_fire_cooldown_until:
+            remaining = (rapid_fire_cooldown_until - now) / 1000.0
+            cd_text = f"   CD: {remaining:.1f}s"
+        info_surf = font.render(
+            f"Auto-shoot: {AUTO_SHOOT_INTERVAL_MS} ms{rapid_text}{cd_text}   ] faster   [ slower   Hold Shift for rapid-fire",
+            True,
+            (255, 255, 255),
+        )
+        screen.blit(info_surf, (10, 10))
 
         # Draw player and health bar
         screen.blit(
