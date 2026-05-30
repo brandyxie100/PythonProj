@@ -1,7 +1,7 @@
 """Stickman Battle — game entities.
 
 Contains all in-game objects:
-  Platform, Tire, HitEffect, Stickman (base), Player, Enemy.
+  Platform, Tire, SpringBall, HitEffect, Stickman (base), Player, Enemy.
 
 Stickmen are drawn procedurally using line-segment anatomy and simple
 sinusoidal limb-animation driven by a walk phase, so no sprite assets are
@@ -192,6 +192,92 @@ class Tire(pygame.sprite.Sprite):
 
 
 # ---------------------------------------------------------------------------
+# SpringBall — fixed round booster that launches stickmen upward
+# ---------------------------------------------------------------------------
+
+class SpringBall(pygame.sprite.Sprite):
+    """Stationary round spring pad that boosts jump height on contact."""
+
+    R: int = c.SPRING_BALL_RADIUS
+
+    def __init__(self, cx: int, cy: int) -> None:
+        """Args:
+            cx: centre x (fixed).
+            cy: centre y (fixed).
+        """
+        super().__init__()
+        d = self.R * 2
+        self.image = pygame.Surface((d, d), pygame.SRCALPHA)
+        # Outer ball
+        pygame.draw.circle(self.image, c.SPRING_COL, (self.R, self.R), self.R)
+        pygame.draw.circle(self.image, c.SPRING_DARK, (self.R, self.R), self.R, 3)
+        # Coil stripes (spring look)
+        for i in range(-2, 3):
+            y_off = self.R + i * 5
+            pygame.draw.arc(
+                self.image, c.SPRING_COIL,
+                (4, y_off - 8, d - 8, 16),
+                math.radians(200), math.radians(340), 2,
+            )
+        # Highlight
+        pygame.draw.circle(self.image, (255, 255, 200), (self.R - 5, self.R - 5), 4)
+
+        self.rect = self.image.get_rect(center=(cx, cy))
+        self._cx = float(cx)
+        self._cy = float(cy)
+        self._pulse = 0.0
+
+    def update(self) -> None:  # type: ignore[override]
+        """Animate a subtle squash-stretch pulse."""
+        self._pulse += 0.14
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw with a gentle bounce animation.
+
+        Args:
+            surf: target surface.
+        """
+        squash = 1.0 + math.sin(self._pulse) * 0.06
+        w = int(self.R * 2 * (1.0 + (1.0 - squash) * 0.5))
+        h = int(self.R * 2 * squash)
+        scaled = pygame.transform.scale(self.image, (max(w, 1), max(h, 1)))
+        rect = scaled.get_rect(center=(int(self._cx), int(self._cy)))
+        surf.blit(scaled, rect)
+
+    def try_boost(self, stickman: Stickman) -> bool:
+        """Launch the stickman upward if they land on or step on the ball.
+
+        Args:
+            stickman: character to boost.
+
+        Returns:
+            True if a boost was applied this frame.
+        """
+        if not stickman.alive:
+            return False
+
+        dx = stickman.x - self._cx
+        dy = stickman.y - self._cy
+        dist = math.hypot(dx, dy)
+        touch_dist = self.R + c.STICK_W / 2 + 6
+
+        # Must be near the ball and falling / standing on it
+        if dist > touch_dist:
+            return False
+        if stickman.vy < -2.0:
+            return False   # moving up fast — ignore
+
+        # Feet should be at or below ball centre (landing from above)
+        if stickman.y > self._cy + self.R + 8:
+            return False
+
+        stickman.vy = c.SPRING_BOOST_VEL
+        stickman.on_ground = False
+        stickman._jumps_left = c.MAX_CONSECUTIVE_JUMPS
+        return True
+
+
+# ---------------------------------------------------------------------------
 # Stickman — base class (drawn procedurally, no sprite images)
 # ---------------------------------------------------------------------------
 
@@ -252,11 +338,14 @@ class Stickman:
         self.walk_phase = 0.0
         self.state = self.ST_IDLE
 
-        # Attack tracking
-        self.attack_phase = 0.0       # 0 → 1 over one swing
-        self.attack_speed = 0.07      # phase units per frame
+        # Attack tracking — full 360° weapon spin
+        self.attack_phase = 0.0       # 0 → 1 over one full rotation
+        self.attack_speed = c.ATTACK_SPIN_SPEED
         self._attack_cd = 0           # remaining cooldown frames
         self._hit_targets: set[int] = set()  # ids hit in this swing
+
+        # Consecutive jumps (ground + mid-air)
+        self._jumps_left = c.MAX_CONSECUTIVE_JUMPS
 
         # Hurt flash
         self._hurt_frames = 0
@@ -295,7 +384,6 @@ class Stickman:
         """
         x, y = self.x, self.y   # feet
         ph   = self.walk_phase
-        atk  = math.sin(self.attack_phase * math.pi) if self.state == self.ST_ATTACK else 0.0
 
         # ---- Vertical chain ----
         hip_y      = y  - (self.U_LEG + self.L_LEG)
@@ -322,13 +410,14 @@ class Stickman:
         r_knee, r_foot = _leg_pts(r_leg_ang)
         l_knee, l_foot = _leg_pts(l_leg_ang)
 
-        # ---- Arms — opposite to legs ----
+        # ---- Arms — opposite to legs; weapon arm spins 360° during attack ----
         arm_swing = -self.facing * math.sin(ph) * 0.35
 
-        if atk > 0.0:
-            # Weapon arm: sweep from ~−30° (back) to +70° (forward strike)
-            w_ang = self.facing * math.radians(-30.0 + atk * 100.0)
-            o_ang = -self.facing * math.radians(15.0 + atk * 8.0)
+        if self.state == self.ST_ATTACK:
+            # Full 360° rotation around the shoulder while attacking
+            spin = self.attack_phase * 2.0 * math.pi
+            w_ang = spin * self.facing
+            o_ang = spin * self.facing + math.pi * 0.85
         else:
             w_ang = self.facing * math.radians(10.0) + arm_swing
             o_ang = -self.facing * math.radians(10.0) - arm_swing
@@ -353,7 +442,6 @@ class Stickman:
             "w_ang":  w_ang,
             "w_elbow": w_elbow, "w_hand": w_hand,
             "o_elbow": o_elbow, "o_hand": o_hand,
-            "atk": atk,
         }
 
     # ------------------------------------------------------------------
@@ -503,6 +591,7 @@ class Stickman:
                 self.y  = float(pr.top)
                 self.vy = 0.0
                 self.on_ground = True
+                self._jumps_left = c.MAX_CONSECUTIVE_JUMPS
 
     def _collide_screen(self) -> None:
         """Bounce off left/right walls; die if falling out of bottom."""
@@ -533,6 +622,22 @@ class Stickman:
         self._attack_cd   = self.weapon["cooldown_f"]
         self._hit_targets = set()
 
+    def try_jump(self) -> bool:
+        """Perform a ground jump or mid-air jump if jumps remain.
+
+        Returns:
+            True if a jump was executed.
+        """
+        if self._jumps_left <= 0:
+            return False
+        if self.on_ground:
+            self.vy = c.JUMP_VEL
+        else:
+            self.vy = c.DOUBLE_JUMP_VEL
+        self._jumps_left -= 1
+        self.on_ground = False
+        return True
+
     def weapon_tip(self) -> tuple[float, float]:
         """Return the world position of the weapon tip (for hit-checking).
 
@@ -546,18 +651,57 @@ class Stickman:
         return wx + math.sin(ang) * reach, wy + math.cos(ang) * reach
 
     def weapon_hitbox(self) -> Optional[pygame.Rect]:
-        """Return a rect covering the weapon arc during an active attack.
+        """Return a circle-bounding rect at the weapon tip during a spin.
 
-        Returns None when not in a damaging part of the swing.
+        The tip sweeps a full 360° arc, so hit detection tracks the tip
+        position each frame rather than a fixed forward swing window.
+
+        Returns:
+            Rect covering the weapon tip hit zone, or None if not attacking.
         """
-        if self.state != self.ST_ATTACK or not (0.15 < self.attack_phase < 0.9):
+        if self.state != self.ST_ATTACK or not (0.04 < self.attack_phase < 0.96):
             return None
-        j   = self._joints()
-        wx, wy = j["w_hand"]
         tx, ty = self.weapon_tip()
-        x1, x2 = min(wx, tx) - 12, max(wx, tx) + 12
-        y1, y2 = min(wy, ty) - 12, max(wy, ty) + 12
-        return pygame.Rect(int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+        r = c.WEAPON_HIT_RADIUS
+        return pygame.Rect(int(tx - r), int(ty - r), r * 2, r * 2)
+
+    def check_weapon_hits(self, targets: list[Stickman], damage: float,
+                          knockback: float) -> list[tuple[Stickman, float, float]]:
+        """Test weapon tip against targets and apply damage on contact.
+
+        Args:
+            targets: stickmen that can be damaged.
+            damage: HP to subtract per hit.
+            knockback: horizontal push strength.
+
+        Returns:
+            List of (target, tip_x, tip_y) for each new hit this frame.
+        """
+        hitbox = self.weapon_hitbox()
+        if hitbox is None:
+            return []
+
+        hits: list[tuple[Stickman, float, float]] = []
+        tx, ty = self.weapon_tip()
+
+        for target in targets:
+            if not target.alive or id(target) == id(self):
+                continue
+            if id(target) in self._hit_targets:
+                continue
+            if not hitbox.colliderect(target.rect):
+                # Also accept tip proximity to body centre for fast spins
+                cx = target.x
+                cy = target.y - target.TOTAL_H / 2
+                if math.hypot(tx - cx, ty - cy) > c.WEAPON_HIT_RADIUS + 28:
+                    continue
+            target.take_damage(damage, source_x=self.x)
+            target.vx += self.facing * knockback
+            target.vy -= 2.5
+            self._hit_targets.add(id(target))
+            hits.append((target, tx, ty))
+
+        return hits
 
     # ------------------------------------------------------------------
     # Damage
@@ -703,8 +847,8 @@ class Player(Stickman):
             moving      = True
 
         jump_held = keys[c.KEY_JUMP] or keys[c.KEY_JUMP2]
-        if jump_held and not self._jump_pressed and self.on_ground:
-            self.vy = c.JUMP_VEL
+        if jump_held and not self._jump_pressed:
+            self.try_jump()
         self._jump_pressed = jump_held
 
         if (keys[c.KEY_ATK] or keys[c.KEY_ATK2]) and self.can_attack():
@@ -830,7 +974,9 @@ class Enemy(Stickman):
 
         # Jump to reach player on higher platform (player y is smaller = higher on screen)
         if dy < -40 and self.on_ground and random.random() < 0.03:
-            self.vy = c.JUMP_VEL
+            self.try_jump()
+        elif dy < -80 and not self.on_ground and self._jumps_left > 0 and random.random() < 0.02:
+            self.try_jump()
 
     # ------------------------------------------------------------------
     # Deliver damage to player when attack connects
@@ -845,13 +991,5 @@ class Enemy(Stickman):
         Returns:
             True if the player was hit this call.
         """
-        if id(player) in self._hit_targets:
-            return False
-        hitbox = self.weapon_hitbox()
-        if hitbox is None:
-            return False
-        if hitbox.colliderect(player.rect):
-            player.take_damage(self.damage, source_x=self.x)
-            self._hit_targets.add(id(player))
-            return True
-        return False
+        hits = self.check_weapon_hits([player], self.damage, self.weapon["knockback"])
+        return len(hits) > 0

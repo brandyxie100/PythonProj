@@ -18,9 +18,13 @@ TITLE: str = "Stickman Battle"
 # ---------------------------------------------------------------------------
 GRAVITY: float = 0.55
 JUMP_VEL: float = -13.5
+DOUBLE_JUMP_VEL: float = -11.5   # mid-air jump (slightly weaker)
+MAX_CONSECUTIVE_JUMPS: int = 2   # ground jump + one extra mid-air jump
 MAX_FALL: float = 16.0
 GROUND_FRICTION: float = 0.80  # velocity multiplied per frame when on ground
 PLAYER_SPEED: float = 3.5
+ATTACK_SPIN_SPEED: float = 0.035  # attack_phase per frame → full 360° swing
+WEAPON_HIT_RADIUS: int = 16       # tip hit-detection radius during spin
 
 # ---------------------------------------------------------------------------
 # Stickman anatomy (pixels) — shared by all drawn stickmen
@@ -43,6 +47,15 @@ STICK_W: int = 32
 # ---------------------------------------------------------------------------
 TIRE_RADIUS: int = 22
 TIRE_BOUNCE: float = 0.65  # coefficient of restitution on bounce
+
+# ---------------------------------------------------------------------------
+# Spring ball — fixed booster pads
+# ---------------------------------------------------------------------------
+SPRING_BALL_RADIUS: int = 18
+SPRING_BOOST_VEL: float = -19.0   # upward launch (stronger than normal jump)
+SPRING_COL       = (255, 210, 50)
+SPRING_DARK      = (220, 150, 20)
+SPRING_COIL      = (255, 240, 120)
 
 # ---------------------------------------------------------------------------
 # Colours

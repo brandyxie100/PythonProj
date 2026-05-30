@@ -44,8 +44,8 @@ python main.py
 |-----|--------|
 | `A` / `←` | Move left |
 | `D` / `→` | Move right |
-| `W` / `↑` | Jump |
-| `Z` or `J` | Attack with weapon |
+| `W` / `↑` | Jump (press again mid-air for a double jump) |
+| `Z` or `J` | Attack — full **360° weapon spin** |
 
 ---
 
@@ -59,6 +59,15 @@ python main.py
 
 ### Tires
 Red circular tires are scattered on the floor. Any stickman that walks into one shoves it away — use them to knock enemies off-balance!
+
+### Double jump
+You can jump twice in a row: once from the ground, and once more while still in the air. Landing on any platform or the floor resets both jumps.
+
+### Spring balls
+Yellow round spring pads are fixed in place on the floor and on platforms. Step on one to launch much higher than a normal jump — and your double jump is refreshed when you bounce!
+
+### 360° weapon attacks
+Press attack and your weapon arm spins a full circle. The weapon **tip** is tracked each frame; any enemy the tip touches during the spin takes damage and knockback. An orange burst appears on impact.
 
 ---
 
@@ -89,13 +98,13 @@ Player always starts with the **Sword**. Enemies are equipped based on difficult
 The single room is 900 × 600 pixels and contains:
 
 ```
-       [  upper-centre  ]
+       [  upper-centre + spring ]
 
 [ left-ledge ]           [ right-ledge ]
 
-  [ mid-left ]                   [ mid-right ]
+  [ mid-left + spring ]         [ mid-right + spring ]
 
-[================= FLOOR ==================]
+[========= FLOOR + centre spring =========]
 ```
 
 - **Floor** — full-width at the bottom  
@@ -116,6 +125,7 @@ stickman_battle/
 │   ├── HitEffect   # Short-lived orange burst at weapon impact
 │   ├── Platform    # Static ledge (dark-blue fill, cyan edge)
 │   ├── Tire        # Bouncy red circle with rolling animation
+│   ├── SpringBall  # Fixed yellow booster pad (launches stickmen upward)
 │   ├── Stickman    # Base class — procedural drawing + physics + combat
 │   ├── Player      # Keyboard-controlled blue stickman
 │   └── Enemy       # AI-controlled red stickman (chase → attack → back-off)
@@ -137,11 +147,14 @@ stickman_battle/
 ### Procedural stickman drawing
 Every stickman is rendered frame-by-frame using `pygame.draw.line` and `pygame.draw.circle`. No PNG sprites are loaded. A `_joints()` method computes every body-segment position from:
 - `walk_phase` — sinusoidal pendulum swing for legs and arms while moving
-- `attack_phase` — arm sweeps from ~−30° to +70° during a weapon swing
+- `attack_phase` — weapon arm rotates a full **360°** during an attack swing
 - `facing` — mirrors the arm/weapon direction when the character turns
 
+### Combat hit detection
+During a spin attack, a circular hit zone follows the **weapon tip** every frame. If the tip overlaps an enemy (or passes within proximity at high spin speed), damage and knockback are applied once per target per swing.
+
 ### Physics
-Simple Euler integration: gravity adds to `vy` each frame; stickmen land on platforms by checking feet-crossing of platform top surface. Tires get their own bounce coefficient (0.65) and rolling friction.
+Simple Euler integration: gravity adds to `vy` each frame; stickmen land on platforms by checking feet-crossing of platform top surface. Tires get their own bounce coefficient (0.65) and rolling friction. Spring balls apply a fixed upward velocity (`SPRING_BOOST_VEL`) and reset consecutive jump count.
 
 ### Enemy AI state machine
 ```

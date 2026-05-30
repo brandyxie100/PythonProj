@@ -10,7 +10,8 @@ Scenes:
 
 Controls (in-game):
     A / ← → move left        D / → → move right
-    W / ↑  → jump             Z / J → attack
+    W / ↑  → jump (press again mid-air for double jump)
+    Z / J → attack (360° weapon spin)
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Optional
 import pygame
 
 import config as c
-from entities import Enemy, HitEffect, Platform, Player, Stickman, Tire
+from entities import Enemy, HitEffect, Platform, Player, SpringBall, Stickman, Tire
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +134,8 @@ class MenuScene:
         # Controls legend
         controls = [
             "A / ←  Move left       D / →  Move right",
-            "W / ↑  Jump            Z / J  Attack",
+            "W / ↑  Jump (double-tap mid-air for extra height)",
+            "Z / J  Attack — 360° weapon spin",
         ]
         for i, line in enumerate(controls):
             txt = self._font_ctrl.render(line, True, (160, 190, 220))
@@ -225,6 +227,14 @@ class GameScene:
         for tx in tire_xs:
             self._tires.append(Tire(tx, floor_y - c.TIRE_RADIUS))
 
+        # ---- Spring balls (fixed boost pads) ----
+        self._springs: list[SpringBall] = [
+            SpringBall(c.SCREEN_W // 2, floor_y - c.SPRING_BALL_RADIUS),
+            SpringBall(190, 410 - c.SPRING_BALL_RADIUS),
+            SpringBall(710, 410 - c.SPRING_BALL_RADIUS),
+            SpringBall(450, 280 - c.SPRING_BALL_RADIUS),
+        ]
+
         # ---- Effects ----
         self._effects: list[HitEffect] = []
 
@@ -311,34 +321,39 @@ class GameScene:
         for tire in self._tires:
             tire.update(self._platforms)
 
+        # Spring balls (pulse animation only — position is fixed)
+        for spring in self._springs:
+            spring.update()
+
         # Effects
         for fx in list(self._effects):
             fx.update()
             if not fx.alive():
                 self._effects.remove(fx)
 
-        # --- Collision: player attacks enemies ---
+        # --- Collision: player weapon hits enemies ---
         dmg_mult = self._cfg["player_damage_mult"]
-        phitbox  = self._player.weapon_hitbox()
-        if phitbox:
-            for enemy in self._enemies:
-                if id(enemy) in self._player._hit_targets:
-                    continue
-                if enemy.alive and phitbox.colliderect(enemy.rect):
-                    base_dmg = self._player.weapon["damage"] * dmg_mult
-                    knockback = self._player.weapon["knockback"]
-                    enemy.take_damage(base_dmg, source_x=self._player.x)
-                    enemy.vx += self._player.facing * knockback
-                    enemy.vy -= 2.5
-                    self._player._hit_targets.add(id(enemy))
-                    tip = self._player.weapon_tip()
-                    self._effects.append(HitEffect(int(tip[0]), int(tip[1])))
+        base_dmg = self._player.weapon["damage"] * dmg_mult
+        knockback = self._player.weapon["knockback"]
+        for _target, tip_x, tip_y in self._player.check_weapon_hits(
+            self._enemies, base_dmg, knockback
+        ):
+            self._effects.append(HitEffect(int(tip_x), int(tip_y)))
 
         # --- Collision: enemies attack player ---
         for enemy in self._enemies:
             if not enemy.alive:
                 continue
-            enemy.check_hit_player(self._player)
+            if enemy.check_hit_player(self._player):
+                tip = enemy.weapon_tip()
+                self._effects.append(HitEffect(int(tip[0]), int(tip[1])))
+
+        # --- Spring ball boosts ---
+        for sm in [self._player] + self._enemies:
+            if not sm.alive:
+                continue
+            for spring in self._springs:
+                spring.try_boost(sm)
 
         # --- Stickman–tire interaction ---
         for sm in [self._player] + self._enemies:
@@ -382,6 +397,10 @@ class GameScene:
         # Tires
         for tire in self._tires:
             surf.blit(tire.image, tire.rect)
+
+        # Spring balls (drawn before characters so feet appear on top)
+        for spring in self._springs:
+            spring.draw(surf)
 
         # Enemies
         for enemy in self._enemies:
@@ -430,7 +449,10 @@ class GameScene:
         surf.blit(wpn_txt, (10, c.SCREEN_H - 28))
 
         # Controls reminder (bottom-right, small)
-        ctrl_txt = self._font_sm.render("A/D: Move  W: Jump  Z/J: Attack", True, (140, 170, 200))
+        ctrl_txt = self._font_sm.render(
+            "A/D: Move  W: Jump×2  Z/J: Spin Attack  |  Yellow springs boost you",
+            True, (140, 170, 200),
+        )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))
 
     def _draw_result_overlay(self, surf: pygame.Surface) -> None:
