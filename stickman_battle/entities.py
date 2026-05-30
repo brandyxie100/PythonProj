@@ -278,6 +278,202 @@ class SpringBall(pygame.sprite.Sprite):
 
 
 # ---------------------------------------------------------------------------
+# Arrow — projectile fired from the bow
+# ---------------------------------------------------------------------------
+
+class Arrow:
+    """Flying arrow projectile with light gravity arc."""
+
+    HIT_R: int = 8
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        vx: float,
+        vy: float,
+        damage: float,
+        knockback: float,
+        source_x: float,
+    ) -> None:
+        """Args:
+            x: spawn x.
+            y: spawn y.
+            vx: horizontal speed.
+            vy: vertical speed.
+            damage: HP damage on hit.
+            knockback: push strength.
+            source_x: shooter x (for knockback direction).
+        """
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.damage = damage
+        self.knockback = knockback
+        self.source_x = source_x
+        self.alive = True
+        self._angle = math.atan2(vy, vx)
+
+    def update(self) -> None:
+        """Step flight physics; kill when off-screen."""
+        self.vy = min(self.vy + c.ARROW_GRAVITY, c.MAX_FALL)
+        self.x += self.vx
+        self.y += self.vy
+        self._angle = math.atan2(self.vy, self.vx)
+        if (self.x < -20 or self.x > c.SCREEN_W + 20 or
+                self.y < -40 or self.y > c.SCREEN_H + 40):
+            self.alive = False
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw arrow shaft and head.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        length = 18
+        ux = math.cos(self._angle)
+        uy = math.sin(self._angle)
+        tail_x = self.x - ux * length
+        tail_y = self.y - uy * length
+        pygame.draw.line(surf, (210, 180, 120), _ip(tail_x, tail_y), _ip(self.x, self.y), 2)
+        tip_x = self.x + ux * 6
+        tip_y = self.y + uy * 6
+        pygame.draw.polygon(
+            surf, (200, 200, 210),
+            [_ip(self.x, self.y), _ip(tip_x - uy * 4, tip_y + ux * 4),
+             _ip(tip_x + uy * 4, tip_y - ux * 4)],
+        )
+
+    def try_hit(self, target: Stickman) -> bool:
+        """Damage target if arrow tip overlaps their body.
+
+        Args:
+            target: stickman to test.
+
+        Returns:
+            True if a hit was registered (arrow is consumed).
+        """
+        if not self.alive or not target.alive:
+            return False
+        cx = target.x
+        cy = target.y - target.TOTAL_H / 2
+        if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
+            return False
+        target.take_damage(self.damage, source_x=self.source_x)
+        target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
+        target.vy -= 1.5
+        self.alive = False
+        return True
+
+
+# ---------------------------------------------------------------------------
+# BowPickup — timed bow + arrow set with shiny spawn animation
+# ---------------------------------------------------------------------------
+
+class BowPickup:
+    """World pickup: bow plus 20 arrows, despawns after a 10-second countdown."""
+
+    def __init__(self, x: float, y: float) -> None:
+        """Args:
+            x: centre x on the arena.
+            y: feet-level y (pickup floats above this point).
+        """
+        self.x = x
+        self.y = y - 36          # float above ground
+        self._timer = c.BOW_PICKUP_DURATION_F
+        self._shine_phase = random.uniform(0, math.tau)
+        self._bob_phase = random.uniform(0, math.tau)
+
+    @property
+    def active(self) -> bool:
+        """Return True while the pickup is still on the field."""
+        return self._timer > 0
+
+    @property
+    def seconds_left(self) -> int:
+        """Whole seconds remaining before despawn."""
+        return max(0, math.ceil(self._timer / c.FPS))
+
+    def update(self) -> None:
+        """Tick countdown and animation phases."""
+        self._timer -= 1
+        self._shine_phase += 0.12
+        self._bob_phase += 0.08
+
+    def try_collect(self, player: Player) -> bool:
+        """Give the bow set to the player if they touch the pickup.
+
+        Args:
+            player: the human stickman.
+
+        Returns:
+            True if collected this frame.
+        """
+        if not self.active:
+            return False
+        bob = math.sin(self._bob_phase) * 4
+        cy = self.y + bob
+        dist = math.hypot(player.x - self.x, player.y - cy - 20)
+        if dist > c.BOW_PICKUP_RADIUS + c.STICK_W:
+            return False
+        player.equip_bow(c.BOW_ARROWS_PER_SET)
+        self._timer = 0
+        return True
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Render shiny bow pickup with countdown.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.active:
+            return
+
+        bob = math.sin(self._bob_phase) * 4
+        cx, cy = int(self.x), int(self.y + bob)
+        pulse = 0.5 + 0.5 * math.sin(self._shine_phase * 2)
+
+        # Outer glow rings (shiny animation)
+        for i in range(3):
+            r = int(c.BOW_PICKUP_RADIUS + 10 + i * 8 + pulse * 6)
+            alpha = int(90 - i * 25)
+            glow = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*c.BOW_GLOW, alpha), (r, r), r)
+            surf.blit(glow, glow.get_rect(center=(cx, cy)))
+
+        # Rotating sparkles
+        for i in range(6):
+            ang = self._shine_phase + i * (math.tau / 6)
+            sx = cx + math.cos(ang) * (c.BOW_PICKUP_RADIUS + 6)
+            sy = cy + math.sin(ang) * (c.BOW_PICKUP_RADIUS + 6)
+            sparkle_col = (255, 255, 200) if i % 2 == 0 else (255, 220, 80)
+            pygame.draw.circle(surf, sparkle_col, _ip(sx, sy), 3)
+
+        # Bow shape
+        bow_rect = pygame.Rect(cx - 14, cy - 18, 28, 36)
+        pygame.draw.arc(surf, c.BOW_COL, bow_rect, math.radians(70), math.radians(290), 4)
+        pygame.draw.line(surf, c.BOW_STRING, (cx, cy - 16), (cx, cy + 16), 2)
+
+        # Arrow bundle indicator
+        pygame.draw.line(surf, (210, 180, 120), (cx + 8, cy - 10), (cx + 22, cy - 4), 2)
+        pygame.draw.line(surf, (210, 180, 120), (cx + 8, cy), (cx + 20, cy + 2), 2)
+
+        # Label + countdown
+        font = pygame.font.SysFont("Arial", 16, bold=True)
+        label = font.render(f"Bow x{c.BOW_ARROWS_PER_SET}", True, c.WHITE)
+        surf.blit(label, label.get_rect(midbottom=(cx, cy - 34)))
+
+        timer_font = pygame.font.SysFont("Arial", 20, bold=True)
+        secs = self.seconds_left
+        timer_col = (255, 220, 80) if secs <= 3 else (180, 230, 255)
+        timer_txt = timer_font.render(f"{secs}s", True, timer_col)
+        surf.blit(timer_txt, timer_txt.get_rect(midtop=(cx, cy + 26)))
+
+
+# ---------------------------------------------------------------------------
 # Stickman — base class (drawn procedurally, no sprite images)
 # ---------------------------------------------------------------------------
 
@@ -545,6 +741,24 @@ class Stickman:
             pick_pts = [_ip(mid_x, mid_y), _ip(tip2_x, tip2_y), _ip(base_x, base_y)]
             pygame.draw.polygon(surf, col, pick_pts)
             pygame.draw.polygon(surf, gcol, pick_pts, 2)
+
+        elif name == "bow":
+            # Curved bow held in weapon hand
+            hand_x, hand_y = int(wx), int(wy)
+            bow_h = 28
+            perp_x = -uy * 10 * self.facing
+            perp_y = ux * 10 * self.facing
+            top = (hand_x + perp_x, hand_y - bow_h // 2 + perp_y * 0.3)
+            bot = (hand_x + perp_x, hand_y + bow_h // 2 + perp_y * 0.3)
+            back = (hand_x - self.facing * 6, hand_y)
+            pygame.draw.lines(surf, col, False, [_ip(*top), _ip(*back), _ip(*bot)], 3)
+            pygame.draw.line(surf, gcol, _ip(*top), _ip(*bot), 1)
+            # Nocked arrow when idle
+            if self.state != self.ST_ATTACK:
+                nock_x = hand_x + self.facing * reach * 0.6
+                nock_y = hand_y
+                tip_n = (nock_x + self.facing * 14, nock_y)
+                pygame.draw.line(surf, (210, 180, 120), _ip(nock_x, nock_y), _ip(*tip_n), 2)
 
     def _draw_hp(self, surf: pygame.Surface, head: tuple) -> None:
         """Draw health bar above the stickman's head.
@@ -822,6 +1036,62 @@ class Player(Stickman):
         super().__init__(x, y, c.BLUE_COL, health, weapon_name)
         self.facing = 1
         self._jump_pressed = False   # for edge-triggered jump
+        self._stored_melee = weapon_name
+        self._arrows_left = 0
+        self._shoot_pressed = False
+        self._pending_shot = False
+
+    def equip_bow(self, arrow_count: int) -> None:
+        """Switch to bow and load arrows.
+
+        Args:
+            arrow_count: number of arrows in this set.
+        """
+        if self.weapon_name != "bow":
+            self._stored_melee = self.weapon_name
+        self.weapon_name = "bow"
+        self.weapon = c.WEAPONS["bow"]
+        self._arrows_left = arrow_count
+
+    def equip_melee(self) -> None:
+        """Revert to the last melee weapon when arrows run out."""
+        self.weapon_name = self._stored_melee
+        self.weapon = c.WEAPONS[self._stored_melee]
+        self._arrows_left = 0
+
+    def is_using_bow(self) -> bool:
+        """Return True when the bow is the active weapon."""
+        return self.weapon_name == "bow" and self._arrows_left > 0
+
+    def try_fire_arrow(self) -> Optional[Arrow]:
+        """Launch one arrow if bow is equipped and cooldown allows.
+
+        Returns:
+            New Arrow instance, or None if unable to fire.
+        """
+        if not self.is_using_bow() or self._attack_cd > 0:
+            return None
+        if self.state in (self.ST_DEAD, self.ST_HURT):
+            return None
+
+        self._attack_cd = self.weapon["cooldown_f"]
+        self._arrows_left -= 1
+
+        j = self._joints()
+        wx, wy = j["w_hand"]
+        speed = c.ARROW_SPEED
+        # Slight upward arc for readability
+        vx = self.facing * speed
+        vy = -2.0
+        arrow = Arrow(
+            wx + self.facing * 8, wy, vx, vy,
+            self.weapon["damage"], self.weapon["knockback"], self.x,
+        )
+
+        if self._arrows_left <= 0:
+            self.equip_melee()
+
+        return arrow
 
     def handle_input(self, keys: pygame.key.ScancodeWrapper) -> None:
         """Read keyboard state and move / jump / attack accordingly.
@@ -851,8 +1121,24 @@ class Player(Stickman):
             self.try_jump()
         self._jump_pressed = jump_held
 
-        if (keys[c.KEY_ATK] or keys[c.KEY_ATK2]) and self.can_attack():
-            self.start_attack()
+        atk_held = keys[c.KEY_ATK] or keys[c.KEY_ATK2]
+        if atk_held and not self._shoot_pressed:
+            if self.is_using_bow():
+                self._pending_shot = True
+            elif self.can_attack():
+                self.start_attack()
+        self._shoot_pressed = atk_held
+
+    def consume_shot(self) -> Optional[Arrow]:
+        """Fire a pending arrow request (called once per frame from GameScene).
+
+        Returns:
+            Arrow if fired, else None.
+        """
+        if not self._pending_shot:
+            return None
+        self._pending_shot = False
+        return self.try_fire_arrow()
 
     def update(self, platforms: list[Platform]) -> None:
         """Step player physics and animation.

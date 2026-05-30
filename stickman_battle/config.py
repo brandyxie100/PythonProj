@@ -102,6 +102,22 @@ KEY_ATK   = pygame.K_z
 KEY_ATK2  = pygame.K_j
 
 # ---------------------------------------------------------------------------
+# Bow & arrows — ranged pickup weapon
+# ---------------------------------------------------------------------------
+BOW_PICKUP_DURATION_F: int = FPS * 10   # 10-second countdown
+BOW_ARROWS_PER_SET: int = 20
+BOW_SPAWN_CHANCE: float = 0.85          # chance to spawn after an enemy kill
+BOW_PICKUP_RADIUS: int = 28
+ARROW_SPEED: float = 14.0
+ARROW_GRAVITY: float = 0.12
+ARROW_DAMAGE: float = 15.0
+ARROW_KNOCKBACK: float = 3.0
+BOW_COL = (160, 110, 55)
+BOW_STRING = (220, 220, 220)
+BOW_SHINE = (255, 240, 120)
+BOW_GLOW = (255, 200, 50)
+
+# ---------------------------------------------------------------------------
 # Weapons: name → attribute dict
 # ---------------------------------------------------------------------------
 WEAPONS: dict[str, dict] = {
@@ -131,6 +147,15 @@ WEAPONS: dict[str, dict] = {
         damage=16.0,
         cooldown_f=38,
         knockback=5.5,
+    ),
+    "bow": dict(
+        label="Bow",
+        color=BOW_COL,
+        guard_color=BOW_STRING,
+        reach=36,
+        damage=ARROW_DAMAGE,
+        cooldown_f=22,
+        knockback=ARROW_KNOCKBACK,
     ),
 }
 

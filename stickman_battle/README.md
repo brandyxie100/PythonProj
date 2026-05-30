@@ -45,7 +45,20 @@ python main.py
 | `A` / `←` | Move left |
 | `D` / `→` | Move right |
 | `W` / `↑` | Jump (press again mid-air for a double jump) |
-| `Z` or `J` | Attack — full **360° weapon spin** |
+| `Z` or `J` | Melee **360° spin** or **shoot bow** (when equipped) |
+
+---
+
+## Bow & Arrows (ranged pickup)
+
+When you defeat an enemy, a **bow set** may spawn at a random spot on the arena (85% chance):
+
+- Glowing golden animation with rotating sparkles
+- **10-second countdown** — grab it before it vanishes!
+- Each set includes **20 arrows**
+- Walk into the pickup to equip the bow
+- Press `Z` / `J` to fire arrows at enemies (ranged damage + knockback)
+- When arrows run out, you automatically switch back to your melee weapon
 
 ---
 
@@ -88,8 +101,9 @@ Press attack and your weapon arm spins a full circle. The weapon **tip** is trac
 | Sword   | 48 px | 12     | 30 frames | 4      | Long thin blade + crossguard |
 | Hammer  | 34 px | 22     | 50 frames | 8      | Short handle + block head |
 | Pickaxe | 42 px | 16     | 38 frames | 5.5    | Handle + asymmetric pick head |
+| Bow     | ranged | 15 (arrow) | 22 frames | 3   | Pickup only — 20 arrows per set |
 
-Player always starts with the **Sword**. Enemies are equipped based on difficulty (Easy: sword only; Normal: sword + pickaxe; Hard: all three).
+Player always starts with the **Sword**. Enemies are equipped based on difficulty (Easy: sword only; Normal: sword + pickaxe; Hard: all three). The **Bow** is only available as a timed pickup after kills.
 
 ---
 
@@ -126,6 +140,8 @@ stickman_battle/
 │   ├── Platform    # Static ledge (dark-blue fill, cyan edge)
 │   ├── Tire        # Bouncy red circle with rolling animation
 │   ├── SpringBall  # Fixed yellow booster pad (launches stickmen upward)
+│   ├── Arrow       # Bow projectile with light gravity arc
+│   ├── BowPickup   # Timed shiny bow+arrow pickup (10 s countdown)
 │   ├── Stickman    # Base class — procedural drawing + physics + combat
 │   ├── Player      # Keyboard-controlled blue stickman
 │   └── Enemy       # AI-controlled red stickman (chase → attack → back-off)

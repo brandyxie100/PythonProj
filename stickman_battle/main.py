@@ -24,7 +24,7 @@ from typing import Optional
 import pygame
 
 import config as c
-from entities import Enemy, HitEffect, Platform, Player, SpringBall, Stickman, Tire
+from entities import Arrow, BowPickup, Enemy, HitEffect, Platform, Player, SpringBall, Stickman, Tire
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ class MenuScene:
         controls = [
             "A / ←  Move left       D / →  Move right",
             "W / ↑  Jump (double-tap mid-air for extra height)",
-            "Z / J  Attack — 360° weapon spin",
+            "Z / J  Melee spin or shoot bow arrows",
         ]
         for i, line in enumerate(controls):
             txt = self._font_ctrl.render(line, True, (160, 190, 220))
@@ -238,6 +238,10 @@ class GameScene:
         # ---- Effects ----
         self._effects: list[HitEffect] = []
 
+        # ---- Bow pickup & projectiles ----
+        self._bow_pickup: Optional[BowPickup] = None
+        self._arrows: list[Arrow] = []
+
         # ---- Result ----
         self._result: Optional[str] = None   # "win" | "lose"
         self._result_timer = 0                # frames before auto-transition
@@ -276,6 +280,20 @@ class GameScene:
             e.facing = 1 if i % 2 == 0 else -1
             self._enemies.append(e)
 
+    def _spawn_bow_pickup(self) -> None:
+        """Spawn a shiny bow set at a random arena location."""
+        floor_y = c.SCREEN_H - 20
+        spots = [
+            (random.randint(100, c.SCREEN_W - 100), floor_y),
+            (random.randint(90, 280), 410),
+            (random.randint(620, 810), 410),
+            (random.randint(370, 530), 280),
+            (random.randint(30, 130), 330),
+            (random.randint(770, 870), 330),
+        ]
+        x, y = random.choice(spots)
+        self._bow_pickup = BowPickup(float(x), float(y))
+
     # ------------------------------------------------------------------
     # Event handling
     # ------------------------------------------------------------------
@@ -313,6 +331,12 @@ class GameScene:
         self._player.handle_input(keys)
         self._player.update(self._platforms)
 
+        # Bow shot (ranged attack)
+        arrow = self._player.consume_shot()
+        if arrow is not None:
+            arrow.damage *= self._cfg["player_damage_mult"]
+            self._arrows.append(arrow)
+
         # Enemies
         for enemy in self._enemies:
             enemy.update(self._platforms, self._player)
@@ -325,20 +349,40 @@ class GameScene:
         for spring in self._springs:
             spring.update()
 
+        # Bow pickup countdown & collection
+        if self._bow_pickup is not None:
+            self._bow_pickup.update()
+            if self._bow_pickup.try_collect(self._player):
+                self._bow_pickup = None
+            elif not self._bow_pickup.active:
+                self._bow_pickup = None
+
+        # Flying arrows
+        for arrow in self._arrows:
+            arrow.update()
+            for enemy in self._enemies:
+                if not enemy.alive:
+                    continue
+                if arrow.try_hit(enemy):
+                    self._effects.append(HitEffect(int(arrow.x), int(arrow.y)))
+                    break
+        self._arrows = [a for a in self._arrows if a.alive]
+
         # Effects
         for fx in list(self._effects):
             fx.update()
             if not fx.alive():
                 self._effects.remove(fx)
 
-        # --- Collision: player weapon hits enemies ---
-        dmg_mult = self._cfg["player_damage_mult"]
-        base_dmg = self._player.weapon["damage"] * dmg_mult
-        knockback = self._player.weapon["knockback"]
-        for _target, tip_x, tip_y in self._player.check_weapon_hits(
-            self._enemies, base_dmg, knockback
-        ):
-            self._effects.append(HitEffect(int(tip_x), int(tip_y)))
+        # --- Collision: player melee hits enemies (skip when using bow) ---
+        if not self._player.is_using_bow():
+            dmg_mult = self._cfg["player_damage_mult"]
+            base_dmg = self._player.weapon["damage"] * dmg_mult
+            knockback = self._player.weapon["knockback"]
+            for _target, tip_x, tip_y in self._player.check_weapon_hits(
+                self._enemies, base_dmg, knockback
+            ):
+                self._effects.append(HitEffect(int(tip_x), int(tip_y)))
 
         # --- Collision: enemies attack player ---
         for enemy in self._enemies:
@@ -365,7 +409,10 @@ class GameScene:
                 if dist < c.TIRE_RADIUS + c.STICK_W / 2 + 4:
                     sm.push_tire(tire)
 
-        # --- Remove dead enemies ---
+        # --- Remove dead enemies & maybe spawn bow pickup ---
+        killed = [e for e in self._enemies if not e.alive]
+        if killed and random.random() < c.BOW_SPAWN_CHANCE:
+            self._spawn_bow_pickup()
         self._enemies = [e for e in self._enemies if e.alive]
 
         # --- Win / lose check ---
@@ -401,6 +448,14 @@ class GameScene:
         # Spring balls (drawn before characters so feet appear on top)
         for spring in self._springs:
             spring.draw(surf)
+
+        # Bow pickup (shiny, with countdown)
+        if self._bow_pickup is not None and self._bow_pickup.active:
+            self._bow_pickup.draw(surf)
+
+        # Arrows in flight
+        for arrow in self._arrows:
+            arrow.draw(surf)
 
         # Enemies
         for enemy in self._enemies:
@@ -442,15 +497,30 @@ class GameScene:
         txt = self._font.render(f"Enemies: {remaining} / {self._total_enemies}", True, c.WHITE)
         surf.blit(txt, txt.get_rect(topright=(c.SCREEN_W - 10, 10)))
 
-        # Player weapon indicator (bottom-left)
-        wpn_txt = self._font_sm.render(
-            f"Weapon: {self._player.weapon_name.capitalize()}", True, (200, 220, 240)
-        )
+        # Player weapon / arrow indicator (bottom-left)
+        if self._player.is_using_bow():
+            wpn_txt = self._font_sm.render(
+                f"Bow — Arrows: {self._player._arrows_left}",
+                True, (255, 220, 120),
+            )
+        else:
+            wpn_txt = self._font_sm.render(
+                f"Weapon: {self._player.weapon_name.capitalize()}",
+                True, (200, 220, 240),
+            )
         surf.blit(wpn_txt, (10, c.SCREEN_H - 28))
+
+        # Bow pickup hint
+        if self._bow_pickup is not None and self._bow_pickup.active:
+            hint = self._font_sm.render(
+                f"Bow nearby! {self._bow_pickup.seconds_left}s",
+                True, (255, 230, 100),
+            )
+            surf.blit(hint, hint.get_rect(midtop=(c.SCREEN_W // 2, 36)))
 
         # Controls reminder (bottom-right, small)
         ctrl_txt = self._font_sm.render(
-            "A/D: Move  W: Jump×2  Z/J: Spin Attack  |  Yellow springs boost you",
+            "A/D: Move  W: Jump×2  Z/J: Attack/Shoot  |  Grab glowing bow!",
             True, (140, 170, 200),
         )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))
