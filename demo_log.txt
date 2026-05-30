@@ -1,0 +1,2 @@
+2026-05-16 15:33:44,573 - demo_logger - INFO - This message goes to demo_log.txt
+2026-05-16 15:33:44,574 - demo_logger - INFO - Logging is useful for debugging production issues

@@ -40,43 +40,56 @@ GROUND_Y: int = 650
 GROUND_TILE_WIDTH: int = 35
 
 # Bird physics
-GRAVITY: float = 0.5
-MAX_FALL_VELOCITY: float = 8.0
-FLAP_VELOCITY: float = -10.0
+BIRD_ROTATION_FACTOR: float = -5.0
+GRAVITY: float = 2.5
+MAX_FALL_VELOCITY: float = 24.0
+# Normal flap strength (restored)
+FLAP_VELOCITY: float = -12.0
+BIRD_ROTATION_FACTOR: float = -5.0
 BIRD_ROTATION_FACTOR: float = -5.0
 GAME_OVER_ROTATION: float = -90.0
-
 # Pipe config (base values; scaled by difficulty)
-SCROLL_SPEED_BASE: int = 6
-SCROLL_SPEED_MAX: int = 12
-PIPE_GAP_BASE: int = 200
-PIPE_GAP_MIN: int = 120
-PIPE_SPAWN_INTERVAL_BASE: tuple[int, int] = (80, 120)
-PIPE_SPAWN_INTERVAL_MIN: tuple[int, int] = (50, 70)
-PIPE_SPAWN_OFFSET: int = 50
-PIPE_GAP_CENTER_MIN: int = 200
-PIPE_GAP_CENTER_MAX: int = 450
+SCROLL_SPEED_BASE: int = 80
+SCROLL_SPEED_MAX: int = 160
+# Bird forward speed (base, independent of temporary abilities)
+# Defined after SCROLL_SPEED_BASE to avoid forward reference
+BIRD_BASE_SPEED: int = SCROLL_SPEED_BASE
+PIPE_GAP_BASE: int = 80
+PIPE_GAP_MIN: int = 40
+PIPE_SPAWN_INTERVAL_BASE: tuple[int, int] = (30, 45)
+PIPE_SPAWN_INTERVAL_MIN: tuple[int, int] = (20, 30)
+PIPE_SPAWN_OFFSET: int = 30
+PIPE_GAP_CENTER_MIN: int = 260
+PIPE_GAP_CENTER_MAX: int = 360
+
+# How close (px) another bird must be horizontally to block damage
+SHIELD_RANGE: int = 100
+
+# Fast-moving pipe chance and extra scroll (in pixels/frame)
+PIPE_FAST_CHANCE: float = 0.6
+PIPE_EXTRA_SCROLL_MIN: int = 8
+PIPE_EXTRA_SCROLL_MAX: int = 30
 
 # Difficulty tiers (score thresholds)
-TIER_EASY: int = 10
-TIER_MEDIUM: int = 30
-TIER_HARD: int = 60
+TIER_EASY: int = 1
+TIER_MEDIUM: int = 5
+TIER_HARD: int = 20
 
 # Wobble (Phase 2)
-WOBBLE_AMPLITUDE_BASE: int = 20
-WOBBLE_AMPLITUDE_MAX: int = 60
-WOBBLE_FREQUENCY: float = 0.08
+WOBBLE_AMPLITUDE_BASE: int = 80
+WOBBLE_AMPLITUDE_MAX: int = 140
+WOBBLE_FREQUENCY: float = 0.14
 
 # Tilt (Phase 3)
-TILT_AMPLITUDE: float = 15.0
+TILT_AMPLITUDE: float = 45.0
 
 # Animation
 FLAP_COOLDOWN_FRAMES: int = 5
 AUTO_PLAY_FLAP_VELOCITY_THRESHOLD: float = 3.0
 AUTO_PLAY_CENTER_OFFSET: int = 30
 
-# Multi-bird: duplicate spawn below the lowest bird
-DUPLICATE_SPAWN_INTERVAL_MS: int = 3000
+# Multi-bird: duplicate spawn below the lowest bird (0 disables)
+DUPLICATE_SPAWN_INTERVAL_MS: int = 0
 DUPLICATE_VERTICAL_GAP_PX: int = 6
 
 # UI
@@ -84,6 +97,9 @@ FONT_SIZE_SCORE: int = 48
 FONT_SIZE_GAME_OVER: int = 64
 FONT_SIZE_RESTART: int = 32
 GAME_OVER_OVERLAY_ALPHA: int = 180
+
+# Auto-restart after game over (ms). Set to 0 to disable.
+AUTO_RESTART_MS: int = 3000
 
 # Restart button styling
 RESTART_BTN_WIDTH: int = 240
@@ -102,7 +118,7 @@ ABILITY_BTN_HOVER_COLOR: tuple[int, int, int] = (60, 190, 60)
 ABILITY_BTN_ACTIVE_COLOR: tuple[int, int, int] = (120, 120, 120)
 ABILITY_BTN_TEXT_COLOR: tuple[int, int, int] = (255, 255, 255)
 # Cooldown after ability ends (milliseconds)
-ABILITY_COOLDOWN_MS: int = 10000  # 10 seconds
+ABILITY_COOLDOWN_MS: int = 4000  # 4 seconds
 # Fast ability: increases apparent forward speed
 FAST_DURATION_MS: int = 3000  # 3 seconds
 FAST_COOLDOWN_MS: int = 12000  # 12 seconds
@@ -169,20 +185,20 @@ def get_difficulty_params(score: int) -> DifficultyParams:
     Returns:
         DifficultyParams with scaled values.
     """
-    # Linear scaling per 5 points
-    t = min(score / 5.0, 12.0)  # Cap at ~60 pts for max scaling
+    # Extremely aggressive scaling for maximum difficulty
+    t = min(score / 1.0, 100.0)
     scroll_speed = min(
-        SCROLL_SPEED_BASE + int(t * 0.5),
+        SCROLL_SPEED_BASE + int(t * 1.5),
         SCROLL_SPEED_MAX
     )
     pipe_gap = max(
-        PIPE_GAP_BASE - int(t * 5),
+        PIPE_GAP_BASE - int(t * 10),
         PIPE_GAP_MIN
     )
     si_base = PIPE_SPAWN_INTERVAL_BASE
     si_min = PIPE_SPAWN_INTERVAL_MIN
-    spawn_lo = max(si_base[0] - int(t * 2), si_min[0])
-    spawn_hi = max(si_base[1] - int(t * 2), si_min[1])
+    spawn_lo = max(si_base[0] - int(t * 5), si_min[0])
+    spawn_hi = max(si_base[1] - int(t * 5), si_min[1])
     spawn_interval_range = (spawn_lo, spawn_hi)
 
     # Narrow gap center range as score rises (harder angles)
@@ -258,6 +274,8 @@ ability_billion_button_rect: pygame.Rect | None = None
 ability_billion_cooldown_until: int = 0
 # Next pygame tick (ms) when to spawn a duplicate bird; 0 = not scheduled
 duplicate_next_spawn_ms: int = 0
+# Time (ms) when game entered game-over state; 0 = not in game-over or not recorded
+game_over_time_ms: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +292,7 @@ class Bird(pygame.sprite.Sprite):
         clicked: Prevents multiple flaps per mouse press.
     """
 
-    def __init__(self, x: int, y: int) -> None:
+    def __init__(self, x: int, y: int, speed: int | None = None) -> None:
         """Create a new Bird at the given position.
 
         Args:
@@ -292,6 +310,8 @@ class Bird(pygame.sprite.Sprite):
         self.rect: pygame.Rect = self.image.get_rect(center=(x, y))
         self.vel: float = 0.0
         self.clicked: bool = False
+        # forward speed in px/frame (base speed, not affected by temporary abilities)
+        self.speed: int = speed if speed is not None else BIRD_BASE_SPEED
 
     def update(self) -> None:
         """Update bird physics, input, and animation."""
@@ -304,6 +324,12 @@ class Bird(pygame.sprite.Sprite):
                 self.vel = MAX_FALL_VELOCITY
             if self.rect.bottom < GROUND_Y:
                 self.rect.y += int(self.vel)
+                # Prevent the bird from flying off the top of the screen.
+                if self.rect.top < 0:
+                    self.rect.top = 0
+                    # Stop upward momentum so the bird falls back down.
+                    if self.vel < 0:
+                        self.vel = 0
 
         if not game_over:
             self._handle_flap_input()
@@ -398,6 +424,7 @@ class Pipe(pygame.sprite.Sprite):
         wobble_amplitude: int,
         wobble_enabled: bool,
         tilt_enabled: bool,
+        extra_scroll: int = 0,
     ) -> None:
         """Create a pipe at the given position.
 
@@ -435,13 +462,21 @@ class Pipe(pygame.sprite.Sprite):
         self._wobble_enabled: bool = wobble_enabled
         self._tilt_enabled: bool = tilt_enabled
         self._tilt_angle: float = 0.0
+        # Spinning state used when pipe is broken: rotates rapidly then removes
+        self._spinning: bool = False
+        self._spin_angle: float = 0.0
+        self._spin_velocity: float = 0.0  # degrees per frame
+        self._spin_time_left: int = 0  # frames to continue spinning
+        # per-pipe extra leftward scroll (px/frame) to create occasional fast pipes
+        self._extra_scroll: float = float(extra_scroll)
 
     def update(self) -> None:
         """Move pipe left; apply wobble and tilt; remove when off-screen."""
         global scroll_speed, game_over
 
         if not game_over:
-            self._base_x -= scroll_speed
+            # apply global scroll plus any per-pipe extra speed
+            self._base_x -= (scroll_speed + int(self._extra_scroll))
         self.rect.x = int(self._base_x)
 
         # Phase 2: vertical wobble (sine-wave oscillation)
@@ -456,6 +491,20 @@ class Pipe(pygame.sprite.Sprite):
             self.rect.bottom = int(current_y)
         else:
             self.rect.top = int(current_y)
+
+        # If spinning (broken), apply continuous rotation and expire after time
+        if self._spinning:
+            self._spin_angle += self._spin_velocity
+            # Keep angle bounded to avoid large floats
+            if self._spin_angle > 3600000 or self._spin_angle < -3600000:
+                self._spin_angle %= 360
+            self.image = pygame.transform.rotate(self._base_image, self._spin_angle)
+            center = self.rect.center
+            self.rect = self.image.get_rect(center=center)
+            self._spin_time_left -= 1
+            if self._spin_time_left <= 0:
+                self.kill()
+            return
 
         # Phase 3: tilt (oscillating rotation)
         if self._tilt_enabled:
@@ -489,8 +538,19 @@ class Pipe(pygame.sprite.Sprite):
             particle = _Particle(px, py, color, vx, vy)
             particle_group.add(particle)
 
-        # remove pipe
-        self.kill()
+        # Instead of immediately removing the pipe, set it spinning for visual effect
+        # Spin direction: randomly forward or backward; magnitude can be very large
+        dir_sign = random.choice([1.0, -1.0])
+        # Occasionally make the spin extreme to match user's "100000000" request
+        if random.random() < 0.08:
+            self._spin_velocity = dir_sign * 100000000.0
+        else:
+            # Normal large-but-visible spin (degrees per frame)
+            self._spin_velocity = dir_sign * random.uniform(200.0, 1200.0)
+
+        self._spinning = True
+        # Spin for a short duration (frames); large spins don't need long duration
+        self._spin_time_left = random.randint(60, 240)
 
 
 # ---------------------------------------------------------------------------
@@ -588,18 +648,23 @@ def spawn_duplicate_bird_below_lowest() -> None:
     ref = max(sprites, key=lambda b: b.rect.bottom)
     half_h = max(ref.rect.height // 2, 12)
     new_y = ref.rect.bottom + DUPLICATE_VERTICAL_GAP_PX + half_h
-    new_bird = Bird(ref.rect.centerx, new_y)
+    new_bird = Bird(ref.rect.centerx, new_y, speed=ref.speed)
     new_bird.vel = ref.vel
     new_bird.clicked = ref.clicked
+    new_bird.speed = ref.speed
     bird_group.add(new_bird)
 
 
 def _end_game_if_no_birds() -> None:
     """Set game over when the last bird is eliminated."""
-    global game_over, flying
+    global game_over, flying, game_over_time_ms
     if len(bird_group) == 0:
         game_over = True
         flying = False
+        try:
+            game_over_time_ms = pygame.time.get_ticks()
+        except Exception:
+            game_over_time_ms = 0
 
 # Font for score and game over (Phase 4)
 # Wrap in try-except to handle corrupted Windows font registry entries
@@ -639,12 +704,21 @@ def spawn_pipes(
     next_pair_id += 1
     phase = random.uniform(0, 2 * math.pi)  # Random phase per pair
 
+    # Occasionally spawn a fast-moving pipe pair
+    extra = 0
+    try:
+        if random.random() < PIPE_FAST_CHANCE:
+            extra = random.randint(PIPE_EXTRA_SCROLL_MIN, PIPE_EXTRA_SCROLL_MAX)
+    except Exception:
+        extra = 0
+
     top = Pipe(
         x, top_y, PIPE_TOP,
         pair_id, phase,
         params.wobble_amplitude,
         params.wobble_enabled,
         params.tilt_enabled,
+        extra_scroll=extra,
     )
     bottom = Pipe(
         x, bottom_y, PIPE_BOTTOM,
@@ -652,6 +726,7 @@ def spawn_pipes(
         params.wobble_amplitude,
         params.wobble_enabled,
         params.tilt_enabled,
+        extra_scroll=extra,
     )
     pipe_group.add(top)
     pipe_group.add(bottom)
@@ -671,7 +746,9 @@ def restart_game(extra_distance: int = 400) -> None:
     duplicate_next_spawn_ms = 0
 
     bird_group.empty()
-    flappy = Bird(100, SCREEN_HEIGHT // 2)
+    # on restart, initialize bird with current difficulty base speed
+    params = get_difficulty_params(0)
+    flappy = Bird(100, SCREEN_HEIGHT // 2, speed=params.scroll_speed)
     bird_group.add(flappy)
 
     # reset ability state and cooldown on restart
@@ -689,6 +766,9 @@ def restart_game(extra_distance: int = 400) -> None:
 
     pipe_group.empty()
     pipe_spawn_timer = 0
+    # reset recorded game-over time when restarting
+    global game_over_time_ms
+    game_over_time_ms = 0
     params = get_difficulty_params(0)
     lo, hi = params.spawn_interval_range
     pipe_spawn_interval = random.randint(lo, hi)
@@ -854,11 +934,20 @@ while run:
 
     # Phase 1: update difficulty and scroll speed from score
     params = get_difficulty_params(score)
-    scroll_speed = params.scroll_speed
+    # base forward speed derived from difficulty (do not include temporary abilities)
+    base_speed = params.scroll_speed
+    scroll_speed = base_speed
     # Apply fast ability multiplier to global scroll speed
     if ability_fast_active:
         try:
             scroll_speed = int(scroll_speed * FAST_SPEED_MULTIPLIER)
+        except Exception:
+            pass
+
+    # Propagate base speed to all birds (bird.speed remains independent of temporary abilities)
+    for b in bird_group.sprites():
+        try:
+            b.speed = base_speed
         except Exception:
             pass
 
@@ -898,10 +987,83 @@ while run:
             duplicate_next_spawn_ms = now_ms + DUPLICATE_SPAWN_INTERVAL_MS
 
     # Collision: each bird independently; game over only when all are gone
+    # Track which birds already intercepted a hit this frame to avoid mutual kills
+    intercepted_ids: set[int] = set()
     for bird in list(bird_group.sprites()):
+        # skip birds already killed earlier in this loop
+        if not bird.alive():
+            continue
         collided = pygame.sprite.spritecollide(bird, pipe_group, False)
         if collided:
-            # Bird breaks the pipe instead of dying
+            # If invincibility ability is active, do not kill the bird;
+            # still break pipes for visual feedback.
+            if ability_active:
+                for p in collided:
+                    try:
+                        p.break_pipe()
+                    except Exception:
+                        p.kill()
+                continue
+
+            # On collision with a pipe: allow a nearby bird to block damage.
+            interceptor = None
+            for other in bird_group.sprites():
+                if other is bird:
+                    continue
+                # skip already used interceptors or dead birds
+                if not other.alive() or id(other) in intercepted_ids:
+                    continue
+                try:
+                    if abs(other.rect.centerx - bird.rect.centerx) <= SHIELD_RANGE:
+                        interceptor = other
+                        break
+                except Exception:
+                    continue
+
+            if interceptor:
+                # Interceptor blocks the hit and dies instead.
+                try:
+                    cx, cy = interceptor.rect.center
+                    spawn_red_splash(cx, cy)
+                except Exception:
+                    pass
+                try:
+                    interceptor.kill()
+                except Exception:
+                    pass
+                intercepted_ids.add(id(interceptor))
+                # Immediate game over when a bird dies (hard mode)
+                try:
+                    game_over = True
+                    flying = False
+                    game_over_time_ms = pygame.time.get_ticks()
+                except Exception:
+                    pass
+                # The bird that died should break the pipes it collided with
+                for p in collided:
+                    try:
+                        p.break_pipe()
+                    except Exception:
+                        p.kill()
+                continue
+
+            try:
+                cx, cy = bird.rect.center
+                spawn_red_splash(cx, cy)
+            except Exception:
+                pass
+            try:
+                bird.kill()
+            except Exception:
+                pass
+            # Immediate game over when a bird dies (hard mode)
+            try:
+                game_over = True
+                flying = False
+                game_over_time_ms = pygame.time.get_ticks()
+            except Exception:
+                pass
+            # The bird that died should break the pipes it collided with
             for p in collided:
                 try:
                     p.break_pipe()
@@ -941,12 +1103,27 @@ while run:
     else:
         # Phase 4: game over screen
         draw_game_over_screen()
+        # Auto-restart after delay if enabled
+        if AUTO_RESTART_MS > 0 and game_over_time_ms:
+            try:
+                if pygame.time.get_ticks() >= game_over_time_ms + AUTO_RESTART_MS:
+                    restart_game()
+            except Exception:
+                pass
 
     # Draw score (top-center) when playing
     if not game_over:
         text_score = font_score.render(str(score), True, (255, 255, 255))
         rect_score = text_score.get_rect(midtop=(SCREEN_WIDTH // 2, 20))
         screen.blit(text_score, rect_score)
+
+    # Draw bird speed (top-left) showing base forward speed (not ability-multiplied)
+    try:
+        speed_text = font_restart.render(f"Speed: {base_speed}", True, (255, 255, 255))
+        speed_rect = speed_text.get_rect(topleft=(10, 10))
+        screen.blit(speed_text, speed_rect)
+    except Exception:
+        pass
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -957,10 +1134,11 @@ while run:
             and not game_over
         ):
             flying = True
-            # Schedule first duplicate spawn 3 seconds after play starts
-            duplicate_next_spawn_ms = (
-                pygame.time.get_ticks() + DUPLICATE_SPAWN_INTERVAL_MS
-            )
+            # Schedule first duplicate spawn 3 seconds after play starts (disabled when DUPLICATE_SPAWN_INTERVAL_MS == 0)
+            if DUPLICATE_SPAWN_INTERVAL_MS > 0:
+                duplicate_next_spawn_ms = (
+                    pygame.time.get_ticks() + DUPLICATE_SPAWN_INTERVAL_MS
+                )
         # Ability button click (only while playing)
         if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
             # Billion-level button clicked?
