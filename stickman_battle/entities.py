@@ -410,9 +410,13 @@ class RifleBullet:
         self.knockback = knockback
         self.source_x = source_x
         self.alive = True
+        self._prev_x = x
+        self._prev_y = y
 
     def update(self) -> None:
         """Step bullet flight."""
+        self._prev_x = self.x
+        self._prev_y = self.y
         self.vy = min(self.vy + c.AK47_BULLET_GRAVITY, c.MAX_FALL)
         self.x += self.vx
         self.y += self.vy
@@ -444,15 +448,35 @@ class RifleBullet:
         """
         if not self.alive or not target.alive:
             return False
-        cx = target.x
-        cy = target.y - target.TOTAL_H / 2
-        if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
+        hit_rect = target.rect.inflate(12, 12)
+        # Point test + swept segment so fast bullets do not tunnel through targets.
+        if not self._hits_rect(hit_rect):
             return False
         target.take_damage(self.damage, source_x=self.source_x)
         target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
         target.vy -= 1.2
         self.alive = False
         return True
+
+    def _hits_rect(self, rect: pygame.Rect) -> bool:
+        """Return True if current or previous segment intersects rect.
+
+        Args:
+            rect: inflated enemy bounding box.
+
+        Returns:
+            True when bullet path overlaps the rect.
+        """
+        if rect.collidepoint(int(self.x), int(self.y)):
+            return True
+        steps = max(3, int(math.hypot(self.x - self._prev_x, self.y - self._prev_y) / 6))
+        for i in range(steps + 1):
+            t = i / steps
+            px = self._prev_x + (self.x - self._prev_x) * t
+            py = self._prev_y + (self.y - self._prev_y) * t
+            if rect.collidepoint(int(px), int(py)):
+                return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1162,9 +1186,9 @@ class Stickman:
             w_ang = spin * self.facing
             o_ang = spin * self.facing + math.pi * 0.85
         elif self.weapon_name == "ak47":
-            # Two-hand rifle pose with recoil kick while firing
-            recoil = self._fire_flash_frames * math.radians(9.0)
-            w_ang = self.facing * (math.radians(-12.0) - recoil) + arm_swing
+            # Two-hand rifle pose — barrel points horizontally in facing direction
+            recoil = self._fire_flash_frames * math.radians(8.0)
+            w_ang = self.facing * (math.radians(8.0) - recoil) + arm_swing
             o_ang = -self.facing * math.radians(28.0) - arm_swing * 0.5
         else:
             w_ang = self.facing * math.radians(10.0) + arm_swing
@@ -1772,19 +1796,17 @@ class Player(Stickman):
 
         j = self._joints()
         wx, wy = j["w_hand"]
-        ang = j["w_ang"]
         reach = self.weapon["reach"]
-        muzzle_x = wx + math.sin(ang) * reach
-        muzzle_y = wy + math.cos(ang) * reach
-        ux = math.sin(ang)
-        uy = math.cos(ang)
+        # Fire horizontally in facing direction (arm sin/cos pointed bullets into the floor).
+        muzzle_x = wx + self.facing * reach
+        muzzle_y = wy - 2
         speed = c.AK47_BULLET_SPEED
         bullet = RifleBullet(
-            muzzle_x + ux * 4, muzzle_y + uy * 4,
-            ux * speed, uy * speed,
+            muzzle_x + self.facing * 4, muzzle_y,
+            self.facing * speed, -0.8,
             self.weapon["damage"], self.weapon["knockback"], self.x,
         )
-        flash = MuzzleFlash(muzzle_x + self.facing * 6, muzzle_y, self.facing)
+        flash = MuzzleFlash(muzzle_x + self.facing * 8, muzzle_y, self.facing)
         casing = ShellCasing(wx, wy - 4, self.facing)
 
         if self._rounds_left <= 0:
