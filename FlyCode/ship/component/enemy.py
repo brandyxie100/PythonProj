@@ -20,7 +20,12 @@ ENEMY_SPAWN_Y_MIN: int = 0
 ENEMY_SPAWN_Y_MAX: int = 10
 ENEMY_STEP_MIN: float = 1.0
 ENEMY_STEP_MAX: float = 1.5
-ENEMY_FALL_SPEED: float = 0.2
+# Base fall speed; actual per-frame fall uses a small random multiplier
+ENEMY_FALL_SPEED: float = 0.35
+# How aggressively enemies try to move toward the player when attacking (pixels per frame)
+ENEMY_ATTACK_SPEED: float = 1.2
+# Chance (0..1) per frame that an enemy will attempt an attack move toward player
+ENEMY_ATTACK_CHANCE: float = 0.02
 
 
 class Enemy:
@@ -62,9 +67,27 @@ class Enemy:
         """Move enemy horizontally (currently unused)."""
         self.x += self.step
 
-    def change_y(self) -> None:
-        """Move enemy downward."""
-        self.y += ENEMY_FALL_SPEED
+    def change_y(self, player_x: float | None = None) -> None:
+        """Move enemy downward and occasionally attack horizontally.
+
+        Args:
+            player_x: Optional player X position; when provided the enemy may
+                steer horizontally toward the player to perform an attack.
+        """
+        # Apply a small random multiplier so fall speed varies per frame/enemy
+        fall_multiplier = random.uniform(1.0, 2.2)
+        self.y += ENEMY_FALL_SPEED * fall_multiplier
+
+        # Occasionally attempt a targeted attack toward the player's X
+        if player_x is not None and random.random() < ENEMY_ATTACK_CHANCE:
+            # Move horizontally toward player with some randomness
+            direction = 1.0 if player_x > self.x else -1.0
+            jitter = random.uniform(0.5, 1.5)
+            self.x += direction * ENEMY_ATTACK_SPEED * jitter
+
+        # Small random lateral drift so movement feels less linear
+        drift = random.uniform(-0.8, 0.8)
+        self.x += drift
 
     def change_step(self) -> None:
         """Reverse horizontal direction (currently unused)."""
