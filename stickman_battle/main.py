@@ -25,7 +25,22 @@ from typing import Optional
 import pygame
 
 import config as c
-from entities import Arrow, BowPickup, Enemy, Grenade, HitEffect, Platform, Player, SpringBall, Stickman, Tire
+from entities import (
+    AK47Pickup,
+    Arrow,
+    BowPickup,
+    Enemy,
+    Grenade,
+    HitEffect,
+    MuzzleFlash,
+    Platform,
+    Player,
+    RifleBullet,
+    ShellCasing,
+    SpringBall,
+    Stickman,
+    Tire,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +151,7 @@ class MenuScene:
         controls = [
             "A / ←  Move left       D / →  Move right",
             "W / ↑  Jump (double-tap mid-air for extra height)",
-            "Z / J  Melee spin or shoot bow arrows",
+            "Z / J  Melee spin / bow / AK-47 (hold to auto-fire)",
             "B      Throw grenade (6 per match)",
         ]
         for i, line in enumerate(controls):
@@ -245,6 +260,14 @@ class GameScene:
         self._arrows: list[Arrow] = []
         self._grenades: list[Grenade] = []
 
+        # ---- AK-47 timed spawn & rifle effects ----
+        self._match_frames = 0
+        self._ak47_spawned = False
+        self._ak47_pickup: Optional[AK47Pickup] = None
+        self._bullets: list[RifleBullet] = []
+        self._muzzle_flashes: list[MuzzleFlash] = []
+        self._shell_casings: list[ShellCasing] = []
+
         # ---- Result ----
         self._result: Optional[str] = None   # "win" | "lose"
         self._result_timer = 0                # frames before auto-transition
@@ -297,6 +320,20 @@ class GameScene:
         x, y = random.choice(spots)
         self._bow_pickup = BowPickup(float(x), float(y))
 
+    def _spawn_ak47_pickup(self) -> None:
+        """Spawn AK-47 at a random map location (30 s after match start)."""
+        floor_y = c.SCREEN_H - 20
+        spots = [
+            (random.randint(100, c.SCREEN_W - 100), floor_y),
+            (random.randint(90, 280), 410),
+            (random.randint(620, 810), 410),
+            (random.randint(370, 530), 280),
+            (random.randint(30, 130), 330),
+            (random.randint(770, 870), 330),
+        ]
+        x, y = random.choice(spots)
+        self._ak47_pickup = AK47Pickup(float(x), float(y))
+
     # ------------------------------------------------------------------
     # Event handling
     # ------------------------------------------------------------------
@@ -329,6 +366,11 @@ class GameScene:
             return None
 
         keys = pygame.key.get_pressed()
+        self._match_frames += 1
+
+        if not self._ak47_spawned and self._match_frames >= c.AK47_SPAWN_DELAY_F:
+            self._spawn_ak47_pickup()
+            self._ak47_spawned = True
 
         # Player
         self._player.handle_input(keys)
@@ -339,6 +381,16 @@ class GameScene:
         if arrow is not None:
             arrow.damage *= self._cfg["player_damage_mult"]
             self._arrows.append(arrow)
+
+        # AK-47 automatic fire
+        bullet, flash, casing = self._player.consume_rifle_shot()
+        if bullet is not None:
+            bullet.damage *= self._cfg["player_damage_mult"]
+            self._bullets.append(bullet)
+        if flash is not None:
+            self._muzzle_flashes.append(flash)
+        if casing is not None:
+            self._shell_casings.append(casing)
 
         # Player grenade throw
         grenade = self._player.consume_grenade_throw()
@@ -368,6 +420,14 @@ class GameScene:
             elif not self._bow_pickup.active:
                 self._bow_pickup = None
 
+        # AK-47 pickup
+        if self._ak47_pickup is not None:
+            self._ak47_pickup.update()
+            if self._ak47_pickup.try_collect(self._player):
+                self._ak47_pickup = None
+            elif not self._ak47_pickup.active:
+                self._ak47_pickup = None
+
         # Flying arrows
         for arrow in self._arrows:
             arrow.update()
@@ -378,6 +438,25 @@ class GameScene:
                     self._effects.append(HitEffect(int(arrow.x), int(arrow.y)))
                     break
         self._arrows = [a for a in self._arrows if a.alive]
+
+        # Rifle bullets
+        for bullet in self._bullets:
+            bullet.update()
+            for enemy in self._enemies:
+                if not enemy.alive:
+                    continue
+                if bullet.try_hit(enemy):
+                    self._effects.append(HitEffect(int(bullet.x), int(bullet.y)))
+                    break
+        self._bullets = [b for b in self._bullets if b.alive]
+
+        # Muzzle flashes & shell casings (firing VFX)
+        for flash in self._muzzle_flashes:
+            flash.update()
+        self._muzzle_flashes = [f for f in self._muzzle_flashes if f.alive]
+        for shell in self._shell_casings:
+            shell.update()
+        self._shell_casings = [s for s in self._shell_casings if s.alive]
 
         # Flying grenades and explosions
         for grenade in self._grenades:
@@ -396,8 +475,8 @@ class GameScene:
             if not fx.alive():
                 self._effects.remove(fx)
 
-        # --- Collision: player melee hits enemies (skip when using bow) ---
-        if not self._player.is_using_bow():
+        # --- Collision: player melee hits enemies (skip when using ranged) ---
+        if not self._player.is_using_ranged():
             dmg_mult = self._cfg["player_damage_mult"]
             base_dmg = self._player.weapon["damage"] * dmg_mult
             knockback = self._player.weapon["knockback"]
@@ -475,9 +554,21 @@ class GameScene:
         if self._bow_pickup is not None and self._bow_pickup.active:
             self._bow_pickup.draw(surf)
 
+        # AK-47 pickup
+        if self._ak47_pickup is not None and self._ak47_pickup.active:
+            self._ak47_pickup.draw(surf)
+
         # Arrows in flight
         for arrow in self._arrows:
             arrow.draw(surf)
+
+        # Rifle bullets
+        for bullet in self._bullets:
+            bullet.draw(surf)
+
+        # Shell casings (behind characters)
+        for shell in self._shell_casings:
+            shell.draw(surf)
 
         # Grenades in flight / explosion pulse
         for grenade in self._grenades:
@@ -489,6 +580,10 @@ class GameScene:
 
         # Player
         self._player.draw(surf)
+
+        # Muzzle flashes (on top of player)
+        for flash in self._muzzle_flashes:
+            flash.draw(surf)
 
         # Hit effects
         for fx in self._effects:
@@ -523,8 +618,13 @@ class GameScene:
         txt = self._font.render(f"Enemies: {remaining} / {self._total_enemies}", True, c.WHITE)
         surf.blit(txt, txt.get_rect(topright=(c.SCREEN_W - 10, 10)))
 
-        # Player weapon / arrow indicator (bottom-left)
-        if self._player.is_using_bow():
+        # Player weapon indicator (bottom-left)
+        if self._player.is_using_ak47():
+            wpn_txt = self._font_sm.render(
+                f"AK-47 — Rounds: {self._player._rounds_left}",
+                True, (140, 255, 160),
+            )
+        elif self._player.is_using_bow():
             wpn_txt = self._font_sm.render(
                 f"Bow — Arrows: {self._player._arrows_left}",
                 True, (255, 220, 120),
@@ -549,9 +649,24 @@ class GameScene:
             )
             surf.blit(hint, hint.get_rect(midtop=(c.SCREEN_W // 2, 36)))
 
+        # AK-47 spawn countdown / pickup hint
+        if not self._ak47_spawned:
+            secs = max(0, (c.AK47_SPAWN_DELAY_F - self._match_frames) // c.FPS)
+            ak_hint = self._font_sm.render(
+                f"AK-47 drops in {secs}s",
+                True, (140, 255, 180),
+            )
+            surf.blit(ak_hint, ak_hint.get_rect(midtop=(c.SCREEN_W // 2, 58)))
+        elif self._ak47_pickup is not None and self._ak47_pickup.active:
+            ak_hint = self._font_sm.render(
+                "AK-47 on the map! Grab it!",
+                True, (140, 255, 180),
+            )
+            surf.blit(ak_hint, ak_hint.get_rect(midtop=(c.SCREEN_W // 2, 58)))
+
         # Controls reminder (bottom-right, small)
         ctrl_txt = self._font_sm.render(
-            "A/D: Move  W: Jump×2  Z/J: Attack/Shoot  B: Grenade (x6)",
+            "A/D: Move  W: Jump  Z/J: Attack/Shoot  B: Grenade",
             True, (140, 170, 200),
         )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))

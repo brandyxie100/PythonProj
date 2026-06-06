@@ -110,13 +110,31 @@ BOW_ARROWS_PER_SET: int = 20
 BOW_SPAWN_CHANCE: float = 0.85          # chance to spawn after an enemy kill
 BOW_PICKUP_RADIUS: int = 28
 ARROW_SPEED: float = 14.0
-ARROW_GRAVITY: float = 0.12
-ARROW_DAMAGE: float = 15.0
+ARROW_GRAVITY: float = 0.1
+ARROW_DAMAGE: float = 20.0
 ARROW_KNOCKBACK: float = 3.0
 BOW_COL = (250, 110, 55)
 BOW_STRING = (220, 220, 220)
 BOW_SHINE = (255, 240, 120)
 BOW_GLOW = (255, 200, 50)
+
+# ---------------------------------------------------------------------------
+# AK-47 — timed map spawn, rifle rounds
+# ---------------------------------------------------------------------------
+AK47_SPAWN_DELAY_F: int = FPS * 30          # 30 seconds after match start
+AK47_ROUNDS_PER_PICKUP: int = 30
+AK47_PICKUP_RADIUS: int = 30
+AK47_BULLET_SPEED: float = 22.0
+AK47_BULLET_GRAVITY: float = 0.04
+AK47_FIRE_COOLDOWN_F: int = 6               # automatic fire rate
+AK47_RECOIL_FRAMES: int = 5
+AK47_COL = (55, 50, 45)
+AK47_WOOD = (110, 75, 40)
+AK47_METAL = (90, 95, 100)
+AK47_GLOW = (80, 220, 120)
+AK47_SHINE = (180, 255, 200)
+AK47_MUZZLE_FLASH = (255, 230, 100)
+AK47_CASING = (220, 180, 60)
 
 # ---------------------------------------------------------------------------
 # Grenades
@@ -188,6 +206,15 @@ WEAPONS: dict[str, dict] = {
         reach=36,
         damage=ARROW_DAMAGE,
         cooldown_f=18,
+        knockback=ARROW_KNOCKBACK,
+    ),
+    "ak47": dict(
+        label="AK-47",
+        color=AK47_METAL,
+        guard_color=AK47_WOOD,
+        reach=52,
+        damage=ARROW_DAMAGE,
+        cooldown_f=AK47_FIRE_COOLDOWN_F,
         knockback=ARROW_KNOCKBACK,
     ),
 }

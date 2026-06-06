@@ -1,8 +1,8 @@
 """Stickman Battle — game entities.
 
 Contains all in-game objects:
-  Platform, Tire, SpringBall, Arrow, BlastParticle, Grenade, HitEffect,
-  Stickman (base),
+  Platform, Tire, SpringBall, Arrow, RifleBullet, MuzzleFlash, ShellCasing,
+  BlastParticle, Grenade, HitEffect, AK47Pickup, Stickman (base),
   Player, Enemy.
 
 Stickmen are drawn procedurally using line-segment anatomy and simple
@@ -372,6 +372,189 @@ class Arrow:
         target.vy -= 1.5
         self.alive = False
         return True
+
+
+# ---------------------------------------------------------------------------
+# RifleBullet — fast AK-47 round (damage matches arrows)
+# ---------------------------------------------------------------------------
+
+class RifleBullet:
+    """Straight-travelling rifle bullet with minimal drop."""
+
+    HIT_R: int = 6
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        vx: float,
+        vy: float,
+        damage: float,
+        knockback: float,
+        source_x: float,
+    ) -> None:
+        """Args:
+            x: spawn x.
+            y: spawn y.
+            vx: horizontal speed.
+            vy: vertical speed.
+            damage: HP damage (same as arrow).
+            knockback: push strength.
+            source_x: shooter x for knockback direction.
+        """
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.damage = damage
+        self.knockback = knockback
+        self.source_x = source_x
+        self.alive = True
+
+    def update(self) -> None:
+        """Step bullet flight."""
+        self.vy = min(self.vy + c.AK47_BULLET_GRAVITY, c.MAX_FALL)
+        self.x += self.vx
+        self.y += self.vy
+        if (self.x < -20 or self.x > c.SCREEN_W + 20 or
+                self.y < -40 or self.y > c.SCREEN_H + 40):
+            self.alive = False
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw bright tracer streak.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        ux = 1.0 if self.vx >= 0 else -1.0
+        tail_x = self.x - ux * 14
+        pygame.draw.line(surf, (255, 240, 150), _ip(tail_x, self.y), _ip(self.x, self.y), 3)
+        pygame.draw.circle(surf, (255, 255, 220), _ip(self.x, self.y), 2)
+
+    def try_hit(self, target: Stickman) -> bool:
+        """Damage target on body overlap.
+
+        Args:
+            target: stickman to test.
+
+        Returns:
+            True if hit registered (bullet consumed).
+        """
+        if not self.alive or not target.alive:
+            return False
+        cx = target.x
+        cy = target.y - target.TOTAL_H / 2
+        if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
+            return False
+        target.take_damage(self.damage, source_x=self.source_x)
+        target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
+        target.vy -= 1.2
+        self.alive = False
+        return True
+
+
+# ---------------------------------------------------------------------------
+# MuzzleFlash — brief burst at rifle muzzle when firing
+# ---------------------------------------------------------------------------
+
+class MuzzleFlash:
+    """Short-lived muzzle flash for AK-47 firing animation."""
+
+    def __init__(self, x: float, y: float, facing: int) -> None:
+        """Args:
+            x: muzzle x.
+            y: muzzle y.
+            facing: 1 right, -1 left.
+        """
+        self.x = x
+        self.y = y
+        self.facing = facing
+        self._life = 6
+        self._max = 6
+
+    @property
+    def alive(self) -> bool:
+        return self._life > 0
+
+    def update(self) -> None:
+        self._life -= 1
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Render star-shaped flash.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        t = self._life / self._max
+        size = int(10 + (1.0 - t) * 8)
+        alpha = int(220 * t)
+        flash = pygame.Surface((size * 3, size * 2), pygame.SRCALPHA)
+        cx, cy = size + 4, size
+        col = (*c.AK47_MUZZLE_FLASH, alpha)
+        # Star burst
+        pts = []
+        for i in range(8):
+            ang = i * (math.tau / 8)
+            r = size if i % 2 == 0 else size * 0.45
+            pts.append((cx + math.cos(ang) * r, cy + math.sin(ang) * r * 0.6))
+        pygame.draw.polygon(flash, col, [_ip(*p) for p in pts])
+        pygame.draw.circle(flash, (255, 255, 255, min(255, alpha + 30)), (cx, cy), max(2, size // 3))
+        rect = flash.get_rect(center=_ip(self.x, self.y))
+        if self.facing < 0:
+            flash = pygame.transform.flip(flash, True, False)
+            rect = flash.get_rect(center=_ip(self.x, self.y))
+        surf.blit(flash, rect)
+
+
+# ---------------------------------------------------------------------------
+# ShellCasing — ejected brass casing for firing feedback
+# ---------------------------------------------------------------------------
+
+class ShellCasing:
+    """Small casing particle ejected sideways when a round is fired."""
+
+    def __init__(self, x: float, y: float, facing: int) -> None:
+        """Args:
+            x: ejection point x.
+            y: ejection point y.
+            facing: shooter facing.
+        """
+        self.x = x
+        self.y = y
+        self.vx = -facing * random.uniform(2.0, 5.0)
+        self.vy = random.uniform(-4.0, -1.5)
+        self._life = random.randint(18, 28)
+        self._rot = random.uniform(0, math.tau)
+
+    @property
+    def alive(self) -> bool:
+        return self._life > 0
+
+    def update(self) -> None:
+        self.vy += 0.18
+        self.x += self.vx
+        self.y += self.vy
+        self.vx *= 0.98
+        self._rot += 0.35
+        self._life -= 1
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw small brass rectangle.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        w, h = 5, 2
+        casing = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(casing, c.AK47_CASING, (0, 0, w, h))
+        rotated = pygame.transform.rotate(casing, math.degrees(self._rot))
+        surf.blit(rotated, rotated.get_rect(center=_ip(self.x, self.y)))
 
 
 # ---------------------------------------------------------------------------
@@ -751,6 +934,86 @@ class BowPickup:
 
 
 # ---------------------------------------------------------------------------
+# AK47Pickup — spawns 30 s after match start, 30 rounds preloaded
+# ---------------------------------------------------------------------------
+
+class AK47Pickup:
+    """World pickup: AK-47 rifle with 30 rounds. Stays until collected."""
+
+    def __init__(self, x: float, y: float) -> None:
+        """Args:
+            x: centre x on the arena.
+            y: feet-level y (pickup floats above).
+        """
+        self.x = x
+        self.y = y - 36
+        self._shine_phase = random.uniform(0, math.tau)
+        self._bob_phase = random.uniform(0, math.tau)
+        self.active = True
+
+    def update(self) -> None:
+        """Animate shiny pulse."""
+        self._shine_phase += 0.14
+        self._bob_phase += 0.09
+
+    def try_collect(self, player: "Player") -> bool:
+        """Give AK-47 to player on contact.
+
+        Args:
+            player: human stickman.
+
+        Returns:
+            True if collected.
+        """
+        if not self.active:
+            return False
+        bob = math.sin(self._bob_phase) * 4
+        cy = self.y + bob
+        dist = math.hypot(player.x - self.x, player.y - cy - 20)
+        if dist > c.AK47_PICKUP_RADIUS + c.STICK_W:
+            return False
+        player.equip_ak47(c.AK47_ROUNDS_PER_PICKUP)
+        self.active = False
+        return True
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Render glowing AK-47 pickup.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.active:
+            return
+
+        bob = math.sin(self._bob_phase) * 4
+        cx, cy = int(self.x), int(self.y + bob)
+        pulse = 0.5 + 0.5 * math.sin(self._shine_phase * 2)
+
+        for i in range(3):
+            r = int(c.AK47_PICKUP_RADIUS + 8 + i * 7 + pulse * 5)
+            alpha = int(85 - i * 22)
+            glow = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*c.AK47_GLOW, alpha), (r, r), r)
+            surf.blit(glow, glow.get_rect(center=(cx, cy)))
+
+        for i in range(5):
+            ang = self._shine_phase + i * (math.tau / 5)
+            sx = cx + math.cos(ang) * (c.AK47_PICKUP_RADIUS + 5)
+            sy = cy + math.sin(ang) * (c.AK47_PICKUP_RADIUS + 5)
+            pygame.draw.circle(surf, c.AK47_SHINE, _ip(sx, sy), 3)
+
+        # Rifle silhouette on ground
+        pygame.draw.line(surf, c.AK47_WOOD, (cx - 22, cy + 4), (cx - 8, cy + 2), 4)
+        pygame.draw.line(surf, c.AK47_METAL, (cx - 8, cy + 2), (cx + 24, cy), 4)
+        pygame.draw.rect(surf, c.AK47_COL, (cx - 2, cy + 2, 8, 12))
+        pygame.draw.line(surf, c.AK47_METAL, (cx + 24, cy), (cx + 32, cy - 1), 3)
+
+        font = pygame.font.SysFont("Arial", 16, bold=True)
+        label = font.render(f"AK-47 x{c.AK47_ROUNDS_PER_PICKUP}", True, c.WHITE)
+        surf.blit(label, label.get_rect(midbottom=(cx, cy - 36)))
+
+
+# ---------------------------------------------------------------------------
 # Stickman — base class (drawn procedurally, no sprite images)
 # ---------------------------------------------------------------------------
 
@@ -824,6 +1087,9 @@ class Stickman:
         self.grenades_left = c.GRENADES_PER_MATCH
         self._grenade_cd = 0
 
+        # Rifle firing animation (AK-47 recoil flash).
+        self._fire_flash_frames = 0
+
         # Hurt flash
         self._hurt_frames = 0
 
@@ -895,6 +1161,11 @@ class Stickman:
             spin = self.attack_phase * 2.0 * math.pi
             w_ang = spin * self.facing
             o_ang = spin * self.facing + math.pi * 0.85
+        elif self.weapon_name == "ak47":
+            # Two-hand rifle pose with recoil kick while firing
+            recoil = self._fire_flash_frames * math.radians(9.0)
+            w_ang = self.facing * (math.radians(-12.0) - recoil) + arm_swing
+            o_ang = -self.facing * math.radians(28.0) - arm_swing * 0.5
         else:
             w_ang = self.facing * math.radians(10.0) + arm_swing
             o_ang = -self.facing * math.radians(10.0) - arm_swing
@@ -1040,6 +1311,42 @@ class Stickman:
                 nock_y = hand_y
                 tip_n = (nock_x + self.facing * 14, nock_y)
                 pygame.draw.line(surf, (210, 180, 120), _ip(nock_x, nock_y), _ip(*tip_n), 2)
+
+        elif name == "ak47":
+            # Stock → receiver → barrel + curved magazine
+            stock_x = wx - self.facing * 18
+            stock_y = wy + 4
+            barrel_end_x = wx + self.facing * reach
+            barrel_end_y = wy - 2
+            pygame.draw.line(surf, gcol, _ip(stock_x, stock_y), _ip(wx, wy), 4)
+            pygame.draw.line(surf, col, _ip(wx, wy), _ip(barrel_end_x, barrel_end_y), 4)
+            # Magazine
+            mag_x = wx + self.facing * 6
+            mag_pts = [
+                _ip(mag_x, wy + 2),
+                _ip(mag_x + self.facing * 6, wy + 14),
+                _ip(mag_x + self.facing * 2, wy + 16),
+                _ip(mag_x - self.facing * 2, wy + 4),
+            ]
+            pygame.draw.polygon(surf, c.AK47_COL, mag_pts)
+            # Muzzle brake
+            pygame.draw.line(
+                surf, c.AK47_METAL,
+                _ip(barrel_end_x, barrel_end_y - 3),
+                _ip(barrel_end_x, barrel_end_y + 3), 2,
+            )
+
+    def muzzle_position(self) -> tuple[float, float]:
+        """Return world position of the current weapon muzzle.
+
+        Returns:
+            (muzzle_x, muzzle_y).
+        """
+        j = self._joints()
+        wx, wy = j["w_hand"]
+        ang = j["w_ang"]
+        reach = self.weapon["reach"]
+        return wx + math.sin(ang) * reach, wy + math.cos(ang) * reach
 
     def _draw_hp(self, surf: pygame.Surface, head: tuple) -> None:
         """Draw health bar above the stickman's head.
@@ -1315,6 +1622,8 @@ class Stickman:
             self._attack_cd -= 1
         if self._grenade_cd > 0:
             self._grenade_cd -= 1
+        if self._fire_flash_frames > 0:
+            self._fire_flash_frames -= 1
         if self._hurt_frames > 0:
             self._hurt_frames -= 1
             if self._hurt_frames == 0 and self.state == self.ST_HURT:
@@ -1359,10 +1668,12 @@ class Player(Stickman):
         self._jump_pressed = False   # for edge-triggered jump
         self._stored_melee = weapon_name
         self._arrows_left = 0
+        self._rounds_left = 0
         self._shoot_pressed = False
         self._pending_shot = False
         self._grenade_pressed = False
         self._pending_grenade = False
+        self._atk_held = False
 
     def equip_bow(self, arrow_count: int) -> None:
         """Switch to bow and load arrows.
@@ -1370,21 +1681,44 @@ class Player(Stickman):
         Args:
             arrow_count: number of arrows in this set.
         """
-        if self.weapon_name != "bow":
+        if self.weapon_name not in ("bow", "ak47"):
             self._stored_melee = self.weapon_name
         self.weapon_name = "bow"
         self.weapon = c.WEAPONS["bow"]
         self._arrows_left = arrow_count
+        self._rounds_left = 0
+
+    def equip_ak47(self, rounds: int) -> None:
+        """Switch to AK-47 with a full magazine.
+
+        Args:
+            rounds: rifle rounds loaded.
+        """
+        if self.weapon_name not in ("bow", "ak47"):
+            self._stored_melee = self.weapon_name
+        self.weapon_name = "ak47"
+        self.weapon = c.WEAPONS["ak47"]
+        self._rounds_left = rounds
+        self._arrows_left = 0
 
     def equip_melee(self) -> None:
-        """Revert to the last melee weapon when arrows run out."""
+        """Revert to the last melee weapon when ranged ammo runs out."""
         self.weapon_name = self._stored_melee
         self.weapon = c.WEAPONS[self._stored_melee]
         self._arrows_left = 0
+        self._rounds_left = 0
 
     def is_using_bow(self) -> bool:
         """Return True when the bow is the active weapon."""
         return self.weapon_name == "bow" and self._arrows_left > 0
+
+    def is_using_ak47(self) -> bool:
+        """Return True when the AK-47 is equipped with ammo."""
+        return self.weapon_name == "ak47" and self._rounds_left > 0
+
+    def is_using_ranged(self) -> bool:
+        """Return True when a ranged weapon is active."""
+        return self.is_using_bow() or self.is_using_ak47()
 
     def try_fire_arrow(self) -> Optional[Arrow]:
         """Launch one arrow if bow is equipped and cooldown allows.
@@ -1415,6 +1749,48 @@ class Player(Stickman):
             self.equip_melee()
 
         return arrow
+
+    def try_fire_rifle(
+        self, atk_held: bool,
+    ) -> tuple[Optional[RifleBullet], Optional[MuzzleFlash], Optional[ShellCasing]]:
+        """Fire AK-47 while attack key is held (automatic).
+
+        Args:
+            atk_held: whether Z/J is currently pressed.
+
+        Returns:
+            Tuple of (bullet, muzzle_flash, shell_casing) — any may be None.
+        """
+        if not atk_held or not self.is_using_ak47() or self._attack_cd > 0:
+            return None, None, None
+        if self.state in (self.ST_DEAD, self.ST_HURT):
+            return None, None, None
+
+        self._attack_cd = self.weapon["cooldown_f"]
+        self._rounds_left -= 1
+        self._fire_flash_frames = c.AK47_RECOIL_FRAMES
+
+        j = self._joints()
+        wx, wy = j["w_hand"]
+        ang = j["w_ang"]
+        reach = self.weapon["reach"]
+        muzzle_x = wx + math.sin(ang) * reach
+        muzzle_y = wy + math.cos(ang) * reach
+        ux = math.sin(ang)
+        uy = math.cos(ang)
+        speed = c.AK47_BULLET_SPEED
+        bullet = RifleBullet(
+            muzzle_x + ux * 4, muzzle_y + uy * 4,
+            ux * speed, uy * speed,
+            self.weapon["damage"], self.weapon["knockback"], self.x,
+        )
+        flash = MuzzleFlash(muzzle_x + self.facing * 6, muzzle_y, self.facing)
+        casing = ShellCasing(wx, wy - 4, self.facing)
+
+        if self._rounds_left <= 0:
+            self.equip_melee()
+
+        return bullet, flash, casing
 
     def handle_input(self, keys: pygame.key.ScancodeWrapper) -> None:
         """Read keyboard state and move / jump / attack accordingly.
@@ -1448,9 +1824,10 @@ class Player(Stickman):
         if atk_held and not self._shoot_pressed:
             if self.is_using_bow():
                 self._pending_shot = True
-            elif self.can_attack():
+            elif not self.is_using_ak47() and self.can_attack():
                 self.start_attack()
         self._shoot_pressed = atk_held
+        self._atk_held = atk_held
 
         grenade_held = keys[c.KEY_GRENADE]
         if grenade_held and not self._grenade_pressed and self.can_throw_grenade():
@@ -1467,6 +1844,16 @@ class Player(Stickman):
             return None
         self._pending_shot = False
         return self.try_fire_arrow()
+
+    def consume_rifle_shot(
+        self,
+    ) -> tuple[Optional[RifleBullet], Optional[MuzzleFlash], Optional[ShellCasing]]:
+        """Attempt automatic AK-47 fire for this frame.
+
+        Returns:
+            Tuple of (bullet, muzzle_flash, shell_casing).
+        """
+        return self.try_fire_rifle(self._atk_held)
 
     def update(self, platforms: list[Platform]) -> None:
         """Step player physics and animation.
