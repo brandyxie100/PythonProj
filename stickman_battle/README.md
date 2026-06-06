@@ -1,16 +1,17 @@
 # Stickman Battle
 
-A 2-D action brawler featuring procedurally drawn stick figures, three weapons, bouncy tires, and three difficulty modes — all written in pure Python with Pygame (no sprite assets required).
+A 2-D action brawler with procedurally drawn stick figures, melee weapons, bow pickups, grenades, bouncy tires, spring boosters, and three difficulty modes — all in pure Python + Pygame (no sprite assets).
 
 ---
 
-## Screenshots (reference style)
+## Features at a glance
 
-The game uses the same visual language as the reference app:
-- Dark-blue gradient background
-- Platforms with a bright **cyan top edge**
-- Stick figures with coloured **3-D-glasses eyes**
-- Red bouncy tires that roll and bounce
+- **Blue player** vs **red/magenta enemies** in a single-room arena
+- **Melee** — sword, hammer, pickaxe with **360° spin attacks**
+- **Bow pickup** — shiny timed spawn after kills (20 arrows)
+- **Grenades** — 6 per stickman per match; vivid red/orange particle blasts
+- **Double jump** and **spring balls** for vertical movement
+- **Red bouncy tires** that roll when pushed
 
 ---
 
@@ -26,13 +27,8 @@ The game uses the same visual language as the reference app:
 ## Installation & Running
 
 ```bash
-# 1. Navigate into the game folder
 cd stickman_battle
-
-# 2. Install dependencies
 pip install -r requirements.txt
-
-# 3. Launch
 python main.py
 ```
 
@@ -44,72 +40,91 @@ python main.py
 |-----|--------|
 | `A` / `←` | Move left |
 | `D` / `→` | Move right |
-| `W` / `↑` | Jump (press again mid-air for a double jump) |
+| `W` / `↑` | Jump (press again mid-air for double jump) |
 | `Z` or `J` | Melee **360° spin** or **shoot bow** (when equipped) |
+| `B` | Throw grenade |
 
 ---
 
-## Bow & Arrows (ranged pickup)
+## Gameplay flow
 
-When you defeat an enemy, a **bow set** may spawn at a random spot on the arena (85% chance):
-
-- Glowing golden animation with rotating sparkles
-- **10-second countdown** — grab it before it vanishes!
-- Each set includes **20 arrows**
-- Walk into the pickup to equip the bow
-- Press `Z` / `J` to fire arrows at enemies (ranged damage + knockback)
-- When arrows run out, you automatically switch back to your melee weapon
+1. Choose **Easy**, **Normal**, or **Hard** on the menu.
+2. Fight as the **blue** stickman; defeat all enemies to win.
+3. Lose if your HP reaches zero.
+4. Use **Play Again** or **Main Menu** on the game-over screen.
 
 ---
 
-## Gameplay
+## Combat systems
 
-1. **Start** — Choose a difficulty on the menu screen.
-2. **Battle** — You play as the **blue** stickman. Defeat all red enemies to win.
-3. **Win** — Eliminate every enemy; a victory overlay appears.
-4. **Lose** — Your health reaches zero; a defeat overlay appears.
-5. **Retry or Menu** — Buttons on the Game-Over screen let you play again or change difficulty.
+### Melee (360° spin)
+
+- Press `Z` / `J` to attack. The weapon arm spins a full circle.
+- Hit detection follows the **weapon tip** each frame.
+- An orange **HitEffect** burst appears on impact.
+- The **sword** has the fastest attack rate and spin (see Weapons table).
+
+### Bow & arrows (pickup)
+
+When you defeat an enemy, a bow set may spawn (**85%** chance):
+
+- Glowing animation with sparkles and a **10-second countdown**
+- **20 arrows** per set — walk into the pickup to equip
+- Press `Z` / `J` to shoot; arrows arc with light gravity
+- **Arrows injure but do not kill** — they cannot reduce HP below 1
+- When arrows run out, you switch back to your melee weapon
+
+### Grenades
+
+- Every stickman starts with **6 grenades** per match
+- Player throws with **`B`**; grenades arc, bounce, then explode on fuse
+- **AoE damage** up to **24** at blast center (higher than sword)
+- **Blast visuals**: layered red/orange fireball + **42 particle sparks**
+- Enemy AI throws grenades; frequency increases on higher difficulty
 
 ### Tires
-Red circular tires are scattered on the floor. Any stickman that walks into one shoves it away — use them to knock enemies off-balance!
+
+Red circular tires on the floor roll and bounce when stickmen push them.
 
 ### Double jump
-You can jump twice in a row: once from the ground, and once more while still in the air. Landing on any platform or the floor resets both jumps.
+
+Ground jump + one mid-air jump. Landing resets both jumps.
 
 ### Spring balls
-Yellow round spring pads are fixed in place on the floor and on platforms. Step on one to launch much higher than a normal jump — and your double jump is refreshed when you bounce!
 
-### 360° weapon attacks
-Press attack and your weapon arm spins a full circle. The weapon **tip** is tracked each frame; any enemy the tip touches during the spin takes damage and knockback. An orange burst appears on impact.
+Fixed yellow pads on the floor and platforms launch you higher than a normal jump and refresh your double jump.
 
 ---
 
-## Difficulty Modes
+## Difficulty modes
 
-| Mode   | Your HP | Enemy Count | Enemy Speed | Enemy Damage | Your Damage Multiplier |
-|--------|---------|-------------|-------------|--------------|------------------------|
-| Easy   | 150     | 2           | 1.8 px/f    | 5            | ×1.5                   |
-| Normal | 100     | 3           | 2.8 px/f    | 10           | ×1.0                   |
-| Hard   | 70      | 5           | 4.0 px/f    | 18           | ×0.8                   |
+| Mode | Your HP | Enemies | Enemy speed | Enemy melee dmg | Your dmg mult | Enemy grenade chance | Grenade cooldown |
+|------|---------|---------|-------------|-----------------|---------------|----------------------|------------------|
+| Easy | 150 | 2 | 1.8 | 5 | ×1.5 | 32% | 180 f |
+| Normal | 100 | 3 | 2.8 | 10 | ×1.0 | 52% | 130 f |
+| Hard | 70 | 5 | 4.0 | 18 | ×0.8 | 74% | 90 f |
 
----
-
-## Weapons
-
-| Weapon  | Reach | Damage | Cooldown | Knockback | Visual |
-|---------|-------|--------|----------|-----------|--------|
-| Sword   | 48 px | 12     | 30 frames | 4      | Long thin blade + crossguard |
-| Hammer  | 34 px | 22     | 50 frames | 8      | Short handle + block head |
-| Pickaxe | 42 px | 16     | 38 frames | 5.5    | Handle + asymmetric pick head |
-| Bow     | ranged | 15 (arrow) | 22 frames | 3   | Pickup only — 20 arrows per set |
-
-Player always starts with the **Sword**. Enemies are equipped based on difficulty (Easy: sword only; Normal: sword + pickaxe; Hard: all three). The **Bow** is only available as a timed pickup after kills.
+Enemy melee weapons by mode: **Easy** — sword; **Normal** — sword + pickaxe; **Hard** — sword + pickaxe + hammer.
 
 ---
 
-## Level Layout
+## Weapons & items
 
-The single room is 900 × 600 pixels and contains:
+| Item | Reach / type | Damage | Cooldown / fuse | Notes |
+|------|----------------|--------|-----------------|-------|
+| Sword | 48 px melee | 12 | 1 f, fast spin | Player default weapon |
+| Hammer | 34 px melee | 22 | 10 f | Hard-mode enemies |
+| Pickaxe | 42 px melee | 16 | 5 f | Normal/Hard enemies |
+| Bow | ranged | 15 / arrow | 18 f between shots | Pickup only; non-lethal |
+| Grenade | AoE (~78 px) | 24 center | ~95 f fuse | 6/match; particle blast |
+
+Values come from `config.py` and may be tuned there.
+
+---
+
+## Level layout
+
+Arena size: **900 × 600** px.
 
 ```
        [  upper-centre + spring ]
@@ -118,69 +133,73 @@ The single room is 900 × 600 pixels and contains:
 
   [ mid-left + spring ]         [ mid-right + spring ]
 
-[========= FLOOR + centre spring =========]
+[========= FLOOR + centre spring + tires =========]
 ```
 
-- **Floor** — full-width at the bottom  
-- **Mid-left / mid-right** — 220 px wide platforms at mid height  
-- **Upper-centre** — 190 px wide platform above the middle  
-- **Left-wall / right-wall ledges** — 130 px wide near the top corners
+- Full-width **floor**
+- **Mid-left / mid-right** platforms (220 px)
+- **Upper-centre** platform (190 px)
+- **Wall ledges** left and right (130 px)
+- **4 spring balls** and **4 tires** placed on floor/platforms
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 stickman_battle/
-├── config.py       # All constants: screen, physics, anatomy, colours,
-│                   #   difficulty presets, weapon data, key bindings
-├── entities.py     # Every in-game object
-│   │
-│   ├── HitEffect   # Short-lived orange burst at weapon impact
-│   ├── Platform    # Static ledge (dark-blue fill, cyan edge)
-│   ├── Tire        # Bouncy red circle with rolling animation
-│   ├── SpringBall  # Fixed yellow booster pad (launches stickmen upward)
-│   ├── Arrow       # Bow projectile with light gravity arc
-│   ├── BowPickup   # Timed shiny bow+arrow pickup (10 s countdown)
-│   ├── Stickman    # Base class — procedural drawing + physics + combat
-│   ├── Player      # Keyboard-controlled blue stickman
-│   └── Enemy       # AI-controlled red stickman (chase → attack → back-off)
-│
-├── main.py         # Scene management + game loop
-│   │
-│   ├── MenuScene      # Title + difficulty picker + decorative animation
-│   ├── GameScene      # Battle arena (platforms, tires, enemies, HUD)
-│   └── GameOverScene  # Win / Lose result with Retry / Menu buttons
-│
+├── config.py       # Constants: physics, colours, weapons, difficulties, keys
+├── entities.py     # Game objects
+│   ├── HitEffect     # Orange impact flash
+│   ├── Platform      # Cyan-edged ledges
+│   ├── Tire          # Bouncy red circles
+│   ├── SpringBall    # Yellow jump boosters
+│   ├── Arrow         # Bow projectile
+│   ├── BlastParticle # Grenade explosion sparks
+│   ├── Grenade       # Throwable AoE bomb
+│   ├── BowPickup     # Timed bow spawn (10 s)
+│   ├── Stickman      # Base stick figure + combat
+│   ├── Player        # Keyboard control
+│   └── Enemy         # Chase / attack / grenade AI
+├── main.py         # MenuScene, GameScene, GameOverScene, game loop
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Architecture Notes
+## Architecture notes
 
-### Procedural stickman drawing
-Every stickman is rendered frame-by-frame using `pygame.draw.line` and `pygame.draw.circle`. No PNG sprites are loaded. A `_joints()` method computes every body-segment position from:
-- `walk_phase` — sinusoidal pendulum swing for legs and arms while moving
-- `attack_phase` — weapon arm rotates a full **360°** during an attack swing
-- `facing` — mirrors the arm/weapon direction when the character turns
+### Procedural drawing
 
-### Combat hit detection
-During a spin attack, a circular hit zone follows the **weapon tip** every frame. If the tip overlaps an enemy (or passes within proximity at high spin speed), damage and knockback are applied once per target per swing.
+Stickmen are drawn with `pygame.draw` each frame. `_joints()` positions head, torso, limbs, and weapons from `walk_phase`, `attack_phase`, and `facing`.
 
-### Physics
-Simple Euler integration: gravity adds to `vy` each frame; stickmen land on platforms by checking feet-crossing of platform top surface. Tires get their own bounce coefficient (0.65) and rolling friction. Spring balls apply a fixed upward velocity (`SPRING_BOOST_VEL`) and reset consecutive jump count.
+### Hit detection
 
-### Enemy AI state machine
+- **Melee**: weapon-tip hitbox during spin (`WEAPON_HIT_RADIUS`).
+- **Arrows**: tip proximity; damage capped so targets stay at ≥ 1 HP.
+- **Grenades**: radial falloff inside `GRENADE_RADIUS` on detonation.
+
+### Grenade blast rendering
+
+On explode, `Grenade` spawns `BlastParticle` embers (red/orange palette) and draws a multi-layer fireball (core → inner → mid → outer → smoke) with an early white-hot flash.
+
+### Enemy AI
+
 ```
-IDLE ──(player nearby)──► CHASE ──(close enough)──► ATTACK
-                                                        │
-                                          (hit by player)
-                                                        ▼
-                                                     BACK-OFF ──► CHASE
-```
-Enemies randomly jump when the player is on a higher platform.
+CHASE ──(in melee range)──► ATTACK
+   │
+   └──(hurt)──► BACK-OFF ──► CHASE
 
-### Scene transitions
-Each scene's `handle_event()` and `update()` return the *next* scene object (or `None` to stay). The main loop replaces `scene` when a non-None value is returned — no global state machine needed.
+Separately: maybe_throw_grenade() when in range, based on difficulty chance/cooldown.
+```
+
+### Scenes
+
+`MenuScene` → `GameScene` → `GameOverScene`. Each scene’s `handle_event()` / `update()` may return the next scene object.
+
+---
+
+## Tuning
+
+Edit `config.py` to adjust damage, cooldowns, grenade blast colours, particle count, difficulty presets, and key bindings without changing game logic.

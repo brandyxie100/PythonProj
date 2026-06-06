@@ -12,6 +12,7 @@ Controls (in-game):
     A / ← → move left        D / → → move right
     W / ↑  → jump (press again mid-air for double jump)
     Z / J → attack (360° weapon spin)
+    B     → throw grenade
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from typing import Optional
 import pygame
 
 import config as c
-from entities import Arrow, BowPickup, Enemy, HitEffect, Platform, Player, SpringBall, Stickman, Tire
+from entities import Arrow, BowPickup, Enemy, Grenade, HitEffect, Platform, Player, SpringBall, Stickman, Tire
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ class MenuScene:
             "A / ←  Move left       D / →  Move right",
             "W / ↑  Jump (double-tap mid-air for extra height)",
             "Z / J  Melee spin or shoot bow arrows",
+            "B      Throw grenade (6 per match)",
         ]
         for i, line in enumerate(controls):
             txt = self._font_ctrl.render(line, True, (160, 190, 220))
@@ -241,6 +243,7 @@ class GameScene:
         # ---- Bow pickup & projectiles ----
         self._bow_pickup: Optional[BowPickup] = None
         self._arrows: list[Arrow] = []
+        self._grenades: list[Grenade] = []
 
         # ---- Result ----
         self._result: Optional[str] = None   # "win" | "lose"
@@ -337,9 +340,17 @@ class GameScene:
             arrow.damage *= self._cfg["player_damage_mult"]
             self._arrows.append(arrow)
 
+        # Player grenade throw
+        grenade = self._player.consume_grenade_throw()
+        if grenade is not None:
+            self._grenades.append(grenade)
+
         # Enemies
         for enemy in self._enemies:
             enemy.update(self._platforms, self._player)
+            eg = enemy.maybe_throw_grenade(self._player, self._cfg)
+            if eg is not None:
+                self._grenades.append(eg)
 
         # Tires
         for tire in self._tires:
@@ -367,6 +378,17 @@ class GameScene:
                     self._effects.append(HitEffect(int(arrow.x), int(arrow.y)))
                     break
         self._arrows = [a for a in self._arrows if a.alive]
+
+        # Flying grenades and explosions
+        for grenade in self._grenades:
+            grenade.update(self._platforms)
+            if grenade.just_exploded:
+                hits = grenade.apply_explosion([self._player] + self._enemies)
+                self._effects.append(HitEffect(int(grenade.x), int(grenade.y)))
+                # Add extra flashes when multiple targets are hit.
+                for target in hits[1:]:
+                    self._effects.append(HitEffect(int(target.x), int(target.y - target.TOTAL_H / 2)))
+        self._grenades = [g for g in self._grenades if g.alive]
 
         # Effects
         for fx in list(self._effects):
@@ -457,6 +479,10 @@ class GameScene:
         for arrow in self._arrows:
             arrow.draw(surf)
 
+        # Grenades in flight / explosion pulse
+        for grenade in self._grenades:
+            grenade.draw(surf)
+
         # Enemies
         for enemy in self._enemies:
             enemy.draw(surf)
@@ -509,6 +535,11 @@ class GameScene:
                 True, (200, 220, 240),
             )
         surf.blit(wpn_txt, (10, c.SCREEN_H - 28))
+        grenade_txt = self._font_sm.render(
+            f"Grenades: {self._player.grenades_left}",
+            True, (255, 190, 120),
+        )
+        surf.blit(grenade_txt, (10, c.SCREEN_H - 48))
 
         # Bow pickup hint
         if self._bow_pickup is not None and self._bow_pickup.active:
@@ -520,7 +551,7 @@ class GameScene:
 
         # Controls reminder (bottom-right, small)
         ctrl_txt = self._font_sm.render(
-            "A/D: Move  W: Jump×2  Z/J: Attack/Shoot  |  Grab glowing bow!",
+            "A/D: Move  W: Jump×2  Z/J: Attack/Shoot  B: Grenade (x6)",
             True, (140, 170, 200),
         )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))

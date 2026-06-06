@@ -1,7 +1,9 @@
 """Stickman Battle — game entities.
 
 Contains all in-game objects:
-  Platform, Tire, SpringBall, HitEffect, Stickman (base), Player, Enemy.
+  Platform, Tire, SpringBall, Arrow, BlastParticle, Grenade, HitEffect,
+  Stickman (base),
+  Player, Enemy.
 
 Stickmen are drawn procedurally using line-segment anatomy and simple
 sinusoidal limb-animation driven by a walk phase, so no sprite assets are
@@ -362,11 +364,286 @@ class Arrow:
         cy = target.y - target.TOTAL_H / 2
         if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
             return False
-        target.take_damage(self.damage, source_x=self.source_x)
+        # Keep bow attacks non-lethal by design: arrows injure but never finish.
+        non_lethal_damage = min(self.damage, max(0.0, target.health - 1.0))
+        if non_lethal_damage > 0.0:
+            target.take_damage(non_lethal_damage, source_x=self.source_x)
         target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
         target.vy -= 1.5
         self.alive = False
         return True
+
+
+# ---------------------------------------------------------------------------
+# BlastParticle — spark/debris from grenade explosions
+# ---------------------------------------------------------------------------
+
+class BlastParticle:
+    """Single ember particle ejected from a grenade blast."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        vx: float,
+        vy: float,
+        color: tuple[int, int, int],
+        size: float,
+        life: int,
+    ) -> None:
+        """Args:
+            x: spawn x.
+            y: spawn y.
+            vx: horizontal velocity.
+            vy: vertical velocity.
+            color: RGB spark colour.
+            size: initial radius in pixels.
+            life: frames until fade-out.
+        """
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.color = color
+        self.size = size
+        self._life = life
+        self._max_life = life
+
+    @property
+    def alive(self) -> bool:
+        return self._life > 0
+
+    def update(self) -> None:
+        """Step particle motion and decay."""
+        self.vy += 0.12
+        self.vx *= 0.97
+        self.vy *= 0.98
+        self.x += self.vx
+        self.y += self.vy
+        self._life -= 1
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Render glowing spark with alpha fade.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        t = self._life / self._max_life
+        radius = max(1, int(self.size * (0.4 + 0.6 * t)))
+        alpha = int(255 * t)
+        glow = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+        cx, cy = radius * 2, radius * 2
+        pygame.draw.circle(glow, (*self.color, alpha), (cx, cy), radius)
+        pygame.draw.circle(
+            glow, (255, 255, 220, min(255, alpha + 40)), (cx, cy), max(1, radius // 2)
+        )
+        surf.blit(glow, glow.get_rect(center=_ip(self.x, self.y)))
+
+
+# ---------------------------------------------------------------------------
+# Grenade — arcing explosive projectile
+# ---------------------------------------------------------------------------
+
+class Grenade:
+    """Throwable grenade with fuse timer and area-of-effect explosion."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        vx: float,
+        vy: float,
+        owner_id: int,
+        damage: float = c.GRENADE_DAMAGE,
+    ) -> None:
+        """Args:
+            x: initial x.
+            y: initial y.
+            vx: horizontal launch velocity.
+            vy: vertical launch velocity.
+            owner_id: id() of thrower (used for friendly-fire skip).
+            damage: damage dealt at blast center.
+        """
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.owner_id = owner_id
+        self.damage = damage
+        self._fuse = c.GRENADE_FUSE_F
+        self._exploded = False
+        self._explosion_life = 0
+        self._just_exploded = False
+        self._particles: list[BlastParticle] = []
+        self.alive = True
+
+    @property
+    def just_exploded(self) -> bool:
+        """True on the exact frame the fuse pops."""
+        return self._just_exploded
+
+    @property
+    def exploded(self) -> bool:
+        """True once explosion has started."""
+        return self._exploded
+
+    def update(self, platforms: list[Platform]) -> None:
+        """Advance grenade movement and fuse.
+
+        Args:
+            platforms: collision ledges.
+        """
+        self._just_exploded = False
+        if not self.alive:
+            return
+
+        if self._exploded:
+            self._explosion_life -= 1
+            for particle in self._particles:
+                particle.update()
+            self._particles = [p for p in self._particles if p.alive]
+            if self._explosion_life <= 0 and not self._particles:
+                self.alive = False
+            return
+
+        self._fuse -= 1
+        if self._fuse <= 0:
+            self._explode()
+            return
+
+        self.vy = min(self.vy + c.GRAVITY, c.MAX_FALL)
+        self.vx *= c.GRENADE_AIR_DRAG
+        self.x += self.vx
+        self.y += self.vy
+
+        # Platform/floor bounces.
+        for plat in platforms:
+            pr = plat.rect
+            if not (pr.left - 8 <= self.x <= pr.right + 8):
+                continue
+            if self.y >= pr.top and self.y <= pr.top + abs(self.vy) + 6 and self.vy > 0:
+                self.y = pr.top
+                self.vy = -abs(self.vy) * c.GRENADE_BOUNCE
+                self.vx *= 0.85
+
+        floor_y = c.SCREEN_H - 20
+        if self.y >= floor_y:
+            self.y = floor_y
+            self.vy = -abs(self.vy) * c.GRENADE_BOUNCE
+            self.vx *= 0.8
+
+        if self.x <= 0 or self.x >= c.SCREEN_W:
+            self.x = max(0, min(c.SCREEN_W, self.x))
+            self.vx = -self.vx * 0.65
+
+    def _spawn_blast_particles(self) -> None:
+        """Emit red/orange sparks radiating from the blast center."""
+        self._particles = []
+        for _ in range(c.GRENADE_BLAST_PARTICLE_COUNT):
+            ang = random.uniform(0, math.tau)
+            speed = random.uniform(4.0, 14.0)
+            col = random.choice(c.GRENADE_PARTICLE_COLORS)
+            life = random.randint(14, 28)
+            size = random.uniform(2.5, 6.5)
+            self._particles.append(
+                BlastParticle(
+                    self.x, self.y,
+                    math.cos(ang) * speed,
+                    math.sin(ang) * speed - random.uniform(1.0, 4.0),
+                    col, size, life,
+                )
+            )
+
+    def _explode(self) -> None:
+        """Trigger explosion state and particle burst."""
+        self._exploded = True
+        self._just_exploded = True
+        self._explosion_life = c.GRENADE_EXPLOSION_LIFE_F
+        self.vx = 0.0
+        self.vy = 0.0
+        self._spawn_blast_particles()
+
+    def apply_explosion(self, targets: list["Stickman"]) -> list["Stickman"]:
+        """Apply AoE damage/knockback once at explosion.
+
+        Args:
+            targets: all stickmen in scene.
+
+        Returns:
+            Stickmen that were hit by this explosion.
+        """
+        if not self._just_exploded:
+            return []
+
+        hits: list["Stickman"] = []
+        for target in targets:
+            if not target.alive or id(target) == self.owner_id:
+                continue
+            cx = target.x
+            cy = target.y - target.TOTAL_H / 2
+            dist = math.hypot(cx - self.x, cy - self.y)
+            if dist > c.GRENADE_RADIUS:
+                continue
+            # Linear falloff so center hits harder.
+            scale = 1.0 - (dist / c.GRENADE_RADIUS)
+            dmg = self.damage * (0.35 + 0.65 * scale)
+            target.take_damage(dmg, source_x=self.x)
+            push = 4.5 + 5.5 * scale
+            target.vx += (1 if cx >= self.x else -1) * push
+            target.vy -= 2.0 + 4.0 * scale
+            hits.append(target)
+        return hits
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw grenade body or explosion pulse.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+        if not self._exploded:
+            pygame.draw.circle(surf, c.GRENADE_COL, _ip(self.x, self.y), 7)
+            pygame.draw.circle(surf, c.GRENADE_PIN, _ip(self.x + 3, self.y - 5), 2)
+            # Fuse blink indicator.
+            if (self._fuse // 8) % 2 == 0:
+                pygame.draw.circle(surf, (255, 220, 120), _ip(self.x, self.y - 9), 2)
+            return
+
+        # Layered red/orange fireball — vivid multi-ring blast.
+        total = float(c.GRENADE_EXPLOSION_LIFE_F)
+        t = 1.0 - (self._explosion_life / total)
+        cx, cy = _ip(self.x, self.y)
+
+        r_smoke = int(18 + c.GRENADE_RADIUS * t * 1.15)
+        r_outer = int(14 + c.GRENADE_RADIUS * t)
+        r_mid = int(r_outer * 0.72)
+        r_inner = int(r_outer * 0.48)
+        r_core = max(4, int(r_outer * 0.22))
+
+        pad = r_smoke + 8
+        boom = pygame.Surface((pad * 2, pad * 2), pygame.SRCALPHA)
+        center = (pad, pad)
+
+        # Outer ember smoke (deep red, soft edge).
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_SMOKE, 75), center, r_smoke)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_OUTER, 130), center, r_outer)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_MID, 185), center, r_mid)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_INNER, 220), center, r_inner)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_CORE, 245), center, r_core)
+
+        # Early-frame white-hot flash for extra punch.
+        if t < 0.25:
+            flash_r = int(r_core * (1.6 - t * 2.0))
+            pygame.draw.circle(boom, (255, 255, 255, 200), center, max(2, flash_r))
+
+        surf.blit(boom, boom.get_rect(center=(cx, cy)))
+
+        # Flying sparks on top of the fireball.
+        for particle in self._particles:
+            particle.draw(surf)
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +819,10 @@ class Stickman:
 
         # Consecutive jumps (ground + mid-air)
         self._jumps_left = c.MAX_CONSECUTIVE_JUMPS
+
+        # Grenades (everyone gets the same match allotment).
+        self.grenades_left = c.GRENADES_PER_MATCH
+        self._grenade_cd = 0
 
         # Hurt flash
         self._hurt_frames = 0
@@ -834,6 +1115,7 @@ class Stickman:
         self.state        = self.ST_ATTACK
         self.attack_phase = 0.0
         self._attack_cd   = self.weapon["cooldown_f"]
+        self.attack_speed = self.weapon.get("spin_speed", c.ATTACK_SPIN_SPEED)
         self._hit_targets = set()
 
     def try_jump(self) -> bool:
@@ -851,6 +1133,43 @@ class Stickman:
         self._jumps_left -= 1
         self.on_ground = False
         return True
+
+    def can_throw_grenade(self) -> bool:
+        """Return True when this stickman can throw a grenade."""
+        return (
+            self.alive
+            and self.grenades_left > 0
+            and self._grenade_cd <= 0
+            and self.state not in (self.ST_HURT, self.ST_DEAD)
+        )
+
+    def throw_grenade_at(self, target_x: float, target_y: float) -> Optional[Grenade]:
+        """Create a grenade with an arcing trajectory toward target point.
+
+        Args:
+            target_x: aim x.
+            target_y: aim y.
+
+        Returns:
+            New Grenade if thrown, else None.
+        """
+        if not self.can_throw_grenade():
+            return None
+
+        dx = target_x - self.x
+        aim_y = target_y - (self.y - self.TOTAL_H * 0.5)
+        vx = _clamp(dx / 26.0, -9.0, 9.0)
+        if abs(vx) < 3.2:
+            vx = 3.2 if dx >= 0 else -3.2
+        vy = _clamp(-10.5 + (aim_y / 120.0), c.GRENADE_THROW_MIN_VY, c.GRENADE_THROW_MAX_VY)
+
+        self.grenades_left -= 1
+        self._grenade_cd = c.GRENADE_COOLDOWN_F
+        self.facing = 1 if dx >= 0 else -1
+
+        j = self._joints()
+        hand_x, hand_y = j["w_hand"]
+        return Grenade(hand_x, hand_y, vx, vy, owner_id=id(self))
 
     def weapon_tip(self) -> tuple[float, float]:
         """Return the world position of the weapon tip (for hit-checking).
@@ -994,6 +1313,8 @@ class Stickman:
         # Cooldowns
         if self._attack_cd > 0:
             self._attack_cd -= 1
+        if self._grenade_cd > 0:
+            self._grenade_cd -= 1
         if self._hurt_frames > 0:
             self._hurt_frames -= 1
             if self._hurt_frames == 0 and self.state == self.ST_HURT:
@@ -1040,6 +1361,8 @@ class Player(Stickman):
         self._arrows_left = 0
         self._shoot_pressed = False
         self._pending_shot = False
+        self._grenade_pressed = False
+        self._pending_grenade = False
 
     def equip_bow(self, arrow_count: int) -> None:
         """Switch to bow and load arrows.
@@ -1129,6 +1452,11 @@ class Player(Stickman):
                 self.start_attack()
         self._shoot_pressed = atk_held
 
+        grenade_held = keys[c.KEY_GRENADE]
+        if grenade_held and not self._grenade_pressed and self.can_throw_grenade():
+            self._pending_grenade = True
+        self._grenade_pressed = grenade_held
+
     def consume_shot(self) -> Optional[Arrow]:
         """Fire a pending arrow request (called once per frame from GameScene).
 
@@ -1147,6 +1475,19 @@ class Player(Stickman):
             platforms: current level platforms.
         """
         self._base_update(platforms)
+
+    def consume_grenade_throw(self) -> Optional[Grenade]:
+        """Throw pending player grenade toward where they face.
+
+        Returns:
+            Grenade if thrown, else None.
+        """
+        if not self._pending_grenade:
+            return None
+        self._pending_grenade = False
+        target_x = self.x + self.facing * 170
+        target_y = self.y - 45
+        return self.throw_grenade_at(target_x, target_y)
 
 
 # ---------------------------------------------------------------------------
@@ -1279,3 +1620,38 @@ class Enemy(Stickman):
         """
         hits = self.check_weapon_hits([player], self.damage, self.weapon["knockback"])
         return len(hits) > 0
+
+    def maybe_throw_grenade(self, player: Player, difficulty_cfg: dict) -> Optional[Grenade]:
+        """Decide whether to throw a grenade based on distance and difficulty.
+
+        Args:
+            player: target player.
+            difficulty_cfg: current mode configuration dict.
+
+        Returns:
+            Grenade if enemy decided to throw one this frame.
+        """
+        if not self.can_throw_grenade() or not player.alive:
+            return None
+
+        dx = player.x - self.x
+        dist = abs(dx)
+        # Avoid suicidal tosses at point-blank range.
+        if dist < 110 or dist > 420:
+            return None
+        # Prefer throwing when target is elevated or moving.
+        vertical_adv = player.y < self.y - 25
+        player_moving = abs(player.vx) > 1.0
+        intent_bonus = 0.16 if vertical_adv else 0.0
+        intent_bonus += 0.1 if player_moving else 0.0
+
+        throw_prob = float(difficulty_cfg.get("enemy_grenade_chance", 0.5)) + intent_bonus
+        if random.random() > min(0.95, throw_prob):
+            return None
+
+        lead_x = player.x + player.vx * 14.0
+        target_y = player.y - 40.0
+        grenade = self.throw_grenade_at(lead_x, target_y)
+        if grenade is not None:
+            self._grenade_cd = int(difficulty_cfg.get("enemy_grenade_cooldown", c.GRENADE_COOLDOWN_F))
+        return grenade
