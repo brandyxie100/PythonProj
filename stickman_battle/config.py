@@ -126,7 +126,7 @@ AK47_ROUNDS_PER_PICKUP: int = 30
 AK47_PICKUP_RADIUS: int = 30
 AK47_BULLET_SPEED: float = 22.0
 AK47_BULLET_GRAVITY: float = 0
-AK47_FIRE_COOLDOWN_F: int = 6               # automatic fire rate
+AK47_FIRE_COOLDOWN_F: int = 3               # automatic fire rate
 AK47_RECOIL_FRAMES: int = 5
 AK47_COL = (55, 50, 45)
 AK47_WOOD = (110, 75, 40)
@@ -213,7 +213,7 @@ WEAPONS: dict[str, dict] = {
         color=AK47_METAL,
         guard_color=AK47_WOOD,
         reach=52,
-        damage=30,
+        damage=ARROW_DAMAGE,
         cooldown_f=AK47_FIRE_COOLDOWN_F,
         knockback=ARROW_KNOCKBACK,
     ),
