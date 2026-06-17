@@ -153,6 +153,7 @@ class MenuScene:
             "A / ←  Move left       D / →  Move right",
             "W / ↑  Jump (double-tap mid-air for extra height)",
             "Z / J  Melee spin / bow / AK-47 (hold to auto-fire)",
+            "M      Switch to AK-47       T      Switch to hammer",
             "B      Throw grenade (6 per match)",
         ]
         for i, line in enumerate(controls):
@@ -232,7 +233,7 @@ class GameScene:
             x=c.SCREEN_W // 2,
             y=float(floor_y),
             health=self._cfg["player_health"],
-            weapon_name="sword",
+            weapon_name=c.PLAYER_PERMANENT_MELEE,
         )
 
         # ---- Enemies ----
@@ -632,10 +633,11 @@ class GameScene:
 
         # Player weapon indicator (bottom-left)
         if self._player.is_using_ak47():
-            wpn_txt = self._font_sm.render(
-                f"AK-47 — Rounds: {self._player._rounds_left}",
-                True, (140, 255, 160),
-            )
+            if self._player._ak47_infinite:
+                ak_label = "AK-47 — ∞ ammo"
+            else:
+                ak_label = f"AK-47 — Rounds: {self._player._rounds_left}"
+            wpn_txt = self._font_sm.render(ak_label, True, (140, 255, 160))
         elif self._player.is_using_bow():
             wpn_txt = self._font_sm.render(
                 f"Bow — Arrows: {self._player._arrows_left}",
@@ -679,7 +681,7 @@ class GameScene:
 
         # Controls reminder (bottom-right, small)
         ctrl_txt = self._font_sm.render(
-            "A/D: Move  W: Jump  Z/J: Attack/Shoot  B: Grenade",
+            "A/D: Move  W: Jump  Z/J: Attack  M: AK-47  T: Hammer  B: Grenade",
             True, (140, 170, 200),
         )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))
