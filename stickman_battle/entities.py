@@ -316,9 +316,13 @@ class Arrow:
         self.source_x = source_x
         self.alive = True
         self._angle = math.atan2(vy, vx)
+        self._prev_x = x
+        self._prev_y = y
 
     def update(self) -> None:
         """Step flight physics; kill when off-screen."""
+        self._prev_x = self.x
+        self._prev_y = self.y
         self.vy = min(self.vy + c.ARROW_GRAVITY, c.MAX_FALL)
         self.x += self.vx
         self.y += self.vy
@@ -350,7 +354,7 @@ class Arrow:
         )
 
     def try_hit(self, target: Stickman) -> bool:
-        """Damage target if arrow tip overlaps their body.
+        """Damage target if arrow overlaps their body (lethal, like other weapons).
 
         Args:
             target: stickman to test.
@@ -360,18 +364,34 @@ class Arrow:
         """
         if not self.alive or not target.alive:
             return False
-        cx = target.x
-        cy = target.y - target.TOTAL_H / 2
-        if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
+        hit_rect = target.rect.inflate(12, 12)
+        if not self._hits_rect(hit_rect):
             return False
-        # Keep bow attacks non-lethal by design: arrows injure but never finish.
-        non_lethal_damage = min(self.damage, max(0.0, target.health - 1.0))
-        if non_lethal_damage > 0.0:
-            target.take_damage(non_lethal_damage, source_x=self.source_x)
+        target.take_damage(self.damage, source_x=self.source_x)
         target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
         target.vy -= 1.5
         self.alive = False
         return True
+
+    def _hits_rect(self, rect: pygame.Rect) -> bool:
+        """Return True if current or previous segment intersects rect.
+
+        Args:
+            rect: inflated target bounding box.
+
+        Returns:
+            True when arrow path overlaps the rect.
+        """
+        if rect.collidepoint(int(self.x), int(self.y)):
+            return True
+        steps = max(3, int(math.hypot(self.x - self._prev_x, self.y - self._prev_y) / 6))
+        for i in range(steps + 1):
+            t = i / steps
+            px = self._prev_x + (self.x - self._prev_x) * t
+            py = self._prev_y + (self.y - self._prev_y) * t
+            if rect.collidepoint(int(px), int(py)):
+                return True
+        return False
 
 
 # ---------------------------------------------------------------------------
