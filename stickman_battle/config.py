@@ -101,6 +101,11 @@ KEY_JUMP2 = pygame.K_w
 KEY_ATK   = pygame.K_z
 KEY_ATK2  = pygame.K_SPACE
 KEY_GRENADE = pygame.K_b
+KEY_WEAPON_AK47 = pygame.K_m      # switch to AK-47
+KEY_WEAPON_HAMMER = pygame.K_t    # switch to hammer
+
+# Player always reverts to this melee after ranged weapons run out.
+PLAYER_PERMANENT_MELEE: str = "hammer"
 
 # ---------------------------------------------------------------------------
 # Bow & arrows — ranged pickup weapon
@@ -195,7 +200,7 @@ WEAPONS: dict[str, dict] = {
         color=(200, 210, 235),
         guard_color=(170, 175, 195),
         reach=48,
-        damage=12.0,
+        damage=16.0,
         cooldown_f=1,   # frames between attacks (faster than other melee)
         spin_speed=0.1,  # full 360° spin completes in ~18 frames
         knockback=4.0,
@@ -243,39 +248,39 @@ WEAPONS: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 DIFFICULTIES: dict[str, dict] = {
     "easy": dict(
-        enemy_count=2,
+        enemy_count=4,
         enemy_health=60.0,
         enemy_speed=1.8,
         enemy_damage=5.0,
         enemy_attack_cd=70,   # frames
         player_health=150.0,
-        player_damage_mult=1.5,
+        player_damage_mult=1.2,
         enemy_weapons=["sword"],
         enemy_grenade_cooldown=180,
         enemy_grenade_chance=0.32,
     ),
     "normal": dict(
-        enemy_count=3,
+        enemy_count=8,
         enemy_health=100.0,
         enemy_speed=2.8,
         enemy_damage=10.0,
         enemy_attack_cd=55,
-        player_health=100.0,
+        player_health=120.0,
         player_damage_mult=1.0,
-        enemy_weapons=["sword", "pickaxe"],
+        enemy_weapons=["sword", "pickaxe", "hammer"],
         enemy_grenade_cooldown=130,
         enemy_grenade_chance=0.52,
     ),
     "hard": dict(
-        enemy_count=5,
+        enemy_count=10,
         enemy_health=150.0,
         enemy_speed=4.0,
         enemy_damage=18.0,
         enemy_attack_cd=40,
-        player_health=70.0,
-        player_damage_mult=0.8,
+        player_health=100.0,
+        player_damage_mult=0.9,
         enemy_weapons=["sword", "pickaxe", "hammer"],
-        enemy_grenade_cooldown=90,
-        enemy_grenade_chance=0.74,
+        enemy_grenade_cooldown=120,
+        enemy_grenade_chance=0.64,
     ),
 }

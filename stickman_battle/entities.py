@@ -316,9 +316,13 @@ class Arrow:
         self.source_x = source_x
         self.alive = True
         self._angle = math.atan2(vy, vx)
+        self._prev_x = x
+        self._prev_y = y
 
     def update(self) -> None:
         """Step flight physics; kill when off-screen."""
+        self._prev_x = self.x
+        self._prev_y = self.y
         self.vy = min(self.vy + c.ARROW_GRAVITY, c.MAX_FALL)
         self.x += self.vx
         self.y += self.vy
@@ -350,7 +354,7 @@ class Arrow:
         )
 
     def try_hit(self, target: Stickman) -> bool:
-        """Damage target if arrow tip overlaps their body.
+        """Damage target if arrow overlaps their body (lethal, like other weapons).
 
         Args:
             target: stickman to test.
@@ -360,18 +364,34 @@ class Arrow:
         """
         if not self.alive or not target.alive:
             return False
-        cx = target.x
-        cy = target.y - target.TOTAL_H / 2
-        if math.hypot(self.x - cx, self.y - cy) > self.HIT_R + 24:
+        hit_rect = target.rect.inflate(12, 12)
+        if not self._hits_rect(hit_rect):
             return False
-        # Keep bow attacks non-lethal by design: arrows injure but never finish.
-        non_lethal_damage = min(self.damage, max(0.0, target.health - 1.0))
-        if non_lethal_damage > 0.0:
-            target.take_damage(non_lethal_damage, source_x=self.source_x)
+        target.take_damage(self.damage, source_x=self.source_x)
         target.vx += (1 if target.x >= self.source_x else -1) * self.knockback
         target.vy -= 1.5
         self.alive = False
         return True
+
+    def _hits_rect(self, rect: pygame.Rect) -> bool:
+        """Return True if current or previous segment intersects rect.
+
+        Args:
+            rect: inflated target bounding box.
+
+        Returns:
+            True when arrow path overlaps the rect.
+        """
+        if rect.collidepoint(int(self.x), int(self.y)):
+            return True
+        steps = max(3, int(math.hypot(self.x - self._prev_x, self.y - self._prev_y) / 6))
+        for i in range(steps + 1):
+            t = i / steps
+            px = self._prev_x + (self.x - self._prev_x) * t
+            py = self._prev_y + (self.y - self._prev_y) * t
+            if rect.collidepoint(int(px), int(py)):
+                return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1850,7 +1870,7 @@ class Player(Stickman):
         super().__init__(x, y, c.BLUE_COL, health, weapon_name)
         self.facing = 1
         self._jump_pressed = False   # for edge-triggered jump
-        self._stored_melee = weapon_name
+        self._stored_melee = c.PLAYER_PERMANENT_MELEE
         self._arrows_left = 0
         self._rounds_left = 0
         self._shoot_pressed = False
@@ -1858,6 +1878,20 @@ class Player(Stickman):
         self._grenade_pressed = False
         self._pending_grenade = False
         self._atk_held = False
+        self._ak47_infinite = True
+        self._weapon_m_pressed = False
+        self._weapon_t_pressed = False
+
+    def switch_to_ak47(self) -> None:
+        """Equip loadout AK-47 (infinite ammo) via M key."""
+        self.weapon_name = "ak47"
+        self.weapon = c.WEAPONS["ak47"]
+        self._arrows_left = 0
+        self._ak47_infinite = True
+
+    def switch_to_hammer(self) -> None:
+        """Return to permanent hammer via T key."""
+        self.equip_melee()
 
     def equip_bow(self, arrow_count: int) -> None:
         """Switch to bow and load arrows.
@@ -1865,8 +1899,6 @@ class Player(Stickman):
         Args:
             arrow_count: number of arrows in this set.
         """
-        if self.weapon_name not in ("bow", "ak47"):
-            self._stored_melee = self.weapon_name
         self.weapon_name = "bow"
         self.weapon = c.WEAPONS["bow"]
         self._arrows_left = arrow_count
@@ -1878,12 +1910,11 @@ class Player(Stickman):
         Args:
             rounds: rifle rounds loaded.
         """
-        if self.weapon_name not in ("bow", "ak47"):
-            self._stored_melee = self.weapon_name
         self.weapon_name = "ak47"
         self.weapon = c.WEAPONS["ak47"]
         self._rounds_left = rounds
         self._arrows_left = 0
+        self._ak47_infinite = False
 
     def equip_melee(self) -> None:
         """Revert to the last melee weapon when ranged ammo runs out."""
@@ -1893,12 +1924,11 @@ class Player(Stickman):
         self._rounds_left = 0
 
     def equip_melee_weapon(self, weapon_name: str) -> None:
-        """Switch active weapon to a melee type and remember it for ranged revert.
+        """Switch active melee weapon (chest reward); hammer remains permanent fallback.
 
         Args:
             weapon_name: melee key in config.WEAPONS (sword, hammer, pickaxe).
         """
-        self._stored_melee = weapon_name
         self.weapon_name = weapon_name
         self.weapon = c.WEAPONS[weapon_name]
         self._arrows_left = 0
@@ -1917,8 +1947,11 @@ class Player(Stickman):
         return self.weapon_name == "bow" and self._arrows_left > 0
 
     def is_using_ak47(self) -> bool:
-        """Return True when the AK-47 is equipped with ammo."""
-        return self.weapon_name == "ak47" and self._rounds_left > 0
+        """Return True when the AK-47 is equipped with ammo or infinite loadout."""
+        return (
+            self.weapon_name == "ak47"
+            and (self._ak47_infinite or self._rounds_left > 0)
+        )
 
     def is_using_ranged(self) -> bool:
         """Return True when a ranged weapon is active."""
@@ -1971,7 +2004,8 @@ class Player(Stickman):
             return None, None, None
 
         self._attack_cd = self.weapon["cooldown_f"]
-        self._rounds_left -= 1
+        if not self._ak47_infinite:
+            self._rounds_left -= 1
         self._fire_flash_frames = c.AK47_RECOIL_FRAMES
 
         j = self._joints()
@@ -1989,7 +2023,7 @@ class Player(Stickman):
         flash = MuzzleFlash(muzzle_x + self.facing * 8, muzzle_y, self.facing)
         casing = ShellCasing(wx, wy - 4, self.facing)
 
-        if self._rounds_left <= 0:
+        if not self._ak47_infinite and self._rounds_left <= 0:
             self.equip_melee()
 
         return bullet, flash, casing
@@ -2035,6 +2069,16 @@ class Player(Stickman):
         if grenade_held and not self._grenade_pressed and self.can_throw_grenade():
             self._pending_grenade = True
         self._grenade_pressed = grenade_held
+
+        m_held = keys[c.KEY_WEAPON_AK47]
+        if m_held and not self._weapon_m_pressed:
+            self.switch_to_ak47()
+        self._weapon_m_pressed = m_held
+
+        t_held = keys[c.KEY_WEAPON_HAMMER]
+        if t_held and not self._weapon_t_pressed:
+            self.switch_to_hammer()
+        self._weapon_t_pressed = t_held
 
     def consume_shot(self) -> Optional[Arrow]:
         """Fire a pending arrow request (called once per frame from GameScene).
