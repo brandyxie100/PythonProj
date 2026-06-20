@@ -99,7 +99,6 @@ KEY_LEFT2 = pygame.K_a
 KEY_RIGHT2 = pygame.K_d
 KEY_JUMP2 = pygame.K_w
 KEY_ATK   = pygame.K_z
-KEY_ATK2  = pygame.K_j
 KEY_GRENADE = pygame.K_b
 KEY_WEAPON_AK47 = pygame.K_m      # switch to AK-47
 KEY_WEAPON_HAMMER = pygame.K_t    # switch to hammer
