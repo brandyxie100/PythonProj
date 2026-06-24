@@ -2,7 +2,7 @@
 
 Contains all in-game objects:
   Platform, Tire, SpringBall, Arrow, RifleBullet, MuzzleFlash, ShellCasing,
-  BlastParticle, Grenade, HitEffect, ChestPickup, Stickman (base),
+  BlastParticle, Grenade, Missile, HitEffect, ChestPickup, Stickman (base),
   Player, Enemy.
 
 Stickmen are drawn procedurally using line-segment anatomy and simple
@@ -896,6 +896,396 @@ class Grenade:
 
 
 # ---------------------------------------------------------------------------
+# Missile drawing helper — fuselage, nose cone, fins, exhaust
+# ---------------------------------------------------------------------------
+
+def _draw_missile(
+    surf: pygame.Surface,
+    cx: float,
+    cy: float,
+    angle: float,
+    *,
+    scale: float = 1.0,
+    light_speed: bool = False,
+    exhaust_phase: float = 0.0,
+    show_exhaust: bool = True,
+) -> None:
+    """Draw a guided missile aligned to flight angle.
+
+    Args:
+        surf: target surface.
+        cx: centre x of missile body.
+        cy: centre y of missile body.
+        angle: flight direction in radians.
+        scale: size multiplier (1.0 in flight, smaller when holstered).
+        light_speed: longer white-hot exhaust trail.
+        exhaust_phase: animation phase for flickering flame.
+        show_exhaust: False when missile is loaded in launcher (idle).
+    """
+    ux = math.cos(angle)
+    uy = math.sin(angle)
+    px = -uy
+    py = ux
+    body_half = 11.0 * scale
+    nose_len = 9.0 * scale
+    fin_len = 7.0 * scale
+    fin_span = 5.5 * scale
+
+    # Fuselage (tapered body)
+    tail_c = (cx - ux * body_half, cy - uy * body_half)
+    mid_c = (cx, cy)
+    nose_base = (cx + ux * (body_half * 0.35), cy + uy * (body_half * 0.35))
+    nose_tip = (cx + ux * (body_half + nose_len), cy + uy * (body_half + nose_len))
+    body_top = (mid_c[0] + px * 3.5 * scale, mid_c[1] + py * 3.5 * scale)
+    body_bot = (mid_c[0] - px * 3.5 * scale, mid_c[1] - py * 3.5 * scale)
+    fuselage = [
+        _ip(*tail_c),
+        _ip(body_bot[0] - ux * 2 * scale, body_bot[1] - uy * 2 * scale),
+        _ip(nose_base[0] - px * 2 * scale, nose_base[1] - py * 2 * scale),
+        _ip(nose_tip[0], nose_tip[1]),
+        _ip(nose_base[0] + px * 2 * scale, nose_base[1] + py * 2 * scale),
+        _ip(body_top[0] - ux * 2 * scale, body_top[1] - uy * 2 * scale),
+    ]
+    pygame.draw.polygon(surf, c.MISSILE_BODY, fuselage)
+    pygame.draw.polygon(surf, c.MISSILE_NOSE, [_ip(*nose_base), _ip(*nose_tip),
+                        _ip(nose_base[0] + px * 2.5 * scale, nose_base[1] + py * 2.5 * scale)])
+    # Red warning stripe
+    stripe_a = (cx - ux * 2 * scale + px * 3 * scale, cy - uy * 2 * scale + py * 3 * scale)
+    stripe_b = (cx + ux * 4 * scale - px * 3 * scale, cy + uy * 4 * scale - py * 3 * scale)
+    pygame.draw.line(surf, c.MISSILE_STRIPE, _ip(*stripe_a), _ip(*stripe_b), max(1, int(2 * scale)))
+
+    # Tail fins (three)
+    for fin_ang in (0.0, math.radians(125), math.radians(-125)):
+        fa = angle + fin_ang
+        fx = math.cos(fa)
+        fy = math.sin(fa)
+        fin_tip = (tail_c[0] - fx * fin_len, tail_c[1] - fy * fin_len)
+        fin_l = (tail_c[0] + px * fin_span * 0.4, tail_c[1] + py * fin_span * 0.4)
+        fin_r = (tail_c[0] - px * fin_span * 0.4, tail_c[1] - py * fin_span * 0.4)
+        pygame.draw.polygon(surf, c.MISSILE_FIN, [_ip(*tail_c), _ip(*fin_l), _ip(*fin_tip), _ip(*fin_r)])
+
+    # Rocket exhaust — flickering flame behind tail
+    if show_exhaust:
+        flicker = 0.7 + 0.3 * math.sin(exhaust_phase * 3.2)
+        trail_len = (42 if light_speed else 18) * scale * flicker
+        exhaust_mid = (tail_c[0] - ux * trail_len * 0.55, tail_c[1] - uy * trail_len * 0.55)
+        exhaust_end = (tail_c[0] - ux * trail_len, tail_c[1] - uy * trail_len)
+        if light_speed:
+            pygame.draw.line(surf, (200, 240, 255), _ip(*exhaust_end), _ip(*exhaust_mid), max(2, int(4 * scale)))
+            pygame.draw.line(surf, c.MISSILE_EXHAUST_CORE, _ip(*exhaust_mid), _ip(*tail_c), max(3, int(5 * scale)))
+        else:
+            pygame.draw.line(surf, c.MISSILE_EXHAUST_OUTER, _ip(*exhaust_end), _ip(*exhaust_mid), max(2, int(3 * scale)))
+            pygame.draw.line(surf, c.MISSILE_EXHAUST_CORE, _ip(*exhaust_mid), _ip(*tail_c), max(2, int(4 * scale)))
+        pygame.draw.circle(surf, c.MISSILE_TRAIL, _ip(*tail_c), max(2, int(3 * scale)))
+
+
+# ---------------------------------------------------------------------------
+# Missile — player-only projectile; explodes on impact, one-shots enemies
+# ---------------------------------------------------------------------------
+
+class Missile:
+    """Guided missile fired from the player launcher."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        vx: float,
+        vy: float,
+        owner_id: int,
+        light_speed: bool = False,
+    ) -> None:
+        """Args:
+            x: spawn x.
+            y: spawn y.
+            vx: horizontal speed.
+            vy: vertical speed.
+            owner_id: id() of shooter (player); skipped for damage.
+            light_speed: True for rare ultra-fast shot with long trail.
+        """
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.owner_id = owner_id
+        self.light_speed = light_speed
+        self.damage = c.RPG_KILL_DAMAGE
+        self._exploded = False
+        self._explosion_life = 0
+        self._just_exploded = False
+        self._particles: list[BlastParticle] = []
+        self.alive = True
+        self._angle = math.atan2(vy, vx)
+        self._prev_x = x
+        self._prev_y = y
+        self._exhaust_phase = random.uniform(0, math.tau)
+
+    @property
+    def just_exploded(self) -> bool:
+        """True on the exact frame the missile detonates."""
+        return self._just_exploded
+
+    @property
+    def exploded(self) -> bool:
+        """True once the blast animation is playing."""
+        return self._exploded
+
+    def update(
+        self,
+        platforms: list[Platform],
+        enemies: Optional[list["Stickman"]] = None,
+    ) -> None:
+        """Advance missile flight or explosion animation.
+
+        Args:
+            platforms: collision ledges.
+            enemies: alive enemies to home toward (nearest target).
+        """
+        self._just_exploded = False
+        if not self.alive:
+            return
+
+        if self._exploded:
+            self._explosion_life -= 1
+            for particle in self._particles:
+                particle.update()
+            self._particles = [p for p in self._particles if p.alive]
+            if self._explosion_life <= 0 and not self._particles:
+                self.alive = False
+            return
+
+        self._exhaust_phase += 0.35
+        if enemies:
+            self._home_toward_enemies(enemies)
+        self.vy = min(self.vy + c.RPG_ROCKET_GRAVITY, c.MAX_FALL)
+        self._prev_x = self.x
+        self._prev_y = self.y
+        self.x += self.vx
+        self.y += self.vy
+        self._angle = math.atan2(self.vy, self.vx)
+
+        if self._segment_hits_bounds():
+            self._explode()
+            return
+
+        for plat in platforms:
+            if self._segment_hits_rect(plat.rect.inflate(4, 4)):
+                self._explode()
+                return
+
+        floor_y = c.SCREEN_H - 20
+        if self.y >= floor_y or self._segment_crosses_y(floor_y):
+            self.y = min(self.y, floor_y)
+            self._explode()
+
+    def _home_toward_enemies(self, enemies: list["Stickman"]) -> None:
+        """Steer velocity toward the nearest alive enemy in range."""
+        target_x: Optional[float] = None
+        target_y: Optional[float] = None
+        best_dist = c.MISSILE_HOMING_RANGE
+
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            tx = enemy.x
+            ty = enemy.y - enemy.TOTAL_H / 2
+            dist = math.hypot(tx - self.x, ty - self.y)
+            if dist < best_dist:
+                best_dist = dist
+                target_x = tx
+                target_y = ty
+
+        if target_x is None or target_y is None:
+            return
+
+        desired_ang = math.atan2(target_y - self.y, target_x - self.x)
+        speed = math.hypot(self.vx, self.vy)
+        if speed < 1.0:
+            speed = (
+                c.RPG_ROCKET_LIGHT_SPEED if self.light_speed else c.RPG_ROCKET_SPEED
+            )
+        cur_ang = math.atan2(self.vy, self.vx)
+        diff = desired_ang - cur_ang
+        while diff > math.pi:
+            diff -= math.tau
+        while diff < -math.pi:
+            diff += math.tau
+        turn = max(-c.MISSILE_HOMING_STRENGTH, min(c.MISSILE_HOMING_STRENGTH, diff))
+        new_ang = cur_ang + turn
+        self.vx = math.cos(new_ang) * speed
+        self.vy = math.sin(new_ang) * speed
+
+    def _segment_hits_bounds(self) -> bool:
+        """Return True if flight segment crosses left/right screen edge."""
+        if self.x <= 4 or self.x >= c.SCREEN_W - 4:
+            return True
+        return self._segment_crosses_x(4) or self._segment_crosses_x(c.SCREEN_W - 4)
+
+    def _segment_crosses_x(self, boundary_x: float) -> bool:
+        """Check if segment from prev to current crosses a vertical line."""
+        if (self._prev_x - boundary_x) * (self.x - boundary_x) <= 0:
+            return True
+        steps = max(3, int(abs(self.x - self._prev_x) / 8))
+        for i in range(steps + 1):
+            t = i / steps
+            px = self._prev_x + (self.x - self._prev_x) * t
+            if abs(px - boundary_x) < max(8.0, abs(self.vx) * 0.5):
+                return True
+        return False
+
+    def _segment_crosses_y(self, boundary_y: float) -> bool:
+        """Check if segment crosses a horizontal line (floor)."""
+        if (self._prev_y - boundary_y) * (self.y - boundary_y) <= 0:
+            return True
+        steps = max(3, int(math.hypot(self.x - self._prev_x, self.y - self._prev_y) / 8))
+        for i in range(steps + 1):
+            t = i / steps
+            py = self._prev_y + (self.y - self._prev_y) * t
+            if py >= boundary_y:
+                return True
+        return False
+
+    def _segment_hits_rect(self, rect: pygame.Rect) -> bool:
+        """Swept segment test so ultra-fast missiles do not tunnel."""
+        if rect.collidepoint(int(self.x), int(self.y)):
+            return True
+        steps = max(4, int(math.hypot(self.x - self._prev_x, self.y - self._prev_y) / 6))
+        for i in range(steps + 1):
+            t = i / steps
+            px = self._prev_x + (self.x - self._prev_x) * t
+            py = self._prev_y + (self.y - self._prev_y) * t
+            if rect.collidepoint(int(px), int(py)):
+                return True
+        return False
+
+    def _spawn_blast_particles(self) -> None:
+        """Emit large red/orange blast sparks for missile detonation."""
+        self._particles = []
+        for _ in range(c.RPG_BLAST_PARTICLE_COUNT):
+            ang = random.uniform(0, math.tau)
+            speed = random.uniform(5.0, 18.0)
+            col = random.choice(c.GRENADE_PARTICLE_COLORS)
+            life = random.randint(16, 32)
+            size = random.uniform(3.0, 8.0)
+            self._particles.append(
+                BlastParticle(
+                    self.x, self.y,
+                    math.cos(ang) * speed,
+                    math.sin(ang) * speed - random.uniform(2.0, 6.0),
+                    col, size, life,
+                )
+            )
+
+    def _explode(self) -> None:
+        """Trigger blast state and particle burst."""
+        self._exploded = True
+        self._just_exploded = True
+        self._explosion_life = c.RPG_EXPLOSION_LIFE_F
+        self.vx = 0.0
+        self.vy = 0.0
+        self._spawn_blast_particles()
+
+    def try_contact_explode(self, enemies: list["Stickman"]) -> bool:
+        """Detonate when the warhead touches an enemy.
+
+        Args:
+            enemies: enemy stickmen only.
+
+        Returns:
+            True if contact triggered detonation.
+        """
+        if self._exploded or not self.alive:
+            return False
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            hit_rect = enemy.rect.inflate(c.GRENADE_CONTACT_PAD + 6, c.GRENADE_CONTACT_PAD + 6)
+            if self._segment_hits_rect(hit_rect):
+                self._explode()
+                return True
+        return False
+
+    def apply_explosion(self, enemies: list["Stickman"]) -> list["Stickman"]:
+        """One-shot kill all enemies inside blast radius.
+
+        Args:
+            enemies: enemy stickmen in the scene.
+
+        Returns:
+            Enemies hit by this blast.
+        """
+        if not self._just_exploded:
+            return []
+
+        hits: list["Stickman"] = []
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            cx = enemy.x
+            cy = enemy.y - enemy.TOTAL_H / 2
+            dist = math.hypot(cx - self.x, cy - self.y)
+            if dist > c.RPG_BLAST_RADIUS:
+                continue
+            enemy.take_damage(self.damage, source_x=self.x)
+            push = 10.0
+            enemy.vx += (1 if cx >= self.x else -1) * push
+            enemy.vy -= 6.0
+            hits.append(enemy)
+        return hits
+
+    def draw(self, surf: pygame.Surface) -> None:
+        """Draw in-flight missile or layered blast fireball.
+
+        Args:
+            surf: target surface.
+        """
+        if not self.alive:
+            return
+
+        if not self._exploded:
+            _draw_missile(
+                surf, self.x, self.y, self._angle,
+                scale=1.0,
+                light_speed=self.light_speed,
+                exhaust_phase=self._exhaust_phase,
+            )
+            return
+
+        # Large layered blast (same style as grenade, bigger radius).
+        total = float(c.RPG_EXPLOSION_LIFE_F)
+        t = 1.0 - (self._explosion_life / total)
+        cx, cy = _ip(self.x, self.y)
+
+        r_smoke = int(24 + c.RPG_BLAST_RADIUS * t * 1.2)
+        r_outer = int(18 + c.RPG_BLAST_RADIUS * t)
+        r_mid = int(r_outer * 0.72)
+        r_inner = int(r_outer * 0.48)
+        r_core = max(6, int(r_outer * 0.24))
+
+        pad = r_smoke + 12
+        boom = pygame.Surface((pad * 2, pad * 2), pygame.SRCALPHA)
+        center = (pad, pad)
+
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_SMOKE, 85), center, r_smoke)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_OUTER, 150), center, r_outer)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_MID, 200), center, r_mid)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_INNER, 235), center, r_inner)
+        pygame.draw.circle(boom, (*c.GRENADE_EXPLODE_CORE, 255), center, r_core)
+
+        if t < 0.3:
+            flash_r = int(r_core * (1.8 - t * 2.5))
+            pygame.draw.circle(boom, (255, 255, 255, 220), center, max(3, flash_r))
+
+        surf.blit(boom, boom.get_rect(center=(cx, cy)))
+        for particle in self._particles:
+            particle.draw(surf)
+
+
+# Backward-compatible alias
+RpgRocket = Missile
+
+
+# ---------------------------------------------------------------------------
 # BowPickup — timed bow + arrow set with shiny spawn animation
 # ---------------------------------------------------------------------------
 
@@ -1370,6 +1760,10 @@ class Stickman:
             recoil = self._fire_flash_frames * math.radians(8.0)
             w_ang = self.facing * (math.radians(8.0) - recoil) + arm_swing
             o_ang = -self.facing * math.radians(28.0) - arm_swing * 0.5
+        elif self.weapon_name == "rpg":
+            recoil = self._fire_flash_frames * math.radians(10.0)
+            w_ang = self.facing * (math.radians(5.0) - recoil) + arm_swing
+            o_ang = -self.facing * math.radians(22.0) - arm_swing * 0.4
         else:
             w_ang = self.facing * math.radians(10.0) + arm_swing
             o_ang = -self.facing * math.radians(10.0) - arm_swing
@@ -1538,6 +1932,31 @@ class Stickman:
                 surf, c.AK47_METAL,
                 _ip(barrel_end_x, barrel_end_y - 3),
                 _ip(barrel_end_x, barrel_end_y + 3), 2,
+            )
+
+        elif name == "rpg":
+            # Shoulder launcher tube with missile loaded in barrel
+            stock_x = wx - self.facing * 14
+            stock_y = wy + 6
+            barrel_end_x = wx + self.facing * reach
+            barrel_end_y = wy - 1
+            pygame.draw.line(surf, gcol, _ip(stock_x, stock_y), _ip(wx, wy + 2), 5)
+            pygame.draw.line(surf, col, _ip(wx, wy), _ip(barrel_end_x, barrel_end_y), 6)
+            pygame.draw.rect(surf, gcol, pygame.Rect(int(wx - 4), int(wy + 2), 8, 10))
+            # Mini missile protruding from launcher
+            muzzle_ang = math.atan2(
+                barrel_end_y - wy,
+                (barrel_end_x - wx) or self.facing,
+            )
+            _draw_missile(
+                surf,
+                barrel_end_x + self.facing * 10,
+                barrel_end_y,
+                muzzle_ang,
+                scale=0.65,
+                light_speed=False,
+                exhaust_phase=0.0,
+                show_exhaust=False,
             )
 
     def muzzle_position(self) -> tuple[float, float]:
@@ -1881,6 +2300,9 @@ class Player(Stickman):
         self._ak47_infinite = True
         self._weapon_m_pressed = False
         self._weapon_t_pressed = False
+        self._weapon_n_pressed = False
+        self._rpg_reload_cd = 0
+        self._pending_rpg_shot = False
 
     def switch_to_ak47(self) -> None:
         """Equip loadout AK-47 (infinite ammo) via M key."""
@@ -1892,6 +2314,13 @@ class Player(Stickman):
     def switch_to_hammer(self) -> None:
         """Return to permanent hammer via T key."""
         self.equip_melee()
+
+    def switch_to_rpg(self) -> None:
+        """Equip player-only missile launcher (infinite ammo) via N key."""
+        self.weapon_name = "rpg"
+        self.weapon = c.WEAPONS["rpg"]
+        self._arrows_left = 0
+        self._ak47_infinite = False
 
     def equip_bow(self, arrow_count: int) -> None:
         """Switch to bow and load arrows.
@@ -1953,9 +2382,45 @@ class Player(Stickman):
             and (self._ak47_infinite or self._rounds_left > 0)
         )
 
+    def is_using_rpg(self) -> bool:
+        """Return True when the missile launcher is active."""
+        return self.weapon_name == "rpg"
+
     def is_using_ranged(self) -> bool:
         """Return True when a ranged weapon is active."""
-        return self.is_using_bow() or self.is_using_ak47()
+        return self.is_using_bow() or self.is_using_ak47() or self.is_using_rpg()
+
+    def rpg_reload_seconds(self) -> float:
+        """Seconds remaining on missile reload cooldown."""
+        return max(0.0, self._rpg_reload_cd / c.FPS)
+
+    def try_fire_rpg(self) -> Optional[Missile]:
+        """Launch one missile if launcher is equipped and reload is ready.
+
+        Returns:
+            New Missile instance, or None if unable to fire.
+        """
+        if not self.is_using_rpg() or self._rpg_reload_cd > 0:
+            return None
+        if self.state in (self.ST_DEAD, self.ST_HURT):
+            return None
+
+        self._rpg_reload_cd = c.RPG_RELOAD_F
+        self._fire_flash_frames = c.AK47_RECOIL_FRAMES
+
+        j = self._joints()
+        wx, wy = j["w_hand"]
+        reach = self.weapon["reach"]
+        muzzle_x = wx + self.facing * reach
+        muzzle_y = wy - 2
+        light_speed = random.random() < c.RPG_LIGHT_SPEED_CHANCE
+        speed = c.RPG_ROCKET_LIGHT_SPEED if light_speed else c.RPG_ROCKET_SPEED
+        return Missile(
+            muzzle_x + self.facing * 6, muzzle_y,
+            self.facing * speed, -1.0,
+            owner_id=id(self),
+            light_speed=light_speed,
+        )
 
     def try_fire_arrow(self) -> Optional[Arrow]:
         """Launch one arrow if bow is equipped and cooldown allows.
@@ -2060,7 +2525,9 @@ class Player(Stickman):
         if atk_held and not self._shoot_pressed:
             if self.is_using_bow():
                 self._pending_shot = True
-            elif not self.is_using_ak47() and self.can_attack():
+            elif self.is_using_rpg() and self._rpg_reload_cd <= 0:
+                self._pending_rpg_shot = True
+            elif not self.is_using_ak47() and not self.is_using_rpg() and self.can_attack():
                 self.start_attack()
         self._shoot_pressed = atk_held
         self._atk_held = atk_held
@@ -2079,6 +2546,11 @@ class Player(Stickman):
         if t_held and not self._weapon_t_pressed:
             self.switch_to_hammer()
         self._weapon_t_pressed = t_held
+
+        n_held = keys[c.KEY_WEAPON_RPG]
+        if n_held and not self._weapon_n_pressed:
+            self.switch_to_rpg()
+        self._weapon_n_pressed = n_held
 
     def consume_shot(self) -> Optional[Arrow]:
         """Fire a pending arrow request (called once per frame from GameScene).
@@ -2101,12 +2573,25 @@ class Player(Stickman):
         """
         return self.try_fire_rifle(self._atk_held)
 
+    def consume_rpg_shot(self) -> Optional[Missile]:
+        """Fire a pending missile (one per Z press).
+
+        Returns:
+            Missile if launched, else None.
+        """
+        if not self._pending_rpg_shot:
+            return None
+        self._pending_rpg_shot = False
+        return self.try_fire_rpg()
+
     def update(self, platforms: list[Platform]) -> None:
         """Step player physics and animation.
 
         Args:
             platforms: current level platforms.
         """
+        if self._rpg_reload_cd > 0:
+            self._rpg_reload_cd -= 1
         self._base_update(platforms)
 
     def consume_grenade_throw(self) -> Optional[Grenade]:

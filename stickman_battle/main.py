@@ -36,6 +36,7 @@ from entities import (
     Platform,
     Player,
     RifleBullet,
+    Missile,
     ShellCasing,
     SpringBall,
     Stickman,
@@ -154,6 +155,7 @@ class MenuScene:
             "W / ↑  Jump (double-tap mid-air for extra height)",
             "Z / J  Melee spin / bow / AK-47 (hold to auto-fire)",
             "M      Switch to AK-47       T      Switch to hammer",
+            "N      Switch to Missile (∞ ammo, 0.5 s reload)",
             "B      Throw grenade (6 per match)",
         ]
         for i, line in enumerate(controls):
@@ -270,6 +272,7 @@ class GameScene:
         self._bullets: list[RifleBullet] = []
         self._muzzle_flashes: list[MuzzleFlash] = []
         self._shell_casings: list[ShellCasing] = []
+        self._missiles: list[Missile] = []
 
         # ---- Result ----
         self._result: Optional[str] = None   # "win" | "lose"
@@ -400,6 +403,11 @@ class GameScene:
         if casing is not None:
             self._shell_casings.append(casing)
 
+        # Missile launcher (Z/J per shot, 5 s reload)
+        missile = self._player.consume_rpg_shot()
+        if missile is not None:
+            self._missiles.append(missile)
+
         # Player grenade throw
         grenade = self._player.consume_grenade_throw()
         if grenade is not None:
@@ -481,6 +489,20 @@ class GameScene:
                 for target in hits[1:]:
                     self._effects.append(HitEffect(int(target.x), int(target.y - target.TOTAL_H / 2)))
         self._grenades = [g for g in self._grenades if g.alive]
+
+        # Missiles in flight / blast animation
+        for missile in self._missiles:
+            missile.update(self._platforms, self._enemies)
+            if not missile.exploded:
+                missile.try_contact_explode(self._enemies)
+            if missile.just_exploded:
+                hits = missile.apply_explosion(self._enemies)
+                self._effects.append(HitEffect(int(missile.x), int(missile.y)))
+                for target in hits[1:]:
+                    self._effects.append(
+                        HitEffect(int(target.x), int(target.y - target.TOTAL_H / 2))
+                    )
+        self._missiles = [m for m in self._missiles if m.alive]
 
         # Effects
         for fx in list(self._effects):
@@ -587,6 +609,10 @@ class GameScene:
         for grenade in self._grenades:
             grenade.draw(surf)
 
+        # Missiles / blast animation
+        for missile in self._missiles:
+            missile.draw(surf)
+
         # Enemies
         for enemy in self._enemies:
             enemy.draw(surf)
@@ -643,6 +669,14 @@ class GameScene:
                 f"Bow — Arrows: {self._player._arrows_left}",
                 True, (255, 220, 120),
             )
+        elif self._player.is_using_rpg():
+            if self._player._rpg_reload_cd > 0:
+                ms_label = f"Missile — Reload {self._player.rpg_reload_seconds():.1f}s"
+                ms_col = (255, 140, 80)
+            else:
+                ms_label = "Missile — Ready (∞)"
+                ms_col = (255, 180, 100)
+            wpn_txt = self._font_sm.render(ms_label, True, ms_col)
         else:
             wpn_txt = self._font_sm.render(
                 f"Weapon: {self._player.weapon_name.capitalize()}",
@@ -681,7 +715,7 @@ class GameScene:
 
         # Controls reminder (bottom-right, small)
         ctrl_txt = self._font_sm.render(
-            "A/D: Move  W: Jump  Z/J: Attack  M: AK-47  T: Hammer  B: Grenade",
+            "A/D: Move  W: Jump  Z/J: Attack  M: AK-47  T: Hammer  N: Missile  B: Grenade",
             True, (140, 170, 200),
         )
         surf.blit(ctrl_txt, ctrl_txt.get_rect(bottomright=(c.SCREEN_W - 8, c.SCREEN_H - 8)))

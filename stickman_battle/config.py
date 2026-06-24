@@ -99,9 +99,11 @@ KEY_LEFT2 = pygame.K_a
 KEY_RIGHT2 = pygame.K_d
 KEY_JUMP2 = pygame.K_w
 KEY_ATK   = pygame.K_z
+KEY_ATK2  = pygame.K_j
 KEY_GRENADE = pygame.K_b
 KEY_WEAPON_AK47 = pygame.K_m      # switch to AK-47
 KEY_WEAPON_HAMMER = pygame.K_t    # switch to hammer
+KEY_WEAPON_RPG = pygame.K_n       # switch to RPG
 
 # Player always reverts to this melee after ranged weapons run out.
 PLAYER_PERMANENT_MELEE: str = "hammer"
@@ -137,6 +139,32 @@ AK47_GLOW = (80, 220, 120)
 AK47_SHINE = (180, 255, 200)
 AK47_MUZZLE_FLASH = (255, 230, 100)
 AK47_CASING = (220, 180, 60)
+
+# ---------------------------------------------------------------------------
+# RPG / Missile — player-only launcher (infinite ammo, 5 s reload)
+# ---------------------------------------------------------------------------
+RPG_RELOAD_F: int = max(0.25, FPS // 2)          # 0.25 second reload
+RPG_ROCKET_SPEED: float = 60.0              # 5× base travel speed
+RPG_ROCKET_LIGHT_SPEED: float = 220.0       # occasional blitz shot
+RPG_LIGHT_SPEED_CHANCE: float = 0.35
+RPG_ROCKET_GRAVITY: float = 0.02
+MISSILE_HOMING_STRENGTH: float = 0.22       # radians/frame turn toward target
+MISSILE_HOMING_RANGE: float = 1200.0        # lock-on range (px)
+RPG_BLAST_RADIUS: float = 110.0
+RPG_KILL_DAMAGE: float = 9999.0
+RPG_EXPLOSION_LIFE_F: int = 32
+RPG_BLAST_PARTICLE_COUNT: int = 56
+MISSILE_BODY = (115, 118, 125)
+MISSILE_NOSE = (220, 225, 235)
+MISSILE_STRIPE = (200, 50, 45)
+MISSILE_FIN = (75, 78, 85)
+MISSILE_EXHAUST_CORE = (255, 250, 200)
+MISSILE_EXHAUST_OUTER = (255, 120, 30)
+MISSILE_TRAIL = (255, 180, 60)
+RPG_COL = (60, 75, 55)
+RPG_TUBE = (45, 55, 40)
+RPG_WARHEAD = (255, 90, 40)
+RPG_GLOW = (255, 160, 60)
 
 # ---------------------------------------------------------------------------
 # Loot chest — recurring mystery spawn every 20 seconds
@@ -240,6 +268,15 @@ WEAPONS: dict[str, dict] = {
         cooldown_f=AK47_FIRE_COOLDOWN_F,
         knockback=ARROW_KNOCKBACK,
     ),
+    "rpg": dict(
+        label="Missile",
+        color=RPG_COL,
+        guard_color=RPG_TUBE,
+        reach=44,
+        damage=RPG_KILL_DAMAGE,
+        cooldown_f=RPG_RELOAD_F,
+        knockback=12.0,
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -247,7 +284,7 @@ WEAPONS: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 DIFFICULTIES: dict[str, dict] = {
     "easy": dict(
-        enemy_count=4,
+        enemy_count=2,
         enemy_health=60.0,
         enemy_speed=1.8,
         enemy_damage=5.0,
@@ -259,7 +296,7 @@ DIFFICULTIES: dict[str, dict] = {
         enemy_grenade_chance=0.32,
     ),
     "normal": dict(
-        enemy_count=8,
+        enemy_count=4,
         enemy_health=100.0,
         enemy_speed=2.8,
         enemy_damage=10.0,
@@ -271,7 +308,7 @@ DIFFICULTIES: dict[str, dict] = {
         enemy_grenade_chance=0.52,
     ),
     "hard": dict(
-        enemy_count=10,
+        enemy_count=5,
         enemy_health=150.0,
         enemy_speed=4.0,
         enemy_damage=18.0,
