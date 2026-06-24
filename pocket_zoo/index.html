@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pocket Zoo – Underwater World</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #001830;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── HUD bar ──────────────────────────────────────────────────── */
+  #hud {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    background: rgba(0,20,55,0.9);
+    border-bottom: 2px solid #1ac9e6;
+    z-index: 10;
+    gap: 8px;
+  }
+  #coin-display {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 1.15rem;
+    font-weight: bold;
+    color: #FFD700;
+    text-shadow: 0 1px 4px #000;
+    min-width: 70px;
+  }
+  .coin-icon { font-size: 1.3rem; }
+
+  #mid-hud {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    flex: 1;
+  }
+  #zone-label {
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: #1ac9e6;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 8px rgba(26,201,230,0.7);
+    white-space: nowrap;
+  }
+  #progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.7rem;
+    color: #8df;
+  }
+  #progress-bar-bg {
+    width: 90px; height: 7px;
+    background: #112244;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1ac9e6, #00ff99);
+    border-radius: 4px;
+    transition: width 0.4s;
+  }
+
+  #buy-btn {
+    background: linear-gradient(135deg, #1ac9e6, #0066cc);
+    border: none;
+    border-radius: 22px;
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,200,230,0.5);
+    transition: transform 0.1s;
+    white-space: nowrap;
+  }
+  #buy-btn:hover { transform: scale(1.06); }
+  #buy-btn:active { transform: scale(0.96); }
+  #buy-btn.disabled {
+    background: #223;
+    color: #556;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* ── Canvas ─────────────────────────────────────────────────────── */
+  #game-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    flex: 1;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+
+  /* ── Floating text ──────────────────────────────────────────────── */
+  .float-text {
+    position: absolute;
+    pointer-events: none;
+    font-weight: bold;
+    font-size: 1rem;
+    color: #FFD700;
+    text-shadow: 0 1px 4px #000;
+    animation: floatUp 0.9s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0%   { opacity:1; transform: translateY(0); }
+    100% { opacity:0; transform: translateY(-52px); }
+  }
+
+  /* ── Discovery popup ────────────────────────────────────────────── */
+  #popup-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #popup-overlay.show { display: flex; }
+  #popup-box {
+    background: linear-gradient(160deg, #0a2a5e, #061540);
+    border: 2px solid #1ac9e6;
+    border-radius: 22px;
+    padding: 28px 36px;
+    text-align: center;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 0 50px rgba(26,201,230,0.45);
+    animation: popIn 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes popIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+  #popup-banner {
+    font-size: 0.72rem;
+    color: #8df;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  #popup-zone {
+    font-size: 0.72rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    display: inline-block;
+  }
+  #popup-tier {
+    font-size: 0.72rem;
+    color: #8df;
+    margin-bottom: 8px;
+  }
+  #popup-name {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 14px;
+  }
+  #popup-creature {
+    width: 100px; height: 100px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.2rem;
+    box-shadow: 0 0 28px rgba(26,201,230,0.5);
+  }
+  #popup-desc {
+    font-size: 0.88rem;
+    color: #acd;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+  #popup-coins {
+    font-size: 0.82rem;
+    color: #FFD700;
+    margin-bottom: 18px;
+  }
+  #popup-ok {
+    background: linear-gradient(135deg, #1ac9e6, #0066cc);
+    border: none;
+    border-radius: 22px;
+    padding: 9px 32px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,200,230,0.5);
+    transition: transform 0.1s;
+  }
+  #popup-ok:hover  { transform: scale(1.06); }
+  #popup-ok:active { transform: scale(0.96); }
+
+  /* ── Zone unlock banner ─────────────────────────────────────────── */
+  #zone-unlock-banner {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.7);
+    background: linear-gradient(135deg, rgba(0,20,60,0.95), rgba(0,5,25,0.95));
+    border: 2px solid #1ac9e6;
+    border-radius: 16px;
+    padding: 10px 28px;
+    text-align: center;
+    z-index: 99;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    white-space: nowrap;
+  }
+  #zone-unlock-banner.show {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  #zone-unlock-banner .zub-title {
+    font-size: 0.65rem;
+    color: #1ac9e6;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #zone-unlock-banner .zub-name {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #fff;
+  }
+
+  /* ── Toast ──────────────────────────────────────────────────────── */
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,15,40,0.93);
+    color: #8df;
+    border: 1px solid #1ac9e6;
+    border-radius: 20px;
+    padding: 8px 22px;
+    font-size: 0.88rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 200;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── HUD ── -->
+<div id="hud">
+  <div id="coin-display">
+    <span class="coin-icon">🪙</span>
+    <span id="coin-count">20</span>
+  </div>
+  <div id="mid-hud">
+    <div id="zone-label">Tidal Zone</div>
+    <div id="progress-wrap">
+      <span id="progress-label">0/100</span>
+      <div id="progress-bar-bg"><div id="progress-bar-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+  <button id="buy-btn">🫧 Bubble <span id="buy-cost">(10🪙)</span></button>
+</div>
+
+<!-- ── Canvas ── -->
+<div id="game-wrap">
+  <canvas id="c"></canvas>
+</div>
+
+<!-- ── Discovery popup ── -->
+<div id="popup-overlay">
+  <div id="popup-box">
+    <div id="popup-banner">✨ New Discovery!</div>
+    <div id="popup-zone"></div>
+    <div id="popup-tier"></div>
+    <div id="popup-name"></div>
+    <div id="popup-creature"></div>
+    <div id="popup-desc"></div>
+    <div id="popup-coins"></div>
+    <button id="popup-ok">Awesome!</button>
+  </div>
+</div>
+
+<!-- ── Zone unlock banner ── -->
+<div id="zone-unlock-banner">
+  <div class="zub-title">🌊 New Zone Unlocked!</div>
+  <div class="zub-name" id="zub-name"></div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  ZONE DEFINITIONS  (10 zones × 10 tiers each)
+// ═══════════════════════════════════════════════════════════════════
+const ZONES = [
+  { name:'Tidal Zone',    color:'#1ac9e6', bgTop:'#001c3d', bgBot:'#003060' },
+  { name:'Coral Reef',    color:'#ff6b35', bgTop:'#001830', bgBot:'#002840' },
+  { name:'Open Ocean',    color:'#4169e1', bgTop:'#001020', bgBot:'#001a33' },
+  { name:'Deep Sea',      color:'#00ffcc', bgTop:'#000820', bgBot:'#000510' },
+  { name:'Arctic Ocean',  color:'#b0e8ff', bgTop:'#001028', bgBot:'#00244e' },
+  { name:'Exotic Tropics',color:'#ff1493', bgTop:'#000a18', bgBot:'#001530' },
+  { name:'Rare Depths',   color:'#aa44ff', bgTop:'#050010', bgBot:'#0a0020' },
+  { name:'Ancient Ocean', color:'#d4a574', bgTop:'#030808', bgBot:'#060c10' },
+  { name:'Ocean Giants',  color:'#6cb4e4', bgTop:'#000308', bgBot:'#00050f' },
+  { name:'Legendary',     color:'#FFD700', bgTop:'#020004', bgBot:'#050008' },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+//  TIER DATA  (tier 0 = spawn bubble; tiers 1–100 = sea creatures)
+//  coins = tier * 5   radius = 20 + √tier × 6.5
+// ═══════════════════════════════════════════════════════════════════
+const TIERS = [
+  // ── TIER 0 – Spawn Bubble ────────────────────────────────────────
+  { name:'Bubble',           emoji:'🫧', color:'#b0e0ff', coins:0,   zone:0,
+    desc:'A shimmering bubble full of possibility. Tap it!' },
+
+  // ── ZONE 1 – Tidal Zone (Tiers 1–10) ────────────────────────────
+  { name:'Starfish',         emoji:'⭐', color:'#ff8c42', coins:5,   zone:0,
+    desc:'A tiny orange starfish clinging to the seafloor.' },
+  { name:'Sea Snail',        emoji:'🐚', color:'#d4a574', coins:10,  zone:0,
+    desc:'A spiral-shelled snail that leaves a shimmery silver trail.' },
+  { name:'Hermit Crab',      emoji:'🦀', color:'#e07b54', coins:15,  zone:0,
+    desc:'A timid crab that borrows empty shells for its home.' },
+  { name:'Baby Shrimp',      emoji:'🦐', color:'#ffb3ba', coins:20,  zone:0,
+    desc:'A translucent pink shrimp that flicks its tail to zoom through water.' },
+  { name:'Pebble Fish',      emoji:'🐟', color:'#c8b89a', coins:25,  zone:0,
+    desc:'A small speckled fish that hides perfectly among beach pebbles.' },
+  { name:'Sand Dollar',      emoji:'🪙', color:'#f5deb3', coins:30,  zone:0,
+    desc:'A flat, cream-coloured coin of the sea — very rare to find!' },
+  { name:'Baby Jellyfish',   emoji:'🪼', color:'#b0e0e6', coins:35,  zone:0,
+    desc:'A tiny jellyfish with wobbly tentacles that glow softly at night.' },
+  { name:'Sea Urchin',       emoji:'🔵', color:'#9b59b6', coins:40,  zone:0,
+    desc:'A prickly purple ball that rolls slowly along the sandy seafloor.' },
+  { name:'Pearl Clam',       emoji:'🦪', color:'#f0eedc', coins:45,  zone:0,
+    desc:'A clam that secretly grows a precious shiny pearl inside its shell.' },
+  { name:'Baby Squid',       emoji:'🦑', color:'#c8a8e9', coins:50,  zone:0,
+    desc:'A shy baby squid that squirts a cloud of ink when startled.' },
+
+  // ── ZONE 2 – Coral Reef (Tiers 11–20) ───────────────────────────
+  { name:'Clownfish',        emoji:'🐠', color:'#ff6b35', coins:55,  zone:1,
+    desc:'A cheerful clownfish that lives safely inside tickly sea anemones.' },
+  { name:'Parrotfish',       emoji:'🐟', color:'#00bfff', coins:60,  zone:1,
+    desc:'A rainbow-coloured fish that crunches on coral with its beak!' },
+  { name:'Angelfish',        emoji:'🐡', color:'#ffd700', coins:65,  zone:1,
+    desc:'A graceful golden angelfish with long flowing ribbon fins.' },
+  { name:'Blue Tang',        emoji:'🐟', color:'#4169e1', coins:70,  zone:1,
+    desc:'An electric-blue tang that zooms through coral tunnels at high speed.' },
+  { name:'Butterfly Fish',   emoji:'🦋', color:'#c8d400', coins:75,  zone:1,
+    desc:'A spotted fish with fake eye-dots on its tail to confuse predators.' },
+  { name:'Coral Shrimp',     emoji:'🦐', color:'#ff4500', coins:80,  zone:1,
+    desc:'A bright red shrimp that runs a cleaning station for fish at coral.' },
+  { name:'Seahorse',         emoji:'🐴', color:'#daa520', coins:85,  zone:1,
+    desc:'A delicate seahorse where Dad — not Mum — carries the babies!' },
+  { name:'Nudibranch',       emoji:'🌸', color:'#ff69b4', coins:90,  zone:1,
+    desc:'A neon sea slug — the fashion superstar of the entire coral reef.' },
+  { name:'Moray Eel',        emoji:'🐍', color:'#6b8e23', coins:95,  zone:1,
+    desc:'A long spotted eel that peeks from rocky crevices with curious eyes.' },
+  { name:'Lobster',          emoji:'🦞', color:'#dc143c', coins:100, zone:1,
+    desc:'A powerful lobster with crushing claws and a bright red armour shell.' },
+
+  // ── ZONE 3 – Open Ocean (Tiers 21–30) ───────────────────────────
+  { name:'Blue Marlin',      emoji:'🐟', color:'#1e90ff', coins:105, zone:2,
+    desc:'A lightning-fast blue marlin famous for spectacular leaps above the waves.' },
+  { name:'Silvery Tuna',     emoji:'🐟', color:'#b0b8c8', coins:110, zone:2,
+    desc:'A powerful tuna that migrates thousands of miles every single year.' },
+  { name:'Mahi-Mahi',        emoji:'🐟', color:'#228b22', coins:115, zone:2,
+    desc:'A dazzling green-gold fish that changes colour vividly when excited!' },
+  { name:'Barracuda',        emoji:'🐟', color:'#708090', coins:120, zone:2,
+    desc:'A sleek silver barracuda with razor-sharp teeth and blazing speed.' },
+  { name:'Flying Fish',      emoji:'🐟', color:'#87ceeb', coins:125, zone:2,
+    desc:'An incredible fish that glides above the waves using huge fin-wings.' },
+  { name:'Swordfish',        emoji:'🐟', color:'#4682b4', coins:130, zone:2,
+    desc:'A fierce swordfish that uses its long pointed bill to slash at prey.' },
+  { name:'Manta Ray',        emoji:'🦅', color:'#2f4f4f', coins:135, zone:2,
+    desc:'A giant manta ray that glides gracefully like a bird through the water.' },
+  { name:'Hammerhead Shark', emoji:'🦈', color:'#778899', coins:140, zone:2,
+    desc:'A weird and wonderful shark with a T-shaped hammer head for sensing prey.' },
+  { name:'Spinner Dolphin',  emoji:'🐬', color:'#6cb4e4', coins:145, zone:2,
+    desc:'A playful dolphin that spins like a top in the air purely for fun!' },
+  { name:'Tiger Shark',      emoji:'🦈', color:'#a9a9a9', coins:150, zone:2,
+    desc:'A boldly striped tiger shark — one of the great hunters of the open sea.' },
+
+  // ── ZONE 4 – Deep Sea (Tiers 31–40) ─────────────────────────────
+  { name:'Anglerfish',       emoji:'🐡', color:'#2a2a5a', coins:155, zone:3,
+    desc:'A haunting anglerfish that dangling a glowing lure to attract prey in darkness.' },
+  { name:'Viperfish',        emoji:'🐍', color:'#2d5a27', coins:160, zone:3,
+    desc:'A terrifying viperfish with needle fangs longer than its own head.' },
+  { name:'Fangtooth Fish',   emoji:'🐟', color:'#1a1a3a', coins:165, zone:3,
+    desc:'The deepest-living fish — with the largest teeth of any ocean creature.' },
+  { name:'Gulper Eel',       emoji:'🐍', color:'#1c2a1c', coins:170, zone:3,
+    desc:'A gulper eel with a massive stretchy jaw that swallows fish whole.' },
+  { name:'Dragonfish',       emoji:'🐉', color:'#4a1530', coins:175, zone:3,
+    desc:'A tiny but fierce dragonfish that flashes red bioluminescent light.' },
+  { name:'Glow Jellyfish',   emoji:'🪼', color:'#004444', coins:180, zone:3,
+    desc:'A bioluminescent jellyfish that pulses beautiful electric-blue light.' },
+  { name:'Giant Squid',      emoji:'🦑', color:'#6b0000', coins:185, zone:3,
+    desc:'A colossal squid with enormous eyes as big as soccer balls!' },
+  { name:'Dumbo Octopus',    emoji:'🐙', color:'#c06080', coins:190, zone:3,
+    desc:'A chubby pink octopus with cute ear-like fins that flap as it swims.' },
+  { name:'Barreleye Fish',   emoji:'👁️', color:'#2a0050', coins:195, zone:3,
+    desc:'A transparent-headed fish whose huge barrel eyes rotate to see in the dark.' },
+  { name:'Vampire Squid',    emoji:'🦑', color:'#3d0066', coins:200, zone:3,
+    desc:'A mysterious squid that can turn itself completely inside-out to escape!' },
+
+  // ── ZONE 5 – Arctic Ocean (Tiers 41–50) ──────────────────────────
+  { name:'Arctic Shrimp',    emoji:'🦐', color:'#b8ddf0', coins:205, zone:4,
+    desc:'A tiny ice-white shrimp that thrives in bone-chillingly cold Arctic water.' },
+  { name:'Arctic Cod',       emoji:'🐟', color:'#b0c4de', coins:210, zone:4,
+    desc:'A hardy cod whose blood contains special antifreeze proteins to stay alive.' },
+  { name:'Icefish',          emoji:'🐟', color:'#d8f0f8', coins:215, zone:4,
+    desc:'An amazing fish with completely colourless, transparent blood — totally unique!' },
+  { name:'Beluga Whale',     emoji:'🐳', color:'#e0e8e8', coins:220, zone:4,
+    desc:'A friendly white whale nicknamed "canary of the sea" for its beautiful singing.' },
+  { name:'Narwhal',          emoji:'🦄', color:'#dce8f0', coins:225, zone:4,
+    desc:'The unicorn of the sea! Its spiral tusk can grow an astonishing 3 metres long.' },
+  { name:'Harp Seal',        emoji:'🦭', color:'#d0d8e0', coins:230, zone:4,
+    desc:'A fluffy white seal pup with big eyes that loves sliding on frozen ice floes.' },
+  { name:'Walrus',           emoji:'🦭', color:'#a08060', coins:235, zone:4,
+    desc:'A round walrus that rests on icebergs and sings loud booming songs!' },
+  { name:'Orca',             emoji:'🐋', color:'#1a1a1a', coins:240, zone:4,
+    desc:'The clever killer whale that hunts in coordinated family teams like sea wolves.' },
+  { name:'Polar Bear',       emoji:'🐻‍❄️', color:'#ececec', coins:245, zone:4,
+    desc:'A powerful polar bear that swims between ice floes for many miles at a stretch.' },
+  { name:'Emperor Penguin',  emoji:'🐧', color:'#1c1c3c', coins:250, zone:4,
+    desc:'The tallest penguin that huddles together in fierce blizzards to keep each other warm.' },
+
+  // ── ZONE 6 – Exotic Tropics (Tiers 51–60) ────────────────────────
+  { name:'Mandarin Fish',    emoji:'🐠', color:'#ff1493', coins:255, zone:5,
+    desc:'One of the most colourful fish on Earth — a swimming living rainbow!' },
+  { name:'Lionfish',         emoji:'🐡', color:'#cc3300', coins:260, zone:5,
+    desc:'A stunning but venomous lionfish with spectacularly spiky poisonous fins.' },
+  { name:'Leafy Sea Dragon', emoji:'🐉', color:'#32cd32', coins:265, zone:5,
+    desc:'A leafy sea dragon perfectly camouflaged to look exactly like drifting seaweed.' },
+  { name:'Sea Snake',        emoji:'🐍', color:'#cccc00', coins:270, zone:5,
+    desc:'A banded sea snake that can absorb oxygen through its skin as well as its lungs.' },
+  { name:'Hawksbill Turtle', emoji:'🐢', color:'#8b5c3a', coins:275, zone:5,
+    desc:'A beautiful ancient sea turtle with a striking golden-patterned shell.' },
+  { name:'Wobbegong Shark',  emoji:'🦈', color:'#d2b48c', coins:280, zone:5,
+    desc:'A carpet shark so brilliantly camouflaged on the seafloor you cannot spot it!' },
+  { name:'Cuttlefish',       emoji:'🦑', color:'#e8c87a', coins:285, zone:5,
+    desc:'A cuttlefish that flickers thousands of dazzling colour patterns to communicate.' },
+  { name:'Blue-Ring Octopus',emoji:'🐙', color:'#2233ff', coins:290, zone:5,
+    desc:'A tiny octopus with dazzling blue electric rings — one of the ocean\'s most venomous!' },
+  { name:'Pygmy Seahorse',   emoji:'🐴', color:'#ff85b3', coins:295, zone:5,
+    desc:'A tiny seahorse just 2 cm long, perfectly hidden on pink coral fan branches.' },
+  { name:'Napoleon Fish',    emoji:'🐟', color:'#006994', coins:300, zone:5,
+    desc:'A giant wrasse with a magnificent forehead bump — the undisputed king of the reef!' },
+
+  // ── ZONE 7 – Rare Depths (Tiers 61–70) ───────────────────────────
+  { name:'Pacific Octopus',  emoji:'🐙', color:'#b22222', coins:305, zone:6,
+    desc:'The largest octopus on Earth — each arm stretches as long as a whole car!' },
+  { name:'Oarfish',          emoji:'🐍', color:'#c0c0c0', coins:310, zone:6,
+    desc:'The world\'s longest bony fish — up to 15 metres! The origin of sea-serpent legends.' },
+  { name:'Frilled Shark',    emoji:'🦈', color:'#4a4a8a', coins:315, zone:6,
+    desc:'A living fossil with 300 needle teeth and an ancient eel-like body.' },
+  { name:'Goblin Shark',     emoji:'🦈', color:'#ffb0c0', coins:320, zone:6,
+    desc:'A pink goblin shark whose terrifying jaw shoots forward to snap up prey!' },
+  { name:'Whale Shark',      emoji:'🦈', color:'#0077b6', coins:325, zone:6,
+    desc:'The biggest fish in the world — as long as a school bus, but completely gentle.' },
+  { name:'Giant Isopod',     emoji:'🦀', color:'#708090', coins:330, zone:6,
+    desc:'A deep-sea woodlouse the size of a football — scary looking but perfectly harmless!' },
+  { name:'Colossal Squid',   emoji:'🦑', color:'#722f37', coins:335, zone:6,
+    desc:'The heaviest invertebrate ever discovered — with eyes the size of beach balls!' },
+  { name:'Ocean Sunfish',    emoji:'☀️', color:'#ffa500', coins:340, zone:6,
+    desc:'A sunfish as big as a car that sunbathes at the surface to warm up in the sun.' },
+  { name:'Basking Shark',    emoji:'🦈', color:'#3a4a5a', coins:345, zone:6,
+    desc:'The second-biggest shark, drifting calmly through the ocean with its huge mouth open.' },
+  { name:'Sea Serpent',      emoji:'🐲', color:'#006400', coins:350, zone:6,
+    desc:'The legendary sea serpent — for centuries sailors told tales of this mighty creature.' },
+
+  // ── ZONE 8 – Ancient Ocean (Tiers 71–80) ─────────────────────────
+  { name:'Coelacanth',       emoji:'🐟', color:'#4b0082', coins:355, zone:7,
+    desc:'A "living fossil" thought extinct for 65 million years — then suddenly found alive!' },
+  { name:'Nautilus',         emoji:'🌀', color:'#f0deb8', coins:360, zone:7,
+    desc:'A nautilus whose perfect spiral shell has barely changed in 500 million years.' },
+  { name:'Horseshoe Crab',   emoji:'🦀', color:'#5c4033', coins:365, zone:7,
+    desc:'An ancient horseshoe crab that has walked Earth\'s oceans for 450 million years!' },
+  { name:'Ammonite',         emoji:'🌀', color:'#8b7355', coins:370, zone:7,
+    desc:'A stunning spiral-shelled fossil creature that lived alongside the dinosaurs.' },
+  { name:'Sea Scorpion',     emoji:'🦂', color:'#8b4513', coins:375, zone:7,
+    desc:'An ancient sea scorpion — once the supreme top predator of prehistoric oceans.' },
+  { name:'Trilobite',        emoji:'🪲', color:'#6b6b3a', coins:380, zone:7,
+    desc:'A trilobite that crawled across ocean floors over 500 million years ago!' },
+  { name:'Dunkleosteus',     emoji:'🦖', color:'#595959', coins:385, zone:7,
+    desc:'An armoured prehistoric fish with a crushing bite force stronger than a T-Rex!' },
+  { name:'Mosasaur',         emoji:'🦕', color:'#2e8b57', coins:390, zone:7,
+    desc:'A giant sea lizard that ruled the ancient oceans while dinosaurs roamed the land.' },
+  { name:'Plesiosaur',       emoji:'🦕', color:'#008080', coins:395, zone:7,
+    desc:'A long-necked plesiosaur — possibly the true creature behind the Loch Ness Monster!' },
+  { name:'Megalodon',        emoji:'🦈', color:'#222222', coins:400, zone:7,
+    desc:'The mightiest shark ever to have lived — its enormous teeth are the size of your hand!' },
+
+  // ── ZONE 9 – Ocean Giants (Tiers 81–90) ──────────────────────────
+  { name:'Sperm Whale',      emoji:'🐋', color:'#2c3e50', coins:405, zone:8,
+    desc:'A sperm whale that dives 3 km into total darkness to battle colossal squids!' },
+  { name:'Blue Whale',       emoji:'🐳', color:'#023e8a', coins:410, zone:8,
+    desc:'The absolute largest animal on Earth — its heart alone is the size of a small car!' },
+  { name:'Humpback Whale',   emoji:'🐋', color:'#0d2137', coins:415, zone:8,
+    desc:'A humpback whale whose haunting song can travel across entire ocean basins.' },
+  { name:'Fin Whale',        emoji:'🐳', color:'#061629', coins:420, zone:8,
+    desc:'The second-biggest animal ever to have lived anywhere on our entire planet.' },
+  { name:'Right Whale',      emoji:'🐋', color:'#04101a', coins:425, zone:8,
+    desc:'A rare and gentle whale that skims the surface filtering tiny creatures to eat.' },
+  { name:'Giant Manta',      emoji:'🦅', color:'#1a1a2e', coins:430, zone:8,
+    desc:'A massive oceanic manta ray with a magnificent wingspan wider than three cars!' },
+  { name:'Giant Spider Crab',emoji:'🦀', color:'#cc4400', coins:435, zone:8,
+    desc:'The world\'s largest crab — its outstretched legs span an incredible 4 metres!' },
+  { name:'Giant Clam',       emoji:'🦪', color:'#c8b89a', coins:440, zone:8,
+    desc:'A giant clam that weighs up to 200 kg and can live for over 100 years in one spot.' },
+  { name:'Squid King',       emoji:'🦑', color:'#8b0000', coins:445, zone:8,
+    desc:'A legendary ruler of the twilight zone — the undisputed King of all deep squids.' },
+  { name:'Colossal Octopus', emoji:'🐙', color:'#550022', coins:450, zone:8,
+    desc:'A mythically huge octopus said in ancient stories to wrap its arms around whole ships!' },
+
+  // ── ZONE 10 – Legendary (Tiers 91–100) ───────────────────────────
+  { name:'Sea Leviathan',    emoji:'🐉', color:'#8b0000', coins:455, zone:9,
+    desc:'A Leviathan from ancient myths — the mightiest sea beast ever imagined by humans.' },
+  { name:'The Kraken',       emoji:'🐙', color:'#2d0066', coins:460, zone:9,
+    desc:'THE Kraken — the legendary sea monster that could drag entire ships underwater!' },
+  { name:'Sea Dragon Lord',  emoji:'🐲', color:'#006400', coins:465, zone:9,
+    desc:'The Dragon Lord of the Deep — ancient ruler of every ocean creature.' },
+  { name:'Ocean Titan',      emoji:'🌊', color:'#003087', coins:470, zone:9,
+    desc:'An Ocean Titan so colossal that sailors throughout history mistook it for an island.' },
+  { name:"Neptune's Guard",  emoji:'🔱', color:'#0055cc', coins:475, zone:9,
+    desc:"Neptune's mighty chosen guardian — the eternal protector of all ocean life." },
+  { name:'Abyss Lord',       emoji:'🌑', color:'#0a0a14', coins:480, zone:9,
+    desc:'The absolute Lord of the Abyss, dwelling in the darkest trench at the ocean\'s very core.' },
+  { name:'Void Serpent',     emoji:'🐍', color:'#2d0044', coins:485, zone:9,
+    desc:'An infinite void serpent said to coil endlessly around the entire ocean floor.' },
+  { name:"Poseidon's Champion",emoji:'🌊',color:'#001a33', coins:490, zone:9,
+    desc:"The chosen champion of the sea god himself — nearly unstoppable in any battle." },
+  { name:'Ocean Sovereign',  emoji:'👑', color:'#996600', coins:495, zone:9,
+    desc:'The absolute sovereign of all seas — every creature in every ocean bows before it.' },
+  { name:'Oceanic Prime',    emoji:'💎', color:'#90d8f8', coins:500, zone:9,
+    desc:'The ultimate being of all oceans. You have truly conquered the deep! 🎉🏆' },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+//  CANVAS SETUP
+// ═══════════════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('game-wrap');
+
+let W, H;
+function resize() {
+  W = wrap.clientWidth;
+  H = window.innerHeight - document.getElementById('hud').offsetHeight;
+  canvas.width  = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════
+let coins            = 20;
+let discovered       = new Set();     // tier indices shown in discovery popup
+let maxDiscoveredTier = 0;            // drives background zone depth
+let creatures        = [];            // active game objects
+let bgBubbles        = [];            // decorative floating bubbles
+let nextId           = 0;
+
+// Drag state
+let dragging   = null;
+let dragOffX   = 0;
+let dragOffY   = 0;
+let dragOriginX = 0;
+let dragOriginY = 0;
+
+// Effects queues
+let mergeFlashes = [];                // { x, y, life, color }
+let coinParticles = [];               // { x, y, vx, vy, life, text }
+
+// Timers
+let lastPassive = performance.now();
+
+// ── Creature radius for a given tier
+function tierRadius(t) {
+  return Math.floor(20 + Math.sqrt(t) * 6.5);
+}
+
+// ── Coin bubble cost
+const BUBBLE_BASE_COST = 10;
+function bubbleCost() {
+  return BUBBLE_BASE_COST + Math.floor(creatures.length * 1.5);
+}
+
+// ── Format large coin numbers
+function fmt(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+// ── Zone index from tier
+function zoneOf(tier) { return TIERS[tier].zone; }
+
+// ═══════════════════════════════════════════════════════════════════
+//  DECORATIVE BACKGROUND BUBBLES
+// ═══════════════════════════════════════════════════════════════════
+for (let i = 0; i < 22; i++) {
+  bgBubbles.push({
+    x:      Math.random() * 600,
+    y:      Math.random() * 800,
+    r:      2 + Math.random() * 9,
+    speed:  0.25 + Math.random() * 0.55,
+    wobble: Math.random() * Math.PI * 2,
+    alpha:  0.06 + Math.random() * 0.14,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SPAWN STARTER BUBBLES
+// ═══════════════════════════════════════════════════════════════════
+function spawnStarterBubble() {
+  const margin = 55;
+  creatures.push({
+    id:      nextId++,
+    tier:    0,
+    x:       margin + Math.random() * (W - margin * 2),
+    y:       H * 0.25 + Math.random() * (H * 0.52),
+    r:       28,
+    vx:      (Math.random() - 0.5) * 0.4,
+    vy:      (Math.random() - 0.5) * 0.4,
+    wobble:  Math.random() * Math.PI * 2,
+    scale:   1,
+  });
+}
+spawnStarterBubble();
+spawnStarterBubble();
+spawnStarterBubble();
+
+// ═══════════════════════════════════════════════════════════════════
+//  ADD CREATURE
+// ═══════════════════════════════════════════════════════════════════
+function addCreature(tier, x, y) {
+  if (tier < 0 || tier >= TIERS.length) return;
+  const margin = 50;
+  const cx = (x !== undefined) ? x : margin + Math.random() * (W - margin * 2);
+  const cy = (y !== undefined) ? y : H * 0.2 + Math.random() * (H * 0.6);
+  creatures.push({
+    id:      nextId++,
+    tier,
+    x: cx, y: cy,
+    r:       tierRadius(tier),
+    vx:      (Math.random() - 0.5) * 0.3,
+    vy:      (Math.random() - 0.5) * 0.3,
+    wobble:  Math.random() * Math.PI * 2,
+    scale:   1,
+  });
+
+  // First time discovering this tier
+  if (tier > 0 && !discovered.has(tier)) {
+    const prevMaxZone = (maxDiscoveredTier > 0) ? zoneOf(maxDiscoveredTier) : -1;
+    discovered.add(tier);
+    if (tier > maxDiscoveredTier) maxDiscoveredTier = tier;
+    const newZone = zoneOf(tier);
+    if (newZone > prevMaxZone && tier > 1) {
+      showZoneUnlock(newZone);
+    }
+    setTimeout(() => showDiscovery(tier), newZone > prevMaxZone && tier > 1 ? 1800 : 0);
+  } else if (tier > maxDiscoveredTier) {
+    maxDiscoveredTier = tier;
+  }
+  updateHUD();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  DRAWING – BACKGROUND
+// ═══════════════════════════════════════════════════════════════════
+// Background gradient interpolates between zones as max tier grows
+function getZoneBg() {
+  const z = maxDiscoveredTier > 0 ? zoneOf(Math.min(maxDiscoveredTier, 100)) : 0;
+  const next = Math.min(z + 1, ZONES.length - 1);
+  // Fractional position within zone
+  const frac = maxDiscoveredTier > 0
+    ? ((maxDiscoveredTier - 1) % 10) / 10
+    : 0;
+  return {
+    top: lerpColor(ZONES[z].bgTop, ZONES[next].bgTop, frac),
+    bot: lerpColor(ZONES[z].bgBot, ZONES[next].bgBot, frac),
+  };
+}
+
+function lerpColor(a, b, t) {
+  const n1 = parseInt(a.replace('#',''), 16);
+  const n2 = parseInt(b.replace('#',''), 16);
+  const r = Math.round(((n1>>16)&0xff) + (((n2>>16)&0xff) - ((n1>>16)&0xff)) * t);
+  const g = Math.round(((n1>>8 )&0xff) + (((n2>>8 )&0xff) - ((n1>>8 )&0xff)) * t);
+  const bl= Math.round((n1&0xff)      + ((n2&0xff)       - (n1&0xff))       * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+let bgAnimT = 0; // for ray animation
+
+function drawBackground() {
+  bgAnimT += 0.008;
+  const { top, bot } = getZoneBg();
+
+  // Ocean gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, top);
+  grad.addColorStop(1, bot);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Light rays (only in shallow zones)
+  const rayAlpha = Math.max(0, 0.07 - maxDiscoveredTier * 0.0006);
+  if (rayAlpha > 0.005) {
+    ctx.save();
+    for (let i = 0; i < 6; i++) {
+      const x = W * (0.08 + i * 0.17) + Math.sin(bgAnimT + i) * 12;
+      const rayGrad = ctx.createLinearGradient(x, 0, x + 35, H);
+      rayGrad.addColorStop(0,   `rgba(100,200,255,${rayAlpha})`);
+      rayGrad.addColorStop(1,   'rgba(100,200,255,0)');
+      ctx.fillStyle = rayGrad;
+      ctx.beginPath();
+      ctx.moveTo(x - 10, 0);
+      ctx.lineTo(x + 45, 0);
+      ctx.lineTo(x + 75, H);
+      ctx.lineTo(x + 18, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Bioluminescent sparkles for deep zones
+  const bioAlpha = Math.max(0, (maxDiscoveredTier - 30) * 0.002);
+  if (bioAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = bioAlpha;
+    for (const b of bgBubbles) {
+      const pulse = 0.5 + 0.5 * Math.sin(b.wobble * 1.3 + bgAnimT * 2);
+      ctx.fillStyle = `hsl(${(b.wobble * 60 + bgAnimT * 20) % 360},100%,70%)`;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * 0.3 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Decorative floating bubbles
+  for (const b of bgBubbles) {
+    ctx.save();
+    ctx.globalAlpha = b.alpha;
+    ctx.strokeStyle = '#7ee8fa';
+    ctx.lineWidth   = 1.2;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.27, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Seafloor
+  ctx.save();
+  ctx.fillStyle = lerpColor('#001428', '#010204', maxDiscoveredTier / 100);
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 38) {
+    ctx.lineTo(x, H - 7 - Math.sin(x * 0.06 + bgAnimT * 0.3) * 5);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  DRAWING – CREATURE
+// ═══════════════════════════════════════════════════════════════════
+function drawCreature(c) {
+  const t = TIERS[c.tier];
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.scale(c.scale, c.scale);
+
+  if (c.tier === 0) {
+    // Spawn bubble
+    const pulse = 1 + 0.06 * Math.sin(c.wobble * 2);
+    ctx.scale(pulse, pulse);
+    const glow = ctx.createRadialGradient(0, 0, c.r * 0.3, 0, 0, c.r * 1.35);
+    glow.addColorStop(0,   'rgba(150,230,255,0.16)');
+    glow.addColorStop(1,   'rgba(100,180,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, c.r * 1.35, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(120,210,255,0.85)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-c.r * 0.28, -c.r * 0.28, c.r * 0.32, c.r * 0.2, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = `${c.r * 0.82}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(200,240,255,0.9)';
+    ctx.fillText('🫧', 0, 0);
+  } else {
+    const r = c.r;
+    // Outer glow for legendary tiers (91+)
+    if (c.tier >= 91) {
+      const zone   = ZONES[9];
+      const glowR  = ctx.createRadialGradient(0, 0, r * 0.5, 0, 0, r * 1.6);
+      glowR.addColorStop(0,   zone.color + '66');
+      glowR.addColorStop(1,   'transparent');
+      ctx.fillStyle = glowR;
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(2, r * 0.7, r * 0.68, r * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Body circle
+    const bg = ctx.createRadialGradient(-r * 0.25, -r * 0.2, r * 0.1, 0, 0, r);
+    bg.addColorStop(0, lighten(t.color, 45));
+    bg.addColorStop(1, t.color);
+    ctx.fillStyle   = bg;
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Emoji
+    ctx.font        = `${r * 1.05}px serif`;
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t.emoji, 0, 0);
+    // Coin badge
+    const badge = `+${fmt(t.coins)}`;
+    const fs    = Math.max(9, r * 0.36);
+    ctx.font        = `bold ${fs}px sans-serif`;
+    ctx.fillStyle   = '#FFD700';
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.lineWidth   = 3;
+    ctx.strokeText(badge, r * 0.52, -r * 0.72);
+    ctx.fillText(badge,   r * 0.52, -r * 0.72);
+    // Tier badge (small bottom-right, for high tiers)
+    if (c.tier >= 10) {
+      const tierLabel = `T${c.tier}`;
+      const tfs = Math.max(8, r * 0.3);
+      ctx.font        = `bold ${tfs}px sans-serif`;
+      ctx.fillStyle   = 'rgba(255,255,255,0.75)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth   = 2.5;
+      ctx.strokeText(tierLabel, -r * 0.6, r * 0.72);
+      ctx.fillText(tierLabel,   -r * 0.6, r * 0.72);
+    }
+  }
+  ctx.restore();
+}
+
+// ── Merge flash effect
+function drawMergeFlashes() {
+  for (const f of mergeFlashes) {
+    const alpha = f.life / 30;
+    const r     = (1 - alpha) * 58;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r);
+    g.addColorStop(0,   '#fff');
+    g.addColorStop(0.35, f.color || '#1ac9e6');
+    g.addColorStop(1,   'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── Lighten colour helper
+function lighten(hex, amount) {
+  const n = parseInt(hex.replace('#',''), 16);
+  const r = Math.min(255, ((n >> 16) & 0xff) + amount);
+  const g = Math.min(255, ((n >> 8)  & 0xff) + amount);
+  const b = Math.min(255, (n & 0xff)          + amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════════════
+let lastTime = 0;
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime  = now;
+
+  // Background bubbles float upward
+  for (const b of bgBubbles) {
+    b.y      -= b.speed;
+    b.x      += Math.sin(b.wobble) * 0.28;
+    b.wobble += 0.014;
+    if (b.y + b.r < 0) { b.y = H + b.r; b.x = Math.random() * W; }
+  }
+
+  // Creatures drift and bounce
+  for (const c of creatures) {
+    if (c === dragging) continue;
+    c.wobble += 0.04;
+    c.x += c.vx;
+    c.y += c.vy;
+    c.vx *= 0.98;
+    c.vy *= 0.98;
+    const m = c.r + 4;
+    if (c.x < m)       { c.x = m;     c.vx =  Math.abs(c.vx) * 0.6; }
+    if (c.x > W - m)   { c.x = W - m; c.vx = -Math.abs(c.vx) * 0.6; }
+    if (c.y < m)       { c.y = m;     c.vy =  Math.abs(c.vy) * 0.6; }
+    if (c.y > H - m)   { c.y = H - m; c.vy = -Math.abs(c.vy) * 0.6; }
+    c.vx += (Math.random() - 0.5) * 0.014;
+    c.vy += (Math.random() - 0.5) * 0.014;
+    const maxV = 0.5;
+    c.vx = Math.max(-maxV, Math.min(maxV, c.vx));
+    c.vy = Math.max(-maxV, Math.min(maxV, c.vy));
+  }
+
+  // Scale pop decay
+  for (const c of creatures) {
+    if (c.scale > 1) c.scale = Math.max(1, c.scale - 0.05);
+    if (c.scale < 1) c.scale = Math.min(1, c.scale + 0.05);
+  }
+
+  // Merge flash decay
+  mergeFlashes = mergeFlashes.filter(f => { f.life--; return f.life > 0; });
+
+  // Passive income (every 4 seconds, each creature earns 50% of click value)
+  if (now - lastPassive > 4000) {
+    lastPassive = now;
+    let earned = 0;
+    for (const c of creatures) {
+      if (c.tier > 0) earned += Math.floor(TIERS[c.tier].coins * 0.5);
+    }
+    if (earned > 0) {
+      coins += earned;
+      updateHUD();
+    }
+  }
+
+  // Draw everything
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  for (const c of creatures) {
+    if (c !== dragging) drawCreature(c);
+  }
+  drawMergeFlashes();
+  if (dragging) {
+    ctx.save(); ctx.globalAlpha = 0.88;
+    drawCreature(dragging);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ═══════════════════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════════════════
+function pointerPos(e) {
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const src    = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top)  * scaleY,
+  };
+}
+
+function hitCreature(px, py) {
+  for (let i = creatures.length - 1; i >= 0; i--) {
+    const c = creatures[i];
+    if (Math.hypot(px - c.x, py - c.y) <= c.r * 1.1) return c;
+  }
+  return null;
+}
+
+let pointerDownTime   = 0;
+let pointerDownTarget = null;
+let pointerMoved      = false;
+
+canvas.addEventListener('mousedown',  onDown);
+canvas.addEventListener('touchstart', onDown, { passive: false });
+
+function onDown(e) {
+  e.preventDefault();
+  const { x, y } = pointerPos(e);
+  pointerDownTime   = performance.now();
+  pointerDownTarget = hitCreature(x, y);
+  pointerMoved      = false;
+  if (pointerDownTarget) {
+    dragging    = pointerDownTarget;
+    dragOffX    = x - dragging.x;
+    dragOffY    = y - dragging.y;
+    dragOriginX = dragging.x;
+    dragOriginY = dragging.y;
+    creatures   = creatures.filter(c => c !== dragging);
+    creatures.push(dragging);
+  }
+}
+
+canvas.addEventListener('mousemove',  onMove);
+canvas.addEventListener('touchmove',  onMove, { passive: false });
+
+function onMove(e) {
+  e.preventDefault();
+  if (!dragging) return;
+  pointerMoved = true;
+  const { x, y } = pointerPos(e);
+  dragging.x = x - dragOffX;
+  dragging.y = y - dragOffY;
+}
+
+canvas.addEventListener('mouseup',  onUp);
+canvas.addEventListener('touchend', onUp);
+
+function onUp(e) {
+  if (!dragging) return;
+  const elapsed = performance.now() - pointerDownTime;
+
+  if (!pointerMoved && elapsed < 380) {
+    handleTap(dragging);
+    dragging.vx = 0;
+    dragging.vy = 0;
+    dragging = null;
+    return;
+  }
+
+  // Drop — check for merge target
+  const other = creatures.find(c => {
+    if (c === dragging) return false;
+    return Math.hypot(dragging.x - c.x, dragging.y - c.y) < dragging.r + c.r
+        && c.tier === dragging.tier;
+  });
+
+  if (other && dragging.tier < TIERS.length - 1) {
+    doMerge(dragging, other);
+  } else {
+    dragging.vx = (dragging.x - dragOriginX) * 0.05;
+    dragging.vy = (dragging.y - dragOriginY) * 0.05;
+  }
+  dragging = null;
+  updateHUD();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  GAME ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+function handleTap(c) {
+  if (c.tier === 0) {
+    // Hatch bubble → tier 1 Starfish
+    c.tier   = 1;
+    c.r      = tierRadius(1);
+    c.scale  = 1.4;
+    mergeFlashes.push({ x: c.x, y: c.y, life: 30, color: ZONES[0].color });
+    showFloat(c.x, c.y, '🌟 New!');
+    if (!discovered.has(1)) {
+      discovered.add(1);
+      maxDiscoveredTier = Math.max(maxDiscoveredTier, 1);
+      showDiscovery(1);
+    }
+    updateHUD();
+  } else {
+    // Earn coins
+    const earned = TIERS[c.tier].coins;
+    coins  += earned;
+    c.scale = 1.22;
+    showFloat(c.x, c.y, `+${fmt(earned)}🪙`);
+    updateHUD();
+  }
+}
+
+function doMerge(a, b) {
+  const newTier = a.tier + 1;
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  creatures = creatures.filter(c => c !== a && c !== b);
+  const zoneColor = ZONES[Math.min(9, Math.floor((newTier - 1) / 10))].color;
+  mergeFlashes.push({ x: mx, y: my, life: 30, color: zoneColor });
+  addCreature(newTier, mx, my);
+  const newest = creatures[creatures.length - 1];
+  if (newest) newest.scale = 1.5;
+  showFloat(mx, my, '🎉 Merged!');
+  updateHUD();
+}
+
+// ── Buy bubble button
+document.getElementById('buy-btn').addEventListener('click', () => {
+  const cost = bubbleCost();
+  if (coins < cost) { showToast(`Need ${fmt(cost)}🪙 to buy a bubble!`); return; }
+  coins -= cost;
+  spawnStarterBubble();
+  updateHUD();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  HUD UPDATE
+// ═══════════════════════════════════════════════════════════════════
+function updateHUD() {
+  document.getElementById('coin-count').textContent = fmt(coins);
+
+  const cost = bubbleCost();
+  const btn  = document.getElementById('buy-btn');
+  btn.querySelector('#buy-cost').textContent = `(${fmt(cost)}🪙)`;
+  btn.classList.toggle('disabled', coins < cost);
+
+  const seenTiers = [...discovered].filter(t => t > 0).length;
+  document.getElementById('progress-label').textContent = `${seenTiers}/100`;
+  document.getElementById('progress-bar-fill').style.width = `${seenTiers}%`;
+
+  // Zone label shows zone of highest discovered creature
+  const zIdx = maxDiscoveredTier > 0 ? zoneOf(maxDiscoveredTier) : 0;
+  const zone = ZONES[zIdx];
+  const zLabel = document.getElementById('zone-label');
+  zLabel.textContent   = zone.name;
+  zLabel.style.color   = zone.color;
+  zLabel.style.textShadow = `0 0 8px ${zone.color}88`;
+}
+updateHUD();
+
+// ═══════════════════════════════════════════════════════════════════
+//  DISCOVERY POPUP
+// ═══════════════════════════════════════════════════════════════════
+let popupQueue = [];
+let popupOpen  = false;
+
+function showDiscovery(tier) {
+  popupQueue.push(tier);
+  if (!popupOpen) drainPopup();
+}
+
+function drainPopup() {
+  if (popupQueue.length === 0) { popupOpen = false; return; }
+  popupOpen = true;
+  const tier = popupQueue.shift();
+  const t    = TIERS[tier];
+  const zIdx = t.zone;
+  const zone = ZONES[zIdx];
+
+  const zoneEl  = document.getElementById('popup-zone');
+  zoneEl.textContent   = zone.name;
+  zoneEl.style.background = zone.color + '30';
+  zoneEl.style.color      = zone.color;
+  zoneEl.style.border     = `1px solid ${zone.color}60`;
+
+  document.getElementById('popup-tier').textContent = `Creature #${tier} of 100`;
+  document.getElementById('popup-name').textContent = t.name;
+
+  const box = document.getElementById('popup-creature');
+  box.style.background = t.color + '50';
+  box.style.border     = `3px solid ${t.color}`;
+  box.textContent      = t.emoji;
+
+  document.getElementById('popup-desc').textContent  = t.desc;
+  document.getElementById('popup-coins').textContent =
+    `+${fmt(t.coins)}🪙 per click  ·  +${fmt(Math.floor(t.coins * 0.5))}🪙 passive / 4s`;
+
+  document.getElementById('popup-overlay').classList.add('show');
+}
+
+document.getElementById('popup-ok').addEventListener('click', () => {
+  document.getElementById('popup-overlay').classList.remove('show');
+  setTimeout(drainPopup, 200);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ZONE UNLOCK BANNER
+// ═══════════════════════════════════════════════════════════════════
+let zubTimer = null;
+
+function showZoneUnlock(zoneIdx) {
+  const zone = ZONES[zoneIdx];
+  const banner = document.getElementById('zone-unlock-banner');
+  document.getElementById('zub-name').textContent = zone.name;
+  banner.style.borderColor  = zone.color;
+  banner.style.boxShadow    = `0 0 24px ${zone.color}80`;
+  banner.classList.add('show');
+  clearTimeout(zubTimer);
+  zubTimer = setTimeout(() => banner.classList.remove('show'), 2800);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  FLOATING COIN TEXT
+// ═══════════════════════════════════════════════════════════════════
+function showFloat(cx, cy, text) {
+  const el       = document.createElement('div');
+  el.className   = 'float-text';
+  el.textContent = text;
+  const rect = canvas.getBoundingClientRect();
+  el.style.left  = `${cx * (rect.width  / W) - 18}px`;
+  el.style.top   = `${cy * (rect.height / H) - 8}px`;
+  wrap.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════════════
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+</script>
+</body>
+</html>
