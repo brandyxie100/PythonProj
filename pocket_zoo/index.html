@@ -456,6 +456,16 @@
     font-weight: 800;
     color: #8a5a00;
   }
+
+  #shop-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #8fd4cf;
+    padding: 32px 20px;
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+  #shop-empty .shop-empty-icon { font-size: 2.4rem; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -786,6 +796,7 @@ window.addEventListener('resize', resize);
 // ═══════════════════════════════════════════════════════════════════
 let coins            = 20;
 let discovered       = new Set();     // tier indices shown in discovery popup
+let mergedTiers      = new Set();     // tiers created via merging (gates the shop)
 let maxDiscoveredTier = 0;            // drives background zone depth
 let creatures        = [];            // active game objects
 let bgBubbles        = [];            // decorative floating bubbles
@@ -1311,6 +1322,9 @@ function doMerge(a, b) {
   creatures = creatures.filter(c => c !== a && c !== b);
   const zoneColor = ZONES[Math.min(9, Math.floor((newTier - 1) / 10))].color;
   mergeFlashes.push({ x: mx, y: my, life: 30, color: zoneColor });
+  // Track tiers unlocked for the marketplace (merge-only progression).
+  mergedTiers.add(a.tier);
+  mergedTiers.add(newTier);
   addCreature(newTier, mx, my);
   const newest = creatures[creatures.length - 1];
   if (newest) newest.scale = 1.5;
@@ -1434,42 +1448,56 @@ function showFloat(cx, cy, text) {
 
 // ═══════════════════════════════════════════════════════════════════
 //  MARKETPLACE  ("Buy Creatures")
-//  Lets the player skip the slow Tier-1 grind by purchasing higher-tier
-//  creatures directly with coins.
+//  Buy lower-tier helpers to speed up merging. Higher tiers can ONLY
+//  be obtained by merging on the board — never from the shop.
+//
+//  ── VISIBILITY RULES ─────────────────────────────────────────────
+//    1. A creature appears only after you merge it (or merge two of
+//       the tier below to create it).
+//    2. Undiscovered / current-best creatures are hidden — not shown.
+//    3. You can only buy tiers strictly below your current best.
 //
 //  ── PRICE TREND LINE ─────────────────────────────────────────────
-//    basePrice(tier) = round( 35 × tier^1.9 )      ← power curve vs tier
-//    price(tier)     = basePrice × 1.18^owned       ← +18% per repeat buy
-//
-//    The power curve (exponent 1.9) keeps low tiers cheap so beginners
-//    can leapfrog the early grind, while high tiers stay premium. The
-//    1.18 geometric factor stops players from spamming the same tier for
-//    a flat price — every purchase of the same creature costs more.
-//
-//  ── UNLOCK RULE ───────────────────────────────────────────────────
-//    • Any tier AHEAD of your current best is always purchasable (no cap).
-//    • Any tier you have already discovered can be re-bought.
-//    This lets the shop skip the grind at any depth, not only +8 tiers.
-//
-//  Example base prices:  T1≈35  T5≈724  T10≈2.7K  T25≈15K  T50≈58K  T90≈180K
+//    basePrice(tier) = round( 35 × tier^1.9 )
+//    price(tier)     = basePrice × 1.18^owned
 // ═══════════════════════════════════════════════════════════════════
-const SHOP_OFFERS  = [1, 5, 10, 17, 25, 35, 45, 60, 75, 90]; // featured tiers
-const SHOP_GROWTH  = 1.18;     // price multiplier per repeat purchase
-const shopBought   = {};       // tier -> number purchased (drives price)
+const SHOP_GROWTH  = 1.18;
+const shopBought   = {};
 
 function shopBasePrice(tier) { return Math.round(35 * Math.pow(tier, 1.9)); }
 function shopPrice(tier) {
   const owned = shopBought[tier] || 0;
   return Math.round(shopBasePrice(tier) * Math.pow(SHOP_GROWTH, owned));
 }
-// Ahead of best → always buyable; already discovered → rebuyable.
-function shopUnlocked(tier) {
-  return tier > maxDiscoveredTier || discovered.has(tier);
+
+// Tiers eligible to appear in the shop grid.
+function shopVisibleTiers() {
+  return [...mergedTiers]
+    .filter(t => t > 0 && t < maxDiscoveredTier)
+    .sort((a, b) => a - b);
 }
+function canBuyInShop(tier) {
+  return mergedTiers.has(tier) && tier > 0 && tier < maxDiscoveredTier;
+}
+
 function passivePerSec(tier) {
-  // Matches the global passive system: each creature earns 50% of its
-  // click value every 4 seconds.
   return Math.max(1, Math.round(TIERS[tier].coins * 0.5 / 4));
+}
+
+// Spawn a shop purchase on the board without advancing discovery.
+function placePurchasedCreature(tier) {
+  const margin = 50;
+  creatures.push({
+    id:      nextId++,
+    tier,
+    x:       margin + Math.random() * (W - margin * 2),
+    y:       H * 0.2 + Math.random() * (H * 0.6),
+    r:       tierRadius(tier),
+    vx:      (Math.random() - 0.5) * 0.3,
+    vy:      (Math.random() - 0.5) * 0.3,
+    wobble:  Math.random() * Math.PI * 2,
+    scale:   1,
+  });
 }
 
 const shopOverlay = document.getElementById('shop-overlay');
@@ -1486,24 +1514,22 @@ shopOverlay.addEventListener('click', (e) => {
 
 function renderShop() {
   document.getElementById('shop-subtitle').textContent =
-    'Skip the grind — buy any tier ahead of your best!';
+    'Buy lower-tier helpers you unlocked by merging';
   shopGrid.innerHTML = '';
 
-  for (const tier of SHOP_OFFERS) {
+  const tiers = shopVisibleTiers();
+  if (tiers.length === 0) {
+    shopGrid.innerHTML =
+      `<div id="shop-empty">` +
+        `<div class="shop-empty-icon">🫧</div>` +
+        `Merge creatures on the board to unlock helpers here.<br>` +
+        `Only tiers below your current best can be bought.` +
+      `</div>`;
+    return;
+  }
+
+  for (const tier of tiers) {
     const t = TIERS[tier];
-
-    if (!shopUnlocked(tier)) {
-      // ── Locked slot (only when you skipped past this tier without discovering it)
-      const slot = document.createElement('div');
-      slot.className = 'shop-slot locked';
-      slot.innerHTML =
-        `<div class="lock-icon">🔒</div>` +
-        `<div class="lock-req">Discover T${tier} first</div>`;
-      shopGrid.appendChild(slot);
-      continue;
-    }
-
-    // ── Unlocked slot
     const price      = shopPrice(tier);
     const affordable = coins >= price;
     const slot       = document.createElement('div');
@@ -1524,7 +1550,7 @@ function renderShop() {
 }
 
 function buyCreature(tier) {
-  if (!shopUnlocked(tier)) return;
+  if (!canBuyInShop(tier)) return;
   const price = shopPrice(tier);
   if (coins < price) {
     showToast(`Need ${fmt(price)}🪙 for a ${TIERS[tier].name}!`);
@@ -1532,7 +1558,7 @@ function buyCreature(tier) {
   }
   coins -= price;
   shopBought[tier] = (shopBought[tier] || 0) + 1;
-  addCreature(tier);                 // spawns on the board (handles discovery)
+  placePurchasedCreature(tier);
   const nc = creatures[creatures.length - 1];
   if (nc) {
     nc.scale = 1.5;
