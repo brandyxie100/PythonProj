@@ -271,6 +271,191 @@
     z-index: 200;
   }
   #toast.show { opacity: 1; }
+
+  /* ── HUD buttons group ──────────────────────────────────────────── */
+  #hud-buttons {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #shop-btn {
+    background: linear-gradient(135deg, #ffd33d, #f5a623);
+    border: none;
+    border-radius: 18px;
+    width: 40px; height: 36px;
+    font-size: 1.15rem;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(245,166,35,0.5);
+    transition: transform 0.1s;
+  }
+  #shop-btn:hover  { transform: scale(1.08); }
+  #shop-btn:active { transform: scale(0.94); }
+
+  /* ── Marketplace modal ──────────────────────────────────────────── */
+  #shop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 90;
+    align-items: center;
+    justify-content: center;
+  }
+  #shop-overlay.show { display: flex; }
+
+  #shop-panel {
+    position: relative;
+    width: 94%;
+    max-width: 560px;
+    max-height: 88vh;
+    background:
+      radial-gradient(ellipse at 50% 120%, rgba(0,80,80,0.55), transparent 60%),
+      linear-gradient(160deg, #0c4a48, #073231 60%, #04201f);
+    border: 3px solid #1ac9e6;
+    border-radius: 24px;
+    box-shadow: 0 0 50px rgba(26,201,230,0.4);
+    padding: 18px 16px 20px;
+    overflow: hidden;
+    animation: popIn 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  #shop-title {
+    text-align: center;
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 1px;
+    text-shadow: 0 3px 0 rgba(0,0,0,0.35), 0 0 16px rgba(26,201,230,0.4);
+    margin-bottom: 2px;
+  }
+  #shop-subtitle {
+    text-align: center;
+    font-size: 0.68rem;
+    color: #6fd4cf;
+    margin-bottom: 14px;
+    letter-spacing: 0.3px;
+  }
+  #shop-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 40px; height: 40px;
+    background: linear-gradient(135deg, #8a7fa8, #6a5f88);
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-size: 1.3rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    transition: transform 0.1s;
+    z-index: 2;
+  }
+  #shop-close:hover  { transform: scale(1.08); }
+  #shop-close:active { transform: scale(0.94) translateY(2px); }
+
+  #shop-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-height: calc(88vh - 90px);
+    overflow-y: auto;
+    padding: 4px;
+  }
+  #shop-grid::-webkit-scrollbar { width: 7px; }
+  #shop-grid::-webkit-scrollbar-thumb {
+    background: #1ac9e6; border-radius: 4px;
+  }
+
+  /* ── A purchasable slot ─────────────────────────────────────────── */
+  .shop-slot {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    min-height: 92px;
+  }
+  /* Hexagon creature icon */
+  .hex {
+    flex: 0 0 76px;
+    width: 76px;
+    align-self: center;
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(155deg, #ffe066, #f5a623);
+    clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0% 50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.4rem;
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.4));
+  }
+  /* Card on the right of the hexagon */
+  .shop-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    min-width: 0;
+  }
+  .shop-name {
+    background: #fdfdfd;
+    color: #1a3a44;
+    font-weight: 800;
+    font-size: 0.92rem;
+    text-align: center;
+    padding: 4px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .shop-price {
+    flex: 1;
+    background: linear-gradient(180deg, #fff6d8, #ffe9a8);
+    color: #7a5a00;
+    font-weight: 800;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: filter 0.1s, transform 0.1s;
+  }
+  .shop-slot.affordable .shop-price:hover  { filter: brightness(1.06); }
+  .shop-slot.affordable .shop-price:active { transform: scale(0.97); }
+  .shop-slot.cant-afford .shop-price {
+    background: linear-gradient(180deg, #c9c9c9, #b0b0b0);
+    color: #5a5a5a;
+    cursor: not-allowed;
+  }
+  .shop-foot {
+    background: #16524f;
+    color: #bfeae6;
+    font-size: 0.66rem;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+  }
+  .shop-foot .passive { color: #7CFC9C; }
+
+  /* ── Locked slot ────────────────────────────────────────────────── */
+  .shop-slot.locked {
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #ffd84d, #f3a51c);
+    border-radius: 16px;
+    box-shadow: inset 0 3px 0 rgba(255,255,255,0.45), 0 3px 0 rgba(0,0,0,0.3);
+    flex-direction: column;
+    gap: 2px;
+    cursor: not-allowed;
+  }
+  .shop-slot.locked .lock-icon { font-size: 2.1rem; filter: grayscale(0.1); }
+  .shop-slot.locked .lock-req {
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #8a5a00;
+  }
 </style>
 </head>
 <body>
@@ -288,7 +473,10 @@
       <div id="progress-bar-bg"><div id="progress-bar-fill" style="width:0%"></div></div>
     </div>
   </div>
-  <button id="buy-btn">🫧 Bubble <span id="buy-cost">(10🪙)</span></button>
+  <div id="hud-buttons">
+    <button id="shop-btn" title="Buy Creatures">🛒</button>
+    <button id="buy-btn">🫧 <span id="buy-cost">(10🪙)</span></button>
+  </div>
 </div>
 
 <!-- ── Canvas ── -->
@@ -314,6 +502,16 @@
 <div id="zone-unlock-banner">
   <div class="zub-title">🌊 New Zone Unlocked!</div>
   <div class="zub-name" id="zub-name"></div>
+</div>
+
+<!-- ── Marketplace modal ── -->
+<div id="shop-overlay">
+  <div id="shop-panel">
+    <button id="shop-close">✕</button>
+    <div id="shop-title">Buy Creatures</div>
+    <div id="shop-subtitle"></div>
+    <div id="shop-grid"></div>
+  </div>
 </div>
 
 <!-- ── Toast ── -->
@@ -1151,6 +1349,11 @@ function updateHUD() {
   zLabel.textContent   = zone.name;
   zLabel.style.color   = zone.color;
   zLabel.style.textShadow = `0 0 8px ${zone.color}88`;
+
+  // Keep marketplace affordability/lock states fresh while it is open.
+  // Query the DOM directly so this works before `shopOverlay` is declared.
+  const ov = document.getElementById('shop-overlay');
+  if (ov && ov.classList.contains('show')) renderShop();
 }
 updateHUD();
 
@@ -1228,6 +1431,115 @@ function showFloat(cx, cy, text) {
   wrap.appendChild(el);
   el.addEventListener('animationend', () => el.remove());
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  MARKETPLACE  ("Buy Creatures")
+//  Lets the player skip the slow Tier-1 grind by purchasing higher-tier
+//  creatures directly with coins.
+//
+//  ── PRICE TREND LINE ─────────────────────────────────────────────
+//    basePrice(tier) = round( 35 × tier^1.9 )      ← power curve vs tier
+//    price(tier)     = basePrice × 1.18^owned       ← +18% per repeat buy
+//
+//    The power curve (exponent 1.9) keeps low tiers cheap so beginners
+//    can leapfrog the early grind, while high tiers stay premium. The
+//    1.18 geometric factor stops players from spamming the same tier for
+//    a flat price — every purchase of the same creature costs more.
+//
+//  Example base prices:  T1≈35  T5≈724  T10≈2.7K  T25≈15K  T50≈58K  T90≈180K
+// ═══════════════════════════════════════════════════════════════════
+const SHOP_OFFERS  = [1, 5, 10, 17, 25, 35, 45, 60, 75, 90]; // featured tiers
+const SHOP_GROWTH  = 1.18;     // price multiplier per repeat purchase
+const SHOP_LOOKAHEAD = 8;      // tiers you may buy ahead of your progress
+const shopBought   = {};       // tier -> number purchased (drives price)
+
+function shopBasePrice(tier) { return Math.round(35 * Math.pow(tier, 1.9)); }
+function shopPrice(tier) {
+  const owned = shopBought[tier] || 0;
+  return Math.round(shopBasePrice(tier) * Math.pow(SHOP_GROWTH, owned));
+}
+function shopUnlockReq(tier) { return Math.max(1, tier - SHOP_LOOKAHEAD); }
+function shopUnlocked(tier)  { return maxDiscoveredTier >= shopUnlockReq(tier); }
+function passivePerSec(tier) {
+  // Matches the global passive system: each creature earns 50% of its
+  // click value every 4 seconds.
+  return Math.max(1, Math.round(TIERS[tier].coins * 0.5 / 4));
+}
+
+const shopOverlay = document.getElementById('shop-overlay');
+const shopGrid    = document.getElementById('shop-grid');
+
+function openShop()  { renderShop(); shopOverlay.classList.add('show'); }
+function closeShop() { shopOverlay.classList.remove('show'); }
+
+document.getElementById('shop-btn').addEventListener('click', openShop);
+document.getElementById('shop-close').addEventListener('click', closeShop);
+shopOverlay.addEventListener('click', (e) => {
+  if (e.target === shopOverlay) closeShop();
+});
+
+function renderShop() {
+  document.getElementById('shop-subtitle').textContent =
+    'Skip the grind! · Price = 35 × tier^1.9 × 1.18^owned';
+  shopGrid.innerHTML = '';
+
+  for (const tier of SHOP_OFFERS) {
+    const t = TIERS[tier];
+
+    if (!shopUnlocked(tier)) {
+      // ── Locked slot
+      const slot = document.createElement('div');
+      slot.className = 'shop-slot locked';
+      slot.innerHTML =
+        `<div class="lock-icon">🔒</div>` +
+        `<div class="lock-req">Reach T${shopUnlockReq(tier)}</div>`;
+      shopGrid.appendChild(slot);
+      continue;
+    }
+
+    // ── Unlocked slot
+    const price      = shopPrice(tier);
+    const affordable = coins >= price;
+    const slot       = document.createElement('div');
+    slot.className   = 'shop-slot ' + (affordable ? 'affordable' : 'cant-afford');
+    slot.innerHTML =
+      `<div class="hex">${t.emoji}</div>` +
+      `<div class="shop-card">` +
+        `<div class="shop-name">${t.name}</div>` +
+        `<div class="shop-price">🪙 ${fmt(price)}</div>` +
+        `<div class="shop-foot">` +
+          `<span>Owned: ${shopBought[tier] || 0}</span>` +
+          `<span class="passive">+${fmt(passivePerSec(tier))}/sec</span>` +
+        `</div>` +
+      `</div>`;
+    slot.querySelector('.shop-price').addEventListener('click', () => buyCreature(tier));
+    shopGrid.appendChild(slot);
+  }
+}
+
+function buyCreature(tier) {
+  if (!shopUnlocked(tier)) return;
+  const price = shopPrice(tier);
+  if (coins < price) {
+    showToast(`Need ${fmt(price)}🪙 for a ${TIERS[tier].name}!`);
+    return;
+  }
+  coins -= price;
+  shopBought[tier] = (shopBought[tier] || 0) + 1;
+  addCreature(tier);                 // spawns on the board (handles discovery)
+  const nc = creatures[creatures.length - 1];
+  if (nc) {
+    nc.scale = 1.5;
+    mergeFlashes.push({ x: nc.x, y: nc.y, life: 30,
+      color: ZONES[t_zone(tier)].color });
+  }
+  showToast(`Bought a ${TIERS[tier].name}! 🎉`);
+  updateHUD();
+  renderShop();
+}
+
+// Helper: zone index for a tier (named to avoid clashing with zoneOf use above)
+function t_zone(tier) { return TIERS[tier].zone; }
 
 // ═══════════════════════════════════════════════════════════════════
 //  TOAST
