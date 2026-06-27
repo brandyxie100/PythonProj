@@ -1446,11 +1446,15 @@ function showFloat(cx, cy, text) {
 //    1.18 geometric factor stops players from spamming the same tier for
 //    a flat price — every purchase of the same creature costs more.
 //
+//  ── UNLOCK RULE ───────────────────────────────────────────────────
+//    • Any tier AHEAD of your current best is always purchasable (no cap).
+//    • Any tier you have already discovered can be re-bought.
+//    This lets the shop skip the grind at any depth, not only +8 tiers.
+//
 //  Example base prices:  T1≈35  T5≈724  T10≈2.7K  T25≈15K  T50≈58K  T90≈180K
 // ═══════════════════════════════════════════════════════════════════
 const SHOP_OFFERS  = [1, 5, 10, 17, 25, 35, 45, 60, 75, 90]; // featured tiers
 const SHOP_GROWTH  = 1.18;     // price multiplier per repeat purchase
-const SHOP_LOOKAHEAD = 8;      // tiers you may buy ahead of your progress
 const shopBought   = {};       // tier -> number purchased (drives price)
 
 function shopBasePrice(tier) { return Math.round(35 * Math.pow(tier, 1.9)); }
@@ -1458,8 +1462,10 @@ function shopPrice(tier) {
   const owned = shopBought[tier] || 0;
   return Math.round(shopBasePrice(tier) * Math.pow(SHOP_GROWTH, owned));
 }
-function shopUnlockReq(tier) { return Math.max(1, tier - SHOP_LOOKAHEAD); }
-function shopUnlocked(tier)  { return maxDiscoveredTier >= shopUnlockReq(tier); }
+// Ahead of best → always buyable; already discovered → rebuyable.
+function shopUnlocked(tier) {
+  return tier > maxDiscoveredTier || discovered.has(tier);
+}
 function passivePerSec(tier) {
   // Matches the global passive system: each creature earns 50% of its
   // click value every 4 seconds.
@@ -1480,19 +1486,19 @@ shopOverlay.addEventListener('click', (e) => {
 
 function renderShop() {
   document.getElementById('shop-subtitle').textContent =
-    'Skip the grind! · Price = 35 × tier^1.9 × 1.18^owned';
+    'Skip the grind — buy any tier ahead of your best!';
   shopGrid.innerHTML = '';
 
   for (const tier of SHOP_OFFERS) {
     const t = TIERS[tier];
 
     if (!shopUnlocked(tier)) {
-      // ── Locked slot
+      // ── Locked slot (only when you skipped past this tier without discovering it)
       const slot = document.createElement('div');
       slot.className = 'shop-slot locked';
       slot.innerHTML =
         `<div class="lock-icon">🔒</div>` +
-        `<div class="lock-req">Reach T${shopUnlockReq(tier)}</div>`;
+        `<div class="lock-req">Discover T${tier} first</div>`;
       shopGrid.appendChild(slot);
       continue;
     }
