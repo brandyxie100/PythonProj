@@ -473,6 +473,16 @@
     font-weight: 800;
     color: #8a5a00;
   }
+
+  #shop-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #8fd4cf;
+    padding: 32px 20px;
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+  #shop-empty .shop-empty-icon { font-size: 2.4rem; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -804,6 +814,7 @@ window.addEventListener('resize', resize);
 // ═══════════════════════════════════════════════════════════════════
 let coins            = 20;
 let discovered       = new Set();     // tier indices shown in discovery popup
+let mergedTiers      = new Set();     // tiers created via merging (gates the shop)
 let maxDiscoveredTier = 0;            // drives background zone depth
 let creatures        = [];            // active game objects
 let bgBubbles        = [];            // decorative floating bubbles
@@ -819,7 +830,12 @@ let sellMode   = false;
 
 // Effects queues
 let mergeFlashes = [];                // { x, y, life, color }
-let coinParticles = [];               // { x, y, vx, vy, life, text }
+let coinParticles = [];               // { x, y, vx, vy, life, maxLife, text }
+
+// Sinking ocean debris (tap up to 5× for coins)
+let debrisList = [];
+let nextDebrisId = 0;
+let debrisSpawnMs = 0;                // ms until next drop wave
 
 // Timers
 let lastPassive = performance.now();
@@ -845,6 +861,208 @@ function fmt(n) {
 
 // ── Zone index from tier
 function zoneOf(tier) { return TIERS[tier].zone; }
+
+// ═══════════════════════════════════════════════════════════════════
+//  SINKING DEBRIS  (surface → seafloor, tap for coins)
+// ═══════════════════════════════════════════════════════════════════
+const DEBRIS_MAX_TAPS = 5;
+const DEBRIS_TYPES = [
+  { name: 'Clay Pot',       emoji: '🏺', coins: 8,  r: 22, sink: 1.55 },
+  { name: 'Old Wheel',      emoji: '⚙️', coins: 12, r: 24, sink: 1.65 },
+  { name: 'Walking Cane',   emoji: '🦯', coins: 15, r: 20, sink: 1.50 },
+  { name: 'Worn Boot',      emoji: '🥾', coins: 18, r: 21, sink: 1.58 },
+  { name: 'Rusty Anchor',   emoji: '⚓', coins: 22, r: 26, sink: 1.70 },
+  { name: 'Ship Wheel',     emoji: '🛞', coins: 28, r: 27, sink: 1.62 },
+  { name: 'Wrecked Car',    emoji: '🚗', coins: 35, r: 30, sink: 1.48 },
+  { name: 'Treasure Chest', emoji: '📦', coins: 45, r: 28, sink: 1.52 },
+  { name: 'Glass Bottle',   emoji: '🍾', coins: 6,  r: 18, sink: 1.72 },
+  { name: 'Rusty Pipe',     emoji: '🔩', coins: 10, r: 19, sink: 1.68 },
+  { name: 'Old Lantern',    emoji: '🏮', coins: 14, r: 20, sink: 1.60 },
+  { name: 'Bicycle',        emoji: '🚲', coins: 20, r: 26, sink: 1.45 },
+];
+
+function seafloorY() { return H - 26; }
+
+function scheduleDebrisDrop() {
+  debrisSpawnMs = 8000 + Math.random() * 6000; // 1–1.2 s (5× faster than 5–6 s)
+}
+scheduleDebrisDrop();
+
+function spawnDebris() {
+  const typeIdx = Math.floor(Math.random() * DEBRIS_TYPES.length);
+  const t = DEBRIS_TYPES[typeIdx];
+  const margin = t.r + 8;
+  debrisList.push({
+    id:       nextDebrisId++,
+    typeIdx,
+    x:        margin + Math.random() * (W - margin * 2),
+    y:        -t.r - Math.random() * 40,
+    vx:       (Math.random() - 0.5) * 0.35,
+    vy:       t.sink + Math.random() * 0.25,
+    r:        t.r,
+    taps:     0,
+    settled:  false,
+    wobble:   Math.random() * Math.PI * 2,
+    rot:      (Math.random() - 0.5) * 0.4,
+    scale:    1,
+    popLife:  0,
+  });
+}
+
+function spawnDebrisWave() {
+  const count = Math.random() < 0.5 ? 1 : 2; // 5× quantity (was 1–2)
+  for (let i = 0; i < count; i++) spawnDebris();
+  scheduleDebrisDrop();
+}
+
+function hitDebris(px, py) {
+  for (let i = debrisList.length - 1; i >= 0; i--) {
+    const d = debrisList[i];
+    if (!d.settled) continue;
+    if (Math.hypot(px - d.x, py - d.y) <= d.r * 1.15) return d;
+  }
+  return null;
+}
+
+function handleDebrisTap(d) {
+  const t = DEBRIS_TYPES[d.typeIdx];
+  coins += t.coins;
+  d.taps += 1;
+  d.scale = 1.28;
+  d.popLife = 18;
+  spawnCoinBurst(d.x, d.y - d.r * 0.3, t.coins);
+  showFloat(d.x, d.y - d.r, `+${t.coins}🪙`);
+  if (d.taps >= DEBRIS_MAX_TAPS) {
+    debrisList = debrisList.filter(item => item !== d);
+    mergeFlashes.push({ x: d.x, y: d.y, life: 22, color: '#c8a84b' });
+  }
+  updateHUD();
+}
+
+function spawnCoinBurst(x, y, amount) {
+  coinParticles.push({
+    x, y, vx: 0, vy: -2.2, life: 34, maxLife: 34,
+    text: `+${amount}`, size: 16, gold: true,
+  });
+  for (let i = 0; i < 7; i++) {
+    const ang = (Math.PI * 2 * i) / 7 + Math.random() * 0.4;
+    const spd = 1.4 + Math.random() * 2.2;
+    coinParticles.push({
+      x, y,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 1.5,
+      life: 28 + Math.floor(Math.random() * 12),
+      maxLife: 40,
+      text: '🪙',
+      size: 11 + Math.random() * 5,
+      gold: false,
+    });
+  }
+}
+
+function updateDebris(dt) {
+  debrisSpawnMs -= dt * 1000;
+  if (debrisSpawnMs <= 0) spawnDebrisWave();
+
+  const floor = seafloorY();
+  for (const d of debrisList) {
+    d.wobble += 0.05;
+    if (!d.settled) {
+      d.x += d.vx + Math.sin(d.wobble) * 0.25;
+      d.y += d.vy;
+      d.rot += 0.018;
+      if (d.y >= floor - d.r * 0.35) {
+        d.y = floor - d.r * 0.35;
+        d.settled = true;
+        d.vy = 0;
+        d.vx *= 0.3;
+      }
+      const m = d.r + 4;
+      if (d.x < m) d.x = m;
+      if (d.x > W - m) d.x = W - m;
+    } else {
+      d.x += Math.sin(d.wobble) * 0.08;
+    }
+    if (d.popLife > 0) d.popLife--;
+    if (d.scale > 1) d.scale = Math.max(1, d.scale - 0.06);
+  }
+}
+
+function drawDebris() {
+  for (const d of debrisList) {
+    const t = DEBRIS_TYPES[d.typeIdx];
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.rot + Math.sin(d.wobble) * 0.06);
+    ctx.scale(d.scale, d.scale);
+
+    const alpha = d.settled ? 1 - (d.taps / DEBRIS_MAX_TAPS) * 0.35 : 0.92;
+    ctx.globalAlpha = alpha;
+
+    // Shadow on seafloor
+    if (d.settled) {
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(0, d.r * 0.55, d.r * 0.75, d.r * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sandy / rusty backing disc
+    const bg = ctx.createRadialGradient(-4, -4, 2, 0, 0, d.r);
+    bg.addColorStop(0, '#a08060');
+    bg.addColorStop(1, '#5a4030');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(0, 0, d.r * 0.88, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Emoji icon
+    ctx.font = `${d.r * 1.05}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t.emoji, 0, 0);
+
+    // Tap counter (settled only)
+    if (d.settled) {
+      const left = DEBRIS_MAX_TAPS - d.taps;
+      ctx.font = `bold ${Math.max(9, d.r * 0.34)}px sans-serif`;
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.lineWidth = 2.5;
+      const label = `${left}×`;
+      ctx.strokeText(label, 0, d.r * 0.72);
+      ctx.fillText(label, 0, d.r * 0.72);
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawCoinParticles() {
+  for (const p of coinParticles) {
+    const a = p.life / p.maxLife;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = `bold ${p.size}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (p.gold) {
+      ctx.fillStyle = '#FFD700';
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(p.text, p.x, p.y);
+      ctx.fillText(p.text, p.x, p.y);
+    } else {
+      ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.restore();
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.06;
+    p.life--;
+  }
+  coinParticles = coinParticles.filter(p => p.life > 0);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  DECORATIVE BACKGROUND BUBBLES
@@ -1176,8 +1394,16 @@ function loop(now) {
   // Merge flash decay
   mergeFlashes = mergeFlashes.filter(f => { f.life--; return f.life > 0; });
 
+<<<<<<< HEAD
   // Passive income: each creature earns 50% of its click value every second.
   if (now - lastPassive > 1000) {
+=======
+  // Sinking debris
+  updateDebris(dt);
+
+  // Passive income (every 4 seconds, each creature earns 50% of click value)
+  if (now - lastPassive > 4000) {
+>>>>>>> b123a3f0a589de189ad65764b7782bf098e75bbd
     lastPassive = now;
     let earned = 0;
     for (const c of creatures) {
@@ -1192,10 +1418,12 @@ function loop(now) {
   // Draw everything
   ctx.clearRect(0, 0, W, H);
   drawBackground();
+  drawDebris();
   for (const c of creatures) {
     if (c !== dragging) drawCreature(c);
   }
   drawMergeFlashes();
+  drawCoinParticles();
   if (dragging) {
     ctx.save(); ctx.globalAlpha = 0.88;
     drawCreature(dragging);
@@ -1230,6 +1458,7 @@ function hitCreature(px, py) {
 
 let pointerDownTime   = 0;
 let pointerDownTarget = null;
+let debrisTapTarget   = null;
 let pointerMoved      = false;
 
 canvas.addEventListener('mousedown',  onDown);
@@ -1240,6 +1469,7 @@ function onDown(e) {
   const { x, y } = pointerPos(e);
   pointerDownTime   = performance.now();
   pointerDownTarget = hitCreature(x, y);
+  debrisTapTarget   = null;
   pointerMoved      = false;
 
   if (sellMode) {
@@ -1257,6 +1487,8 @@ function onDown(e) {
     dragOriginY = dragging.y;
     creatures   = creatures.filter(c => c !== dragging);
     creatures.push(dragging);
+  } else {
+    debrisTapTarget = hitDebris(x, y);
   }
 }
 
@@ -1276,8 +1508,16 @@ canvas.addEventListener('mouseup',  onUp);
 canvas.addEventListener('touchend', onUp);
 
 function onUp(e) {
-  if (!dragging) return;
   const elapsed = performance.now() - pointerDownTime;
+
+  // Tap settled debris (no creature drag)
+  if (!dragging && debrisTapTarget && !pointerMoved && elapsed < 380) {
+    handleDebrisTap(debrisTapTarget);
+    debrisTapTarget = null;
+    return;
+  }
+
+  if (!dragging) return;
 
   if (!pointerMoved && elapsed < 380) {
     handleTap(dragging);
@@ -1301,6 +1541,7 @@ function onUp(e) {
     dragging.vy = (dragging.y - dragOriginY) * 0.05;
   }
   dragging = null;
+  debrisTapTarget = null;
   updateHUD();
 }
 
@@ -1338,6 +1579,9 @@ function doMerge(a, b) {
   creatures = creatures.filter(c => c !== a && c !== b);
   const zoneColor = ZONES[Math.min(9, Math.floor((newTier - 1) / 10))].color;
   mergeFlashes.push({ x: mx, y: my, life: 30, color: zoneColor });
+  // Track tiers unlocked for the marketplace (merge-only progression).
+  mergedTiers.add(a.tier);
+  mergedTiers.add(newTier);
   addCreature(newTier, mx, my);
   const newest = creatures[creatures.length - 1];
   if (newest) newest.scale = 1.5;
@@ -1482,36 +1726,62 @@ function showFloat(cx, cy, text) {
 
 // ═══════════════════════════════════════════════════════════════════
 //  MARKETPLACE  ("Buy Creatures")
-//  Lets the player skip the slow Tier-1 grind by purchasing higher-tier
-//  creatures directly with coins.
+//  Buy lower-tier helpers to speed up merging. Higher tiers can ONLY
+//  be obtained by merging on the board — never from the shop.
+//
+//  ── VISIBILITY RULES ─────────────────────────────────────────────
+//    1. A creature appears only after you merge it (or merge two of
+//       the tier below to create it).
+//    2. Undiscovered / current-best creatures are hidden — not shown.
+//    3. You can only buy tiers strictly below your current best.
 //
 //  ── PRICE TREND LINE ─────────────────────────────────────────────
-//    basePrice(tier) = round( 35 × tier^1.9 )      ← power curve vs tier
-//    price(tier)     = basePrice × 1.18^owned       ← +18% per repeat buy
-//
-//    The power curve (exponent 1.9) keeps low tiers cheap so beginners
-//    can leapfrog the early grind, while high tiers stay premium. The
-//    1.18 geometric factor stops players from spamming the same tier for
-//    a flat price — every purchase of the same creature costs more.
-//
-//  Example base prices:  T1≈35  T5≈724  T10≈2.7K  T25≈15K  T50≈58K  T90≈180K
+//    basePrice(tier) = round( 35 × tier^1.9 )
+//    price(tier)     = basePrice × 1.18^owned
 // ═══════════════════════════════════════════════════════════════════
-const SHOP_OFFERS  = [1, 5, 10, 17, 25, 35, 45, 60, 75, 90]; // featured tiers
-const SHOP_GROWTH  = 1.18;     // price multiplier per repeat purchase
-const SHOP_LOOKAHEAD = 8;      // tiers you may buy ahead of your progress
-const shopBought   = {};       // tier -> number purchased (drives price)
+const SHOP_GROWTH  = 1.18;
+const shopBought   = {};
 
 function shopBasePrice(tier) { return Math.round(35 * Math.pow(tier, 1.9)); }
 function shopPrice(tier) {
   const owned = shopBought[tier] || 0;
   return Math.round(shopBasePrice(tier) * Math.pow(SHOP_GROWTH, owned));
 }
-function shopUnlockReq(tier) { return Math.max(1, tier - SHOP_LOOKAHEAD); }
-function shopUnlocked(tier)  { return maxDiscoveredTier >= shopUnlockReq(tier); }
+
+// Tiers eligible to appear in the shop grid.
+function shopVisibleTiers() {
+  return [...mergedTiers]
+    .filter(t => t > 0 && t < maxDiscoveredTier)
+    .sort((a, b) => a - b);
+}
+function canBuyInShop(tier) {
+  return mergedTiers.has(tier) && tier > 0 && tier < maxDiscoveredTier;
+}
+
 function passivePerSec(tier) {
+<<<<<<< HEAD
   // Matches the global passive system: each creature earns 50% of its
   // click value every second.
   return Math.max(1, Math.round(TIERS[tier].coins * 0.5));
+=======
+  return Math.max(1, Math.round(TIERS[tier].coins * 0.5 / 4));
+>>>>>>> b123a3f0a589de189ad65764b7782bf098e75bbd
+}
+
+// Spawn a shop purchase on the board without advancing discovery.
+function placePurchasedCreature(tier) {
+  const margin = 50;
+  creatures.push({
+    id:      nextId++,
+    tier,
+    x:       margin + Math.random() * (W - margin * 2),
+    y:       H * 0.2 + Math.random() * (H * 0.6),
+    r:       tierRadius(tier),
+    vx:      (Math.random() - 0.5) * 0.3,
+    vy:      (Math.random() - 0.5) * 0.3,
+    wobble:  Math.random() * Math.PI * 2,
+    scale:   1,
+  });
 }
 
 const shopOverlay = document.getElementById('shop-overlay');
@@ -1528,24 +1798,22 @@ shopOverlay.addEventListener('click', (e) => {
 
 function renderShop() {
   document.getElementById('shop-subtitle').textContent =
-    'Skip the grind! · Price = 35 × tier^1.9 × 1.18^owned';
+    'Buy lower-tier helpers you unlocked by merging';
   shopGrid.innerHTML = '';
 
-  for (const tier of SHOP_OFFERS) {
+  const tiers = shopVisibleTiers();
+  if (tiers.length === 0) {
+    shopGrid.innerHTML =
+      `<div id="shop-empty">` +
+        `<div class="shop-empty-icon">🫧</div>` +
+        `Merge creatures on the board to unlock helpers here.<br>` +
+        `Only tiers below your current best can be bought.` +
+      `</div>`;
+    return;
+  }
+
+  for (const tier of tiers) {
     const t = TIERS[tier];
-
-    if (!shopUnlocked(tier)) {
-      // ── Locked slot
-      const slot = document.createElement('div');
-      slot.className = 'shop-slot locked';
-      slot.innerHTML =
-        `<div class="lock-icon">🔒</div>` +
-        `<div class="lock-req">Reach T${shopUnlockReq(tier)}</div>`;
-      shopGrid.appendChild(slot);
-      continue;
-    }
-
-    // ── Unlocked slot
     const price      = shopPrice(tier);
     const affordable = coins >= price;
     const slot       = document.createElement('div');
@@ -1566,7 +1834,7 @@ function renderShop() {
 }
 
 function buyCreature(tier) {
-  if (!shopUnlocked(tier)) return;
+  if (!canBuyInShop(tier)) return;
   const price = shopPrice(tier);
   if (coins < price) {
     showToast(`Need ${fmt(price)}🪙 for a ${TIERS[tier].name}!`);
@@ -1574,7 +1842,7 @@ function buyCreature(tier) {
   }
   coins -= price;
   shopBought[tier] = (shopBought[tier] || 0) + 1;
-  addCreature(tier);                 // spawns on the board (handles discovery)
+  placePurchasedCreature(tier);
   const nc = creatures[creatures.length - 1];
   if (nc) {
     nc.scale = 1.5;

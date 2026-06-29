@@ -1,8 +1,8 @@
 """
 Flappy Bird Clone - Main Game Module
 =====================================
-An infinite Flappy Bird-style game with escalating difficulty.
-Pipes wobble and tilt as the score increases.
+An infinite Flappy Bird-style game with easy-to-hard difficulty scaling.
+Pipes wobble and tilt only after the player has built some score.
 
 Controls:
     - Mouse click: Start game and flap.
@@ -39,49 +39,47 @@ FPS: int = 60
 GROUND_Y: int = 650
 GROUND_TILE_WIDTH: int = 35
 
-# Bird physics
-BIRD_ROTATION_FACTOR: float = -5.0
-GRAVITY: float = 2.5
-MAX_FALL_VELOCITY: float = 24.0
-# Normal flap strength (restored)
-FLAP_VELOCITY: float = -12.0
-BIRD_ROTATION_FACTOR: float = -5.0
-BIRD_ROTATION_FACTOR: float = -5.0
+# Bird physics (per-frame @ 60 FPS — forgiving for new players)
+BIRD_ROTATION_FACTOR: float = -2.0
+GRAVITY: float = 0.4
+MAX_FALL_VELOCITY: float = 6.0
+FLAP_VELOCITY: float = -5.5
 GAME_OVER_ROTATION: float = -90.0
-# Pipe config (base values; scaled by difficulty)
-SCROLL_SPEED_BASE: int = 80
-SCROLL_SPEED_MAX: int = 160
-# Bird forward speed (base, independent of temporary abilities)
-# Defined after SCROLL_SPEED_BASE to avoid forward reference
+# Pipe scroll: starts slow, ramps to classic speed (px/frame)
+SCROLL_SPEED_BASE: int = 2
+SCROLL_SPEED_MAX: int = 5
 BIRD_BASE_SPEED: int = SCROLL_SPEED_BASE
-PIPE_GAP_BASE: int = 80
-PIPE_GAP_MIN: int = 40
-PIPE_SPAWN_INTERVAL_BASE: tuple[int, int] = (30, 45)
-PIPE_SPAWN_INTERVAL_MIN: tuple[int, int] = (20, 30)
+PIPE_GAP_BASE: int = 180
+PIPE_GAP_MIN: int = 120
+PIPE_SPAWN_INTERVAL_BASE: tuple[int, int] = (130, 200)
+PIPE_SPAWN_INTERVAL_MIN: tuple[int, int] = (120, 180)
 PIPE_SPAWN_OFFSET: int = 30
-PIPE_GAP_CENTER_MIN: int = 260
-PIPE_GAP_CENTER_MAX: int = 360
+PIPE_GAP_CENTER_MIN: int = 280
+PIPE_GAP_CENTER_MAX: int = 380
 
 # How close (px) another bird must be horizontally to block damage
 SHIELD_RANGE: int = 100
 
-# Fast-moving pipe chance and extra scroll (in pixels/frame)
-PIPE_FAST_CHANCE: float = 0.6
-PIPE_EXTRA_SCROLL_MIN: int = 8
-PIPE_EXTRA_SCROLL_MAX: int = 30
+# Fast-moving pipes — only appear after player has some experience
+PIPE_FAST_CHANCE_MAX: float = 0.12
+PIPE_FAST_MIN_SCORE: int = 20
+PIPE_EXTRA_SCROLL_MIN: int = 1
+PIPE_EXTRA_SCROLL_MAX: int = 2
 
-# Difficulty tiers (score thresholds)
-TIER_EASY: int = 1
-TIER_MEDIUM: int = 5
-TIER_HARD: int = 20
+# Difficulty curve: score 0 = tutorial-easy, full challenge at DIFFICULTY_RAMP_SCORE
+DIFFICULTY_RAMP_SCORE: int = 80
+# Feature unlock thresholds (wobble → tilt → fast pipes)
+TIER_EASY: int = 12
+TIER_MEDIUM: int = 25
+TIER_HARD: int = 45
 
-# Wobble (Phase 2)
-WOBBLE_AMPLITUDE_BASE: int = 80
-WOBBLE_AMPLITUDE_MAX: int = 140
-WOBBLE_FREQUENCY: float = 0.14
+# Wobble (Phase 2) — gentle when it first appears
+WOBBLE_AMPLITUDE_BASE: int = 10
+WOBBLE_AMPLITUDE_MAX: int = 25
+WOBBLE_FREQUENCY: float = 0.06
 
 # Tilt (Phase 3)
-TILT_AMPLITUDE: float = 45.0
+TILT_AMPLITUDE: float = 8.0
 
 # Animation
 FLAP_COOLDOWN_FRAMES: int = 5
@@ -179,44 +177,55 @@ class DifficultyParams:
 def get_difficulty_params(score: int) -> DifficultyParams:
     """Compute difficulty parameters based on current score.
 
+    Progression is easy → hard and slow → fast. An ease-in curve keeps the
+    first ~20 points gentle for new players, then ramps toward normal/hard.
+
     Args:
         score: Current player score.
 
     Returns:
         DifficultyParams with scaled values.
     """
-    # Extremely aggressive scaling for maximum difficulty
-    t = min(score / 1.0, 100.0)
-    scroll_speed = min(
-        SCROLL_SPEED_BASE + int(t * 1.5),
-        SCROLL_SPEED_MAX
+    # Ease-in: stay easy longer, then accelerate (0 at score 0, 1 at ramp cap)
+    raw_t = min(score / float(DIFFICULTY_RAMP_SCORE), 1.0)
+    t = raw_t ** 1.6
+
+    scroll_speed = SCROLL_SPEED_BASE + int(
+        t * (SCROLL_SPEED_MAX - SCROLL_SPEED_BASE)
     )
     pipe_gap = max(
-        PIPE_GAP_BASE - int(t * 10),
-        PIPE_GAP_MIN
+        PIPE_GAP_BASE - int(t * (PIPE_GAP_BASE - PIPE_GAP_MIN)),
+        PIPE_GAP_MIN,
     )
     si_base = PIPE_SPAWN_INTERVAL_BASE
     si_min = PIPE_SPAWN_INTERVAL_MIN
-    spawn_lo = max(si_base[0] - int(t * 5), si_min[0])
-    spawn_hi = max(si_base[1] - int(t * 5), si_min[1])
+    spawn_lo = max(
+        int(si_base[0] - t * (si_base[0] - si_min[0])),
+        si_min[0],
+    )
+    spawn_hi = max(
+        int(si_base[1] - t * (si_base[1] - si_min[1])),
+        si_min[1],
+    )
     spawn_interval_range = (spawn_lo, spawn_hi)
 
-    # Narrow gap center range as score rises (harder angles)
+    # Narrow gap center range only in the later half of the ramp
     center_range = PIPE_GAP_CENTER_MAX - PIPE_GAP_CENTER_MIN
-    shrink = int(min(t * 5, center_range // 2))
+    shrink = int(max(0.0, (raw_t - 0.5) * 2) * (center_range // 5))
     gap_center_min = PIPE_GAP_CENTER_MIN + shrink // 2
     gap_center_max = PIPE_GAP_CENTER_MAX - shrink // 2
 
-    # Wobble: enable from tier 2, amplitude scales with score
+    # Wobble: unlocks at TIER_EASY, then ramps with score
     wobble_enabled = score >= TIER_EASY
     wobble_amplitude = 0
     if wobble_enabled:
-        wobble_amplitude = min(
-            WOBBLE_AMPLITUDE_BASE + int(t * 3),
-            WOBBLE_AMPLITUDE_MAX
+        span = max(1, DIFFICULTY_RAMP_SCORE - TIER_EASY)
+        wt = min((score - TIER_EASY) / float(span), 1.0)
+        wobble_amplitude = WOBBLE_AMPLITUDE_BASE + int(
+            wt * (WOBBLE_AMPLITUDE_MAX - WOBBLE_AMPLITUDE_BASE)
         )
 
-    # Tilt: enable from tier 3
+    # Tilt: unlocks at TIER_MEDIUM
     tilt_enabled = score >= TIER_MEDIUM
 
     return DifficultyParams(
@@ -704,11 +713,14 @@ def spawn_pipes(
     next_pair_id += 1
     phase = random.uniform(0, 2 * math.pi)  # Random phase per pair
 
-    # Occasionally spawn a fast-moving pipe pair
+    # Fast pipes only after PIPE_FAST_MIN_SCORE; chance ramps with experience
     extra = 0
     try:
-        if random.random() < PIPE_FAST_CHANCE:
-            extra = random.randint(PIPE_EXTRA_SCROLL_MIN, PIPE_EXTRA_SCROLL_MAX)
+        if score >= PIPE_FAST_MIN_SCORE:
+            ft = min((score - PIPE_FAST_MIN_SCORE) / 40.0, 1.0)
+            fast_chance = PIPE_FAST_CHANCE_MAX * ft
+            if random.random() < fast_chance:
+                extra = random.randint(PIPE_EXTRA_SCROLL_MIN, PIPE_EXTRA_SCROLL_MAX)
     except Exception:
         extra = 0
 
