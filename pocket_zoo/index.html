@@ -466,6 +466,37 @@
     line-height: 1.65;
   }
   #shop-empty .shop-empty-icon { font-size: 2.4rem; margin-bottom: 10px; }
+
+  #auto-badge {
+    font-size: 0.62rem;
+    font-weight: bold;
+    color: #7CFC9C;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  #idle-bonus-wrap {
+    display: flex;
+    align-items: center;
+    font-size: 0.62rem;
+    color: #c9b8ff;
+    margin-top: 2px;
+  }
+  #idle-bonus-bar-bg {
+    width: 72px;
+    height: 6px;
+    background: #112244;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #idle-bonus-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #9b5de5, #FFD700);
+    border-radius: 3px;
+    transition: width 0.25s;
+  }
+  #idle-bonus-label { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -481,6 +512,11 @@
     <div id="progress-wrap">
       <span id="progress-label">0/100</span>
       <div id="progress-bar-bg"><div id="progress-bar-fill" style="width:0%"></div></div>
+    </div>
+    <div id="auto-badge">🤖 Auto-click ON</div>
+    <div id="idle-bonus-wrap">
+      <span id="idle-bonus-label">💤 Idle: 1:00</span>
+      <div id="idle-bonus-bar-bg"><div id="idle-bonus-bar-fill"></div></div>
     </div>
   </div>
   <div id="hud-buttons">
@@ -820,6 +856,17 @@ let debrisSpawnMs = 0;                // ms until next drop wave
 
 // Timers
 let lastPassive = performance.now();
+const AUTO_CLICK_INTERVAL_MS = 400; // ms between auto-taps per creature
+let autoClickEnabled = true;
+
+// Idle bonus: no user input for 1 minute → huge coin reward
+const IDLE_BONUS_MS = 60 * 1000;
+const IDLE_BONUS_COINS = 10_000_000_000_000;
+let lastUserActivity = performance.now();
+
+function registerUserActivity() {
+  lastUserActivity = performance.now();
+}
 
 // ── Creature radius for a given tier
 function tierRadius(t) {
@@ -834,6 +881,7 @@ function bubbleCost() {
 
 // ── Format large coin numbers
 function fmt(n) {
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
@@ -865,7 +913,7 @@ const DEBRIS_TYPES = [
 function seafloorY() { return H - 26; }
 
 function scheduleDebrisDrop() {
-  debrisSpawnMs = 8000 + Math.random() * 6000; // 1–1.2 s (5× faster than 5–6 s)
+  debrisSpawnMs = 6000 + Math.random() * 5000; // 1–1.2 s (5× faster than 5–6 s)
 }
 scheduleDebrisDrop();
 
@@ -1375,7 +1423,10 @@ function loop(now) {
   // Merge flash decay
   mergeFlashes = mergeFlashes.filter(f => { f.life--; return f.life > 0; });
 
-  // Passive income: each creature earns 50% of its click value every second.
+  // Sinking debris
+  updateDebris(dt);
+
+  // Passive income (every 4 seconds, each creature earns 50% of click value)
   if (now - lastPassive > 4000) {
     lastPassive = now;
     let earned = 0;
@@ -1387,6 +1438,12 @@ function loop(now) {
       updateHUD();
     }
   }
+
+  // Auto-click every sea creature (and bubbles) forever
+  autoClickCreatures(now);
+
+  // Idle bonus (1 minute without user input)
+  updateIdleBonus(now);
 
   // Draw everything
   ctx.clearRect(0, 0, W, H);
@@ -1439,6 +1496,7 @@ canvas.addEventListener('touchstart', onDown, { passive: false });
 
 function onDown(e) {
   e.preventDefault();
+  registerUserActivity();
   const { x, y } = pointerPos(e);
   pointerDownTime   = performance.now();
   pointerDownTarget = hitCreature(x, y);
@@ -1537,6 +1595,39 @@ function handleTap(c) {
   }
 }
 
+// Automatically tap every creature on the board (runs forever).
+function autoClickCreatures(now) {
+  if (!autoClickEnabled || dragging) return;
+  for (const c of creatures) {
+    if (c === dragging) continue;
+    const last = c.lastAutoClick || 0;
+    if (now - last < AUTO_CLICK_INTERVAL_MS) continue;
+    c.lastAutoClick = now;
+    handleTap(c);
+  }
+}
+
+// Grant 10T coins after 1 minute with no clicks/touches/keys.
+function updateIdleBonus(now) {
+  const idleMs = now - lastUserActivity;
+  if (idleMs >= IDLE_BONUS_MS) {
+    coins += IDLE_BONUS_COINS;
+    lastUserActivity = now;
+    showToast(`💤 Idle bonus! +${fmt(IDLE_BONUS_COINS)}🪙`);
+    showFloat(W / 2, H * 0.42, `+${fmt(IDLE_BONUS_COINS)}🪙`);
+    mergeFlashes.push({ x: W / 2, y: H * 0.42, life: 45, color: '#FFD700' });
+    updateHUD();
+    idleMs = 0;
+  }
+  const pct = Math.min(100, (idleMs / IDLE_BONUS_MS) * 100);
+  const secsLeft = Math.max(0, Math.ceil((IDLE_BONUS_MS - idleMs) / 1000));
+  const m = Math.floor(secsLeft / 60);
+  const s = secsLeft % 60;
+  document.getElementById('idle-bonus-bar-fill').style.width = `${pct}%`;
+  document.getElementById('idle-bonus-label').textContent =
+    `💤 Idle: ${m}:${String(s).padStart(2, '0')}`;
+}
+
 function doMerge(a, b) {
   const newTier = a.tier + 1;
   const mx = (a.x + b.x) / 2;
@@ -1556,6 +1647,7 @@ function doMerge(a, b) {
 
 // ── Buy bubble button
 document.getElementById('buy-btn').addEventListener('click', () => {
+  registerUserActivity();
   const cost = bubbleCost();
   if (coins < cost) { showToast(`Need ${fmt(cost)}🪙 to buy a bubble!`); return; }
   coins -= cost;
@@ -1634,6 +1726,7 @@ function drainPopup() {
 }
 
 document.getElementById('popup-ok').addEventListener('click', () => {
+  registerUserActivity();
   document.getElementById('popup-overlay').classList.remove('show');
   setTimeout(drainPopup, 200);
 });
@@ -1703,10 +1796,23 @@ function canBuyInShop(tier) {
 }
 
 function passivePerSec(tier) {
-<<<<<<< HEAD
-  // Matches the global passive system: each creature earns 50% of its
-  // click value every second.
-  return Math.max(1, Math.round(TIERS[tier].coins * 0.5));
+  return Math.max(1, Math.round(TIERS[tier].coins * 0.5 / 4));
+}
+
+// Spawn a shop purchase on the board without advancing discovery.
+function placePurchasedCreature(tier) {
+  const margin = 50;
+  creatures.push({
+    id:      nextId++,
+    tier,
+    x:       margin + Math.random() * (W - margin * 2),
+    y:       H * 0.2 + Math.random() * (H * 0.6),
+    r:       tierRadius(tier),
+    vx:      (Math.random() - 0.5) * 0.3,
+    vy:      (Math.random() - 0.5) * 0.3,
+    wobble:  Math.random() * Math.PI * 2,
+    scale:   1,
+  });
 }
 
 const shopOverlay = document.getElementById('shop-overlay');
@@ -1715,11 +1821,13 @@ const shopGrid    = document.getElementById('shop-grid');
 function openShop()  { renderShop(); shopOverlay.classList.add('show'); }
 function closeShop() { shopOverlay.classList.remove('show'); }
 
-document.getElementById('shop-btn').addEventListener('click', openShop);
-document.getElementById('shop-close').addEventListener('click', closeShop);
+document.getElementById('shop-btn').addEventListener('click', () => { registerUserActivity(); openShop(); });
+document.getElementById('shop-close').addEventListener('click', () => { registerUserActivity(); closeShop(); });
 shopOverlay.addEventListener('click', (e) => {
-  if (e.target === shopOverlay) closeShop();
+  if (e.target === shopOverlay) { registerUserActivity(); closeShop(); }
 });
+
+document.addEventListener('keydown', registerUserActivity);
 
 function renderShop() {
   document.getElementById('shop-subtitle').textContent =
@@ -1759,6 +1867,7 @@ function renderShop() {
 }
 
 function buyCreature(tier) {
+  registerUserActivity();
   if (!canBuyInShop(tier)) return;
   const price = shopPrice(tier);
   if (coins < price) {
