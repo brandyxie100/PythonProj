@@ -101,23 +101,6 @@
     box-shadow: none;
   }
 
-  #sell-btn {
-    background: linear-gradient(135deg, #ff7a59, #cc3f1b);
-    border: none;
-    border-radius: 18px;
-    width: 40px; height: 36px;
-    font-size: 1.05rem;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(255,122,89,0.45);
-    transition: transform 0.1s, box-shadow 0.2s;
-  }
-  #sell-btn:hover { transform: scale(1.08); }
-  #sell-btn:active { transform: scale(0.94); }
-  #sell-btn.active {
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.28), 0 0 18px rgba(255,122,89,0.6);
-    transform: scale(1.04);
-  }
-
   /* ── Canvas ─────────────────────────────────────────────────────── */
   #game-wrap {
     position: relative;
@@ -501,7 +484,6 @@
     </div>
   </div>
   <div id="hud-buttons">
-    <button id="sell-btn" title="Sell a creature">🗑️</button>
     <button id="shop-btn" title="Buy Creatures">🛒</button>
     <button id="buy-btn">🫧 <span id="buy-cost">(10🪙)</span></button>
   </div>
@@ -826,7 +808,6 @@ let dragOffX   = 0;
 let dragOffY   = 0;
 let dragOriginX = 0;
 let dragOriginY = 0;
-let sellMode   = false;
 
 // Effects queues
 let mergeFlashes = [];                // { x, y, life, color }
@@ -1394,16 +1375,8 @@ function loop(now) {
   // Merge flash decay
   mergeFlashes = mergeFlashes.filter(f => { f.life--; return f.life > 0; });
 
-<<<<<<< HEAD
   // Passive income: each creature earns 50% of its click value every second.
-  if (now - lastPassive > 1000) {
-=======
-  // Sinking debris
-  updateDebris(dt);
-
-  // Passive income (every 4 seconds, each creature earns 50% of click value)
   if (now - lastPassive > 4000) {
->>>>>>> b123a3f0a589de189ad65764b7782bf098e75bbd
     lastPassive = now;
     let earned = 0;
     for (const c of creatures) {
@@ -1471,14 +1444,6 @@ function onDown(e) {
   pointerDownTarget = hitCreature(x, y);
   debrisTapTarget   = null;
   pointerMoved      = false;
-
-  if (sellMode) {
-    if (pointerDownTarget) {
-      sellCreature(pointerDownTarget);
-    }
-    return;
-  }
-
   if (pointerDownTarget) {
     dragging    = pointerDownTarget;
     dragOffX    = x - dragging.x;
@@ -1589,25 +1554,6 @@ function doMerge(a, b) {
   updateHUD();
 }
 
-function sellCreature(c) {
-  if (!c || c.tier === 0) return;
-  const payout = Math.max(1, passivePerSec(c.tier) * 2);
-  creatures = creatures.filter(item => item !== c);
-  coins += payout;
-  c.scale = 1.1;
-  showFloat(c.x, c.y, `+${fmt(payout)}🪙`);
-  showToast(`Sold ${TIERS[c.tier].name} for ${fmt(payout)}🪙`);
-  updateHUD();
-}
-
-function toggleSellMode() {
-  sellMode = !sellMode;
-  const sellBtn = document.getElementById('sell-btn');
-  sellBtn.classList.toggle('active', sellMode);
-  sellBtn.title = sellMode ? 'Selling mode: tap a creature to sell it' : 'Sell a creature';
-  showToast(sellMode ? 'Sell mode: tap a creature to sell it' : 'Sell mode off');
-}
-
 // ── Buy bubble button
 document.getElementById('buy-btn').addEventListener('click', () => {
   const cost = bubbleCost();
@@ -1616,8 +1562,6 @@ document.getElementById('buy-btn').addEventListener('click', () => {
   spawnStarterBubble();
   updateHUD();
 });
-
-document.getElementById('sell-btn').addEventListener('click', toggleSellMode);
 
 // ═══════════════════════════════════════════════════════════════════
 //  HUD UPDATE
@@ -1684,7 +1628,7 @@ function drainPopup() {
 
   document.getElementById('popup-desc').textContent  = t.desc;
   document.getElementById('popup-coins').textContent =
-    `+${fmt(t.coins)}🪙 per click  ·  +${fmt(Math.floor(t.coins * 0.5))}🪙 passive / sec`;
+    `+${fmt(t.coins)}🪙 per click  ·  +${fmt(Math.floor(t.coins * 0.5))}🪙 passive / 4s`;
 
   document.getElementById('popup-overlay').classList.add('show');
 }
@@ -1763,25 +1707,6 @@ function passivePerSec(tier) {
   // Matches the global passive system: each creature earns 50% of its
   // click value every second.
   return Math.max(1, Math.round(TIERS[tier].coins * 0.5));
-=======
-  return Math.max(1, Math.round(TIERS[tier].coins * 0.5 / 4));
->>>>>>> b123a3f0a589de189ad65764b7782bf098e75bbd
-}
-
-// Spawn a shop purchase on the board without advancing discovery.
-function placePurchasedCreature(tier) {
-  const margin = 50;
-  creatures.push({
-    id:      nextId++,
-    tier,
-    x:       margin + Math.random() * (W - margin * 2),
-    y:       H * 0.2 + Math.random() * (H * 0.6),
-    r:       tierRadius(tier),
-    vx:      (Math.random() - 0.5) * 0.3,
-    vy:      (Math.random() - 0.5) * 0.3,
-    wobble:  Math.random() * Math.PI * 2,
-    scale:   1,
-  });
 }
 
 const shopOverlay = document.getElementById('shop-overlay');
