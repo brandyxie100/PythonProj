@@ -46,14 +46,47 @@ STAGGER_DAMAGE_THRESHOLD: float = 8.0
 STAGGER_DURATION_F: int = 45
 GET_UP_DURATION_F: int = 30
 
-MOVE_FORCE: float = 2800.0
+# Locomotion is velocity-driven (arcade-style) rather than force-driven:
+# once legs are held rigidly upright for a stable stance, ground friction
+# (below) comfortably exceeds any reasonable push force, so a force-based
+# walk would never overcome static friction and the character would never
+# move. Setting velocity directly on every body part each frame sidesteps
+# that tug-of-war and keeps the whole rigid stance moving as one unit.
+MOVE_SPEED: float = 190.0
+# Max horizontal velocity change per frame when ramping into/out of a walk.
+# Smoothing avoids a jolt when leg friction snaps back to standing values.
+MOVE_ACCEL: float = 45.0
 JUMP_IMPULSE: float = 420.0
+# Frames after a jump before another is allowed (prevents hold-key / AI spam).
+JUMP_COOLDOWN_F: int = 28
+# Feet must be within this many pymunk units of the ground surface to count as grounded.
+GROUNDED_TOLERANCE: float = 12.0
+# Cap upward speed so physics glitches cannot launch the ragdoll skyward.
+MAX_UPWARD_VELOCITY: float = 520.0
 GROUND_FRICTION: float = 0.9
+# Lower friction on leg/foot shapes while walking so imposed horizontal
+# velocity does not fight high ground friction and topple the ragdoll.
+MOVE_GROUND_FRICTION: float = 0.2
 GROUND_ELASTICITY: float = 0.05
 
 # Torso stabilizer (keeps ragdoll upright until staggered)
-STABILIZER_STIFFNESS: float = 8000.0
-STABILIZER_DAMPING: float = 400.0
+STABILIZER_STIFFNESS: float = 15000.0
+STABILIZER_DAMPING: float = 1500.0
+
+# Leg posture springs (hold hips/knees near a standing pose; removed on
+# stagger alongside the torso stabilizer so a hit causes a full-body flop).
+HIP_STIFFNESS: float = 25000.0
+HIP_DAMPING: float = 1500.0
+KNEE_STIFFNESS: float = 25000.0
+KNEE_DAMPING: float = 900.0
+
+# Standing on two legs is an unstable inverted-pendulum problem that a pure
+# spring can only dampen, not solve outright. A hard rotary limit alongside
+# each spring caps how far the torso/thighs can tilt from upright during
+# normal play (arcade-friendly, matches the reference game's stable stance),
+# while stagger still removes these limits entirely for a full ragdoll flop.
+TORSO_TILT_LIMIT: float = 0.35  # ~20 degrees
+HIP_TILT_LIMIT: float = 0.5  # ~29 degrees
 
 # Joint limits (radians)
 ELBOW_MIN: float = -2.4
@@ -74,16 +107,28 @@ AI_APPROACH_RANGE: float = 280.0
 AI_ATTACK_RANGE: float = 95.0
 AI_ATTACK_COOLDOWN_F: int = 50
 AI_RECOVER_F: int = 35
+# Minimum frames between AI jump attempts (approach only, still needs grounded check).
+AI_JUMP_COOLDOWN_F: int = 90
+
+# Damp residual spin on every part while planted and idle (arcade stance lock).
+IDLE_ANGULAR_DAMPING: float = 0.75
 
 # ---------------------------------------------------------------------------
 # Terrain (pygame Y coordinates)
 # ---------------------------------------------------------------------------
 GROUND_Y: int = 540
 PLATFORM_RECT: tuple[int, int, int, int] = (380, 420, 220, 24)
+TERRAIN_THICKNESS: float = 8.0  # pymunk Segment radius used for ground/platform shapes
+
+# Distance from the torso center down to the bottom of the foot capsule
+# (hip drop + upper leg + lower leg + foot radius), used to spawn ragdolls
+# standing exactly on the ground surface instead of embedded inside it.
+_STANDING_LEG_DROP: float = TORSO_H * 0.35 + UPPER_LIMB + LOWER_LIMB + LIMB_THICK
+SPAWN_Y: float = GROUND_Y - TERRAIN_THICKNESS - _STANDING_LEG_DROP
 
 # Spawn positions (pygame x, pygame y)
-PLAYER_SPAWN: tuple[float, float] = (180.0, 480.0)
-ENEMY_SPAWN: tuple[float, float] = (820.0, 480.0)
+PLAYER_SPAWN: tuple[float, float] = (180.0, SPAWN_Y)
+ENEMY_SPAWN: tuple[float, float] = (820.0, SPAWN_Y)
 
 # ---------------------------------------------------------------------------
 # Colours

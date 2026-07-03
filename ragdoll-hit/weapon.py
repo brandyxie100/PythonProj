@@ -37,6 +37,7 @@ class Weapon:
         self._pivot: Optional[pymunk.PivotJoint] = None
 
         hand = owner.hand_body
+        grip = owner.hand_anchor
         length = self.stats["length"]
         half = length * 0.5
         moment = pymunk.moment_for_segment(
@@ -46,7 +47,7 @@ class Weapon:
             self.stats["thickness"],
         )
         self.body = pymunk.Body(self.stats["mass"], moment)
-        self.body.position = hand.position
+        self.body.position = grip
         self.body.angle = hand.angle
 
         self.shape = pymunk.Segment(
@@ -57,13 +58,29 @@ class Weapon:
         )
         self.shape.friction = 0.6
         self.shape.collision_type = c.COL_WEAPON
+        # Share the wielder's collision group so the weapon never physically
+        # collides with its own owner's body parts (only the opponent's).
+        self.shape.filter = pymunk.ShapeFilter(group=owner.group)
         self.space.add(self.body, self.shape)
 
-        self._pivot = pymunk.PivotJoint(self.body, hand, hand.position)
+        self._pivot = pymunk.PivotJoint(self.body, hand, grip)
         self._pivot.collide_bodies = False
         self.space.add(self._pivot)
 
         WEAPON_SHAPE_OWNER[self.shape] = self
+
+    def _lock_to_hand(self) -> None:
+        """Pin weapon motion to the forearm while not swinging.
+
+        A free-hanging staff applies constant gravity torque on the arm
+        chain, which slowly topples an otherwise stable standing pose.
+        """
+        hand = self.owner.hand_body
+        grip = self.owner.hand_anchor
+        self.body.position = grip
+        self.body.angle = hand.angle
+        self.body.velocity = hand.velocity
+        self.body.angular_velocity = hand.angular_velocity
 
     def begin_swing(self) -> None:
         """Start a timed weapon swing if not already swinging."""
@@ -82,6 +99,7 @@ class Weapon:
             if self._motor is not None:
                 self.space.remove(self._motor)
                 self._motor = None
+            self._lock_to_hand()
             return
 
         self.swing_frames -= 1

@@ -23,12 +23,14 @@ class AIController:
         self.state = AIState.APPROACH
         self.cooldown = 0
         self.recover_timer = 0
+        self.jump_cooldown = 0
 
     def reset(self) -> None:
         """Return AI to default approach behaviour."""
         self.state = AIState.APPROACH
         self.cooldown = 0
         self.recover_timer = 0
+        self.jump_cooldown = 0
 
     def update(
         self,
@@ -48,6 +50,8 @@ class AIController:
         """
         if self.cooldown > 0:
             self.cooldown -= 1
+        if self.jump_cooldown > 0:
+            self.jump_cooldown -= 1
 
         if self.state == AIState.RECOVER:
             self.recover_timer -= 1
@@ -67,5 +71,11 @@ class AIController:
             return move_dir, False, False
 
         move_dir = 1 if target_x > self_x else -1
-        jump = distance > c.AI_ATTACK_RANGE * 0.8
-        return move_dir, jump, False
+        # Occasional hop while closing in — ragdoll enforces grounded + cooldown.
+        want_jump = (
+            c.AI_ATTACK_RANGE < distance < c.AI_APPROACH_RANGE
+            and self.jump_cooldown <= 0
+        )
+        if want_jump:
+            self.jump_cooldown = c.AI_JUMP_COOLDOWN_F
+        return move_dir, want_jump, False

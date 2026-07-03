@@ -8,7 +8,7 @@ import pygame
 import pymunk
 
 import config as c
-from coords import pygame_to_pymunk, pymunk_to_pygame
+from coords import pygame_to_pymunk, pymunk_to_pygame, pygame_y_to_pymunk
 from physics_world import BODY_SHAPE_OWNER
 
 CallableShape = Callable[[pymunk.Body], pymunk.Shape]
@@ -16,6 +16,8 @@ CallableShape = Callable[[pymunk.Body], pymunk.Shape]
 
 class Ragdoll:
     """Physics ragdoll with head, torso, arms, and legs."""
+
+    _next_group: int = 1
 
     PART_NAMES: tuple[str, ...] = (
         "head",
@@ -57,15 +59,31 @@ class Ragdoll:
         self.stagger_frames = 0
         self.get_up_frames = 0
 
+        # Unique, non-zero pymunk shape-filter group: parts sharing a group
+        # never collide with each other, so a ragdoll's own overlapping limbs
+        # (e.g. both upper legs starting near the same hip point) don't kick
+        # each other apart every physics substep.
+        self.group = Ragdoll._next_group
+        Ragdoll._next_group += 1
+
         self.bodies: dict[str, pymunk.Body] = {}
         self.shapes: dict[str, pymunk.Shape] = {}
         self._shape_to_part: dict[pymunk.Shape, str] = {}
         self._joints: list[pymunk.Constraint] = []
-        self._stabilizer: Optional[pymunk.DampedRotarySpring] = None
+        self._posture_constraints: list[pymunk.Constraint] = []
         self._ground_anchor: Optional[pymunk.Body] = None
+        self._commanded_vx: float = 0.0
+        self._jump_cooldown: int = 0
+        self._leg_shape_names: tuple[str, ...] = (
+            "upper_leg_l",
+            "lower_leg_l",
+            "upper_leg_r",
+            "lower_leg_r",
+        )
 
         px, py = pygame_to_pymunk(pygame_x, pygame_y)
         self._build(px, py)
+        self._standing_torso_y = self.torso.position.y
         self._register_shapes()
 
     def _add_part(
@@ -82,6 +100,7 @@ class Ragdoll:
         shape.friction = c.GROUND_FRICTION
         shape.elasticity = c.GROUND_ELASTICITY
         shape.collision_type = c.COL_BODY
+        shape.filter = pymunk.ShapeFilter(group=self.group)
         self.bodies[name] = body
         self.shapes[name] = shape
         self.space.add(body, shape)
@@ -108,75 +127,77 @@ class Ragdoll:
 
         shoulder_y = y + c.TORSO_H * 0.25
         hip_y = y - c.TORSO_H * 0.35
-        side = self.facing
+        facing = self.facing
 
-        self._add_limb_chain(
-            "upper_arm_l",
-            "lower_arm_l",
-            (x - side * c.TORSO_W * 0.5, shoulder_y),
-            side=-side,
-            vertical=False,
-        )
-        self._add_limb_chain(
-            "upper_arm_r",
-            "lower_arm_r",
-            (x + side * c.TORSO_W * 0.5, shoulder_y),
-            side=side,
-            vertical=False,
-        )
-        self._add_limb_chain(
-            "upper_leg_l",
-            "lower_leg_l",
-            (x - c.TORSO_W * 0.25, hip_y),
-            side=-1,
-            vertical=True,
-        )
-        self._add_limb_chain(
-            "upper_leg_r",
-            "lower_leg_r",
-            (x + c.TORSO_W * 0.25, hip_y),
-            side=1,
-            vertical=True,
-        )
+        shoulder_l = (x - facing * c.TORSO_W * 0.5, shoulder_y)
+        shoulder_r = (x + facing * c.TORSO_W * 0.5, shoulder_y)
+        hip_l = (x - c.TORSO_W * 0.25, hip_y)
+        hip_r = (x + c.TORSO_W * 0.25, hip_y)
 
-        self._connect_joints(x, y, shoulder_y, hip_y)
-        self._add_stabilizer()
+        elbow_l, _wrist_l = self._add_limb_chain("upper_arm_l", "lower_arm_l", shoulder_l, (-facing, 0))
+        elbow_r, _wrist_r = self._add_limb_chain("upper_arm_r", "lower_arm_r", shoulder_r, (facing, 0))
+        knee_l, _ankle_l = self._add_limb_chain("upper_leg_l", "lower_leg_l", hip_l, (0, -1))
+        knee_r, _ankle_r = self._add_limb_chain("upper_leg_r", "lower_leg_r", hip_r, (0, -1))
+
+        self._connect_joints(
+            x, y, shoulder_l, shoulder_r, elbow_l, elbow_r, hip_l, hip_r, knee_l, knee_r
+        )
+        self._add_posture_springs()
 
     def _add_limb_chain(
         self,
         upper_name: str,
         lower_name: str,
-        upper_pos: tuple[float, float],
-        side: int,
-        vertical: bool,
-    ) -> None:
-        upper_moment = pymunk.moment_for_segment(
-            c.PART_MASS_LIMB, (0, 0), (side * c.UPPER_LIMB, 0 if not vertical else -c.UPPER_LIMB), c.LIMB_THICK
-        )
-        lower_moment = pymunk.moment_for_segment(
-            c.PART_MASS_LIMB, (0, 0), (side * c.LOWER_LIMB, 0 if not vertical else -c.LOWER_LIMB), c.LIMB_THICK
-        )
+        joint_pos: tuple[float, float],
+        direction: tuple[float, float],
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Build a two-segment limb chain running along ``direction`` from ``joint_pos``.
 
-        if vertical:
-            upper_end = (upper_pos[0], upper_pos[1] - c.UPPER_LIMB)
-            lower_end = (upper_end[0], upper_end[1] - c.LOWER_LIMB)
-            upper_seg = lambda b: pymunk.Segment(b, (0, 0), (0, -c.UPPER_LIMB), c.LIMB_THICK)
-            lower_seg = lambda b: pymunk.Segment(b, (0, 0), (0, -c.LOWER_LIMB), c.LIMB_THICK)
-        else:
-            upper_end = (upper_pos[0] + side * c.UPPER_LIMB, upper_pos[1])
-            lower_end = (upper_end[0] + side * c.LOWER_LIMB, upper_end[1])
-            upper_seg = lambda b: pymunk.Segment(b, (0, 0), (side * c.UPPER_LIMB, 0), c.LIMB_THICK)
-            lower_seg = lambda b: pymunk.Segment(b, (0, 0), (side * c.LOWER_LIMB, 0), c.LIMB_THICK)
+        Each segment's body sits at its own midpoint with a shape defined
+        symmetrically (``-half`` to ``+half``) around that origin. This
+        matters physically: pymunk always treats ``body.position`` as the
+        center of gravity, so an *asymmetric* local shape (e.g. running from
+        local (0, 0) out to (length, 0)) would apply gravity/forces at a
+        point that doesn't match the mass's real centroid, producing
+        spurious torque and an uncontrollable spin. Placing the body at the
+        true midpoint keeps translation and rotation physically consistent.
 
-        self._add_part(upper_name, c.PART_MASS_LIMB, upper_moment, upper_pos, upper_seg)
-        self._add_part(lower_name, c.PART_MASS_LIMB, lower_moment, lower_end, lower_seg)
+        Returns:
+            World positions of the middle joint (elbow/knee) and the far end
+            (wrist/ankle), for use when wiring up pivot joints.
+        """
+        dx, dy = direction
+
+        def add_segment(name: str, start: tuple[float, float], length: float) -> tuple[float, float]:
+            end = (start[0] + dx * length, start[1] + dy * length)
+            mid = ((start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5)
+            half = (dx * length * 0.5, dy * length * 0.5)
+            moment = pymunk.moment_for_segment(c.PART_MASS_LIMB, (-half[0], -half[1]), half, c.LIMB_THICK)
+            self._add_part(
+                name,
+                c.PART_MASS_LIMB,
+                moment,
+                mid,
+                lambda b, h=half: pymunk.Segment(b, (-h[0], -h[1]), h, c.LIMB_THICK),
+            )
+            return end
+
+        joint_mid = add_segment(upper_name, joint_pos, c.UPPER_LIMB)
+        far_end = add_segment(lower_name, joint_mid, c.LOWER_LIMB)
+        return joint_mid, far_end
 
     def _connect_joints(
         self,
         x: float,
         y: float,
-        shoulder_y: float,
-        hip_y: float,
+        shoulder_l: tuple[float, float],
+        shoulder_r: tuple[float, float],
+        elbow_l: tuple[float, float],
+        elbow_r: tuple[float, float],
+        hip_l: tuple[float, float],
+        hip_r: tuple[float, float],
+        knee_l: tuple[float, float],
+        knee_r: tuple[float, float],
     ) -> None:
         torso = self.bodies["torso"]
         head = self.bodies["head"]
@@ -185,40 +206,20 @@ class Ragdoll:
         neck.collide_bodies = False
         self._joints.append(neck)
 
-        def pivot(a: pymunk.Body, b: pymunk.Body, anchor: tuple[float, float]) -> pymunk.PivotJoint:
+        def pivot(a: pymunk.Body, b: pymunk.Body, anchor: tuple[float, float]) -> None:
             joint = pymunk.PivotJoint(a, b, anchor)
             joint.collide_bodies = False
             self._joints.append(joint)
-            return joint
 
-        side = self.facing
-        pivot(self.bodies["upper_arm_l"], torso, (x - side * c.TORSO_W * 0.35, shoulder_y))
-        pivot(self.bodies["upper_arm_r"], torso, (x + side * c.TORSO_W * 0.35, shoulder_y))
-        pivot(
-            self.bodies["lower_arm_l"],
-            self.bodies["upper_arm_l"],
-            self.bodies["upper_arm_l"].position
-            + pymunk.Vec2d(-side * c.UPPER_LIMB, 0),
-        )
-        pivot(
-            self.bodies["lower_arm_r"],
-            self.bodies["upper_arm_r"],
-            self.bodies["upper_arm_r"].position
-            + pymunk.Vec2d(side * c.UPPER_LIMB, 0),
-        )
+        pivot(self.bodies["upper_arm_l"], torso, shoulder_l)
+        pivot(self.bodies["upper_arm_r"], torso, shoulder_r)
+        pivot(self.bodies["lower_arm_l"], self.bodies["upper_arm_l"], elbow_l)
+        pivot(self.bodies["lower_arm_r"], self.bodies["upper_arm_r"], elbow_r)
 
-        pivot(self.bodies["upper_leg_l"], torso, (x - c.TORSO_W * 0.2, hip_y))
-        pivot(self.bodies["upper_leg_r"], torso, (x + c.TORSO_W * 0.2, hip_y))
-        pivot(
-            self.bodies["lower_leg_l"],
-            self.bodies["upper_leg_l"],
-            self.bodies["upper_leg_l"].position + pymunk.Vec2d(0, -c.UPPER_LIMB),
-        )
-        pivot(
-            self.bodies["lower_leg_r"],
-            self.bodies["upper_leg_r"],
-            self.bodies["upper_leg_r"].position + pymunk.Vec2d(0, -c.UPPER_LIMB),
-        )
+        pivot(self.bodies["upper_leg_l"], torso, hip_l)
+        pivot(self.bodies["upper_leg_r"], torso, hip_r)
+        pivot(self.bodies["lower_leg_l"], self.bodies["upper_leg_l"], knee_l)
+        pivot(self.bodies["lower_leg_r"], self.bodies["upper_leg_r"], knee_r)
 
         for pair in (("upper_arm_l", "lower_arm_l"), ("upper_arm_r", "lower_arm_r")):
             limit = pymunk.RotaryLimitJoint(
@@ -240,10 +241,29 @@ class Ragdoll:
 
         self.space.add(*self._joints)
 
-    def _add_stabilizer(self) -> None:
-        """Keep torso upright unless staggered."""
-        if self._stabilizer is not None:
+    def _add_posture_springs(self) -> None:
+        """Hold torso and legs near their standing pose.
+
+        Standing on two legs is an inverted-pendulum problem: if the hip
+        spring only held each thigh relative to the *torso*, any transient
+        torso wobble would immediately drag the legs off-vertical too, and
+        vice versa — errors compound around the chain and the whole ragdoll
+        topples. Instead, torso AND both thighs each get their own
+        independent spring back to the same fixed (kinematic) world-upright
+        reference, so a wobble in one doesn't destabilize the others. Knees
+        are then sprung relative to their own thigh to stay straight.
+
+        A spring alone can only ever dampen an inverted pendulum, not
+        guarantee it stays up, so a hard ``RotaryLimitJoint`` on the torso
+        and each thigh caps tilt during normal play — an arcade-friendly
+        safety net matching how the reference game's fighters never
+        spontaneously topple while standing. All these constraints are
+        removed together on stagger and rebuilt once the character gets up,
+        giving a genuine full-body ragdoll flop on a big hit.
+        """
+        if self._posture_constraints:
             return
+
         if self._ground_anchor is None:
             anchor = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
             anchor.position = self.bodies["torso"].position
@@ -252,15 +272,30 @@ class Ragdoll:
         else:
             self._ground_anchor.position = self.bodies["torso"].position
 
-        spring = pymunk.DampedRotarySpring(
-            self.bodies["torso"],
-            self._ground_anchor,
-            0,
-            c.STABILIZER_STIFFNESS,
-            c.STABILIZER_DAMPING,
-        )
-        self.space.add(spring)
-        self._stabilizer = spring
+        anchor = self._ground_anchor
+        torso = self.bodies["torso"]
+        constraints: list[pymunk.Constraint] = [
+            pymunk.DampedRotarySpring(
+                torso, anchor, 0, c.STABILIZER_STIFFNESS, c.STABILIZER_DAMPING
+            ),
+            pymunk.RotaryLimitJoint(torso, anchor, -c.TORSO_TILT_LIMIT, c.TORSO_TILT_LIMIT),
+        ]
+        for hip, leg_side in (("upper_leg_l", "lower_leg_l"), ("upper_leg_r", "lower_leg_r")):
+            hip_body = self.bodies[hip]
+            constraints.append(
+                pymunk.DampedRotarySpring(hip_body, anchor, 0, c.HIP_STIFFNESS, c.HIP_DAMPING)
+            )
+            constraints.append(
+                pymunk.RotaryLimitJoint(hip_body, anchor, -c.HIP_TILT_LIMIT, c.HIP_TILT_LIMIT)
+            )
+            constraints.append(
+                pymunk.DampedRotarySpring(
+                    hip_body, self.bodies[leg_side], 0, c.KNEE_STIFFNESS, c.KNEE_DAMPING
+                )
+            )
+
+        self.space.add(*constraints)
+        self._posture_constraints = constraints
 
     def _register_shapes(self) -> None:
         """Map each shape to this ragdoll for collision callbacks."""
@@ -283,6 +318,16 @@ class Ragdoll:
         return self.bodies["lower_arm_r"]
 
     @property
+    def hand_anchor(self) -> pymunk.Vec2d:
+        """World position of the wrist (grip point), not the elbow.
+
+        ``lower_arm_r``'s body origin sits at the forearm midpoint (see
+        ``_add_limb_chain``), so the wrist is half a limb-length further out.
+        """
+        arm = self.bodies["lower_arm_r"]
+        return arm.local_to_world((self.facing * c.LOWER_LIMB * 0.5, 0))
+
+    @property
     def position(self) -> pymunk.Vec2d:
         """Torso position in pymunk coordinates."""
         return self.torso.position
@@ -297,8 +342,45 @@ class Ragdoll:
         """True while health remains."""
         return self.health > 0.0
 
+    def _set_leg_friction(self, friction: float) -> None:
+        """Apply friction to leg/foot shapes only (torso/arms keep default)."""
+        for name in self._leg_shape_names:
+            self.shapes[name].friction = friction
+
+    def _ground_surface_y(self) -> float:
+        """Pymunk Y of the main floor collision surface."""
+        return pygame_y_to_pymunk(c.GROUND_Y) + c.TERRAIN_THICKNESS
+
+    def _is_grounded(self) -> bool:
+        """True when at least one foot is resting on the main floor."""
+        ground_y = self._ground_surface_y()
+        for name in ("lower_leg_l", "lower_leg_r"):
+            body = self.bodies[name]
+            foot_bottom = body.position.y - c.LOWER_LIMB * 0.5 - c.LIMB_THICK
+            if foot_bottom <= ground_y + c.GROUNDED_TOLERANCE:
+                return True
+        return False
+
+    def _clamp_upward_velocity(self) -> None:
+        """Prevent runaway upward speed from impulse stacking or collisions."""
+        for body in self.bodies.values():
+            if body.velocity.y > c.MAX_UPWARD_VELOCITY:
+                body.velocity = (body.velocity.x, c.MAX_UPWARD_VELOCITY)
+
+    def _maintain_standing_height(self) -> None:
+        """Nudge the whole body up if gravity has compressed the leg joints."""
+        if not self._is_grounded():
+            return
+        error = self._standing_torso_y - self.torso.position.y
+        if error <= 1.5:
+            return
+        shift = min(error, 8.0)
+        for body in self.bodies.values():
+            pos = body.position
+            body.position = (pos.x, pos.y + shift)
+
     def apply_control(self, move_dir: int, jump: bool) -> None:
-        """Apply player/AI locomotion forces to the torso.
+        """Apply player/AI locomotion to the whole body.
 
         Args:
             move_dir: -1 left, 0 idle, 1 right.
@@ -306,14 +388,40 @@ class Ragdoll:
         """
         if self.is_down:
             return
-        if move_dir != 0:
-            self.torso.apply_force_at_local_point((move_dir * c.MOVE_FORCE, 0), (0, 0))
-        if jump:
+
+        target_vx = move_dir * c.MOVE_SPEED
+        delta = target_vx - self._commanded_vx
+        if abs(delta) > c.MOVE_ACCEL:
+            delta = c.MOVE_ACCEL if delta > 0 else -c.MOVE_ACCEL
+        self._commanded_vx += delta
+
+        # Lower leg friction while actively driving horizontal motion so
+        # planted feet do not slip against high friction and topple the torso.
+        is_moving = move_dir != 0 or abs(self._commanded_vx) > 1.0
+        self._set_leg_friction(c.MOVE_GROUND_FRICTION if is_moving else c.GROUND_FRICTION)
+
+        if abs(self._commanded_vx) > 0.01:
+            for body in self.bodies.values():
+                body.velocity = (self._commanded_vx, body.velocity.y)
+        elif self._is_grounded():
+            # Kill residual downward drift while planted so the stance stays level.
+            for body in self.bodies.values():
+                if body.velocity.y < 0:
+                    body.velocity = (body.velocity.x, 0)
+            if move_dir == 0 and abs(self._commanded_vx) < 0.5:
+                for body in self.bodies.values():
+                    body.angular_velocity *= c.IDLE_ANGULAR_DAMPING
+
+        if jump and self._is_grounded() and self._jump_cooldown <= 0:
             self.torso.apply_impulse_at_local_point((0, c.JUMP_IMPULSE), (0, 0))
+            self._jump_cooldown = c.JUMP_COOLDOWN_F
 
         if self._ground_anchor is not None:
             self._ground_anchor.position = self.torso.position
             self._ground_anchor.angle = 0
+
+        if move_dir == 0 and self._jump_cooldown <= 0:
+            self._maintain_standing_height()
 
     def take_hit(self, part_name: str, damage: float, impulse: pymunk.Vec2d) -> None:
         """Apply damage and knockback to a struck body part.
@@ -331,21 +439,27 @@ class Ragdoll:
             self._enter_stagger()
 
     def _enter_stagger(self) -> None:
-        """Disable stabilizer and flop the ragdoll briefly."""
+        """Disable all posture constraints and flop the ragdoll briefly."""
         self.stagger_frames = c.STAGGER_DURATION_F
         self.get_up_frames = c.GET_UP_DURATION_F
-        if self._stabilizer is not None:
-            self.space.remove(self._stabilizer)
-            self._stabilizer = None
+        self._commanded_vx = 0.0
+        self._jump_cooldown = 0
+        self._set_leg_friction(c.GROUND_FRICTION)
+        if self._posture_constraints:
+            self.space.remove(*self._posture_constraints)
+            self._posture_constraints = []
 
     def update(self) -> None:
-        """Tick stagger/get-up timers and restore stabilizer when ready."""
+        """Tick stagger/get-up timers and restore posture constraints when ready."""
+        if self._jump_cooldown > 0:
+            self._jump_cooldown -= 1
+        self._clamp_upward_velocity()
         if self.stagger_frames > 0:
             self.stagger_frames -= 1
         if self.get_up_frames > 0:
             self.get_up_frames -= 1
-            if self.get_up_frames == 0 and self._stabilizer is None:
-                self._add_stabilizer()
+            if self.get_up_frames == 0 and not self._posture_constraints:
+                self._add_posture_springs()
 
     def draw(self, surf: pygame.Surface) -> None:
         """Draw all ragdoll segments on a pygame surface."""

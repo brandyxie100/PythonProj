@@ -31,7 +31,7 @@ class Terrain:
         """Create a static segment between two pygame points."""
         ax, ay = pygame_to_pymunk(*pygame_a)
         bx, by = pygame_to_pymunk(*pygame_b)
-        shape = pymunk.Segment(self.space.static_body, (ax, ay), (bx, by), 8)
+        shape = pymunk.Segment(self.space.static_body, (ax, ay), (bx, by), c.TERRAIN_THICKNESS)
         shape.friction = c.GROUND_FRICTION
         shape.elasticity = c.GROUND_ELASTICITY
         shape.collision_type = c.COL_TERRAIN

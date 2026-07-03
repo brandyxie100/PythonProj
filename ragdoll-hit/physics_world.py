@@ -49,6 +49,13 @@ class PhysicsWorld:
         """Wire weapon-body post-solve damage."""
 
         def post_solve(arbiter: pymunk.Arbiter, _space: pymunk.Space, _data: object) -> None:
+            # Only score a fresh impact, not every frame a weapon happens to
+            # stay in (or get tangled in) contact with a body — otherwise a
+            # weapon wedged against an opponent racks up damage every single
+            # physics substep it remains touching, instead of once per swing.
+            if not arbiter.is_first_contact:
+                return
+
             weapon_shape, body_shape = arbiter.shapes
             weapon = WEAPON_SHAPE_OWNER.get(weapon_shape)
             victim = BODY_SHAPE_OWNER.get(body_shape)
@@ -59,11 +66,11 @@ class PhysicsWorld:
             if weapon.owner.team == victim.team:
                 return
 
-            rel_v = arbiter.contact_point_set.points[0].distance if arbiter.contact_point_set.points else 0.0
-            # Use combined approach velocity of the two shapes.
-            v_weapon = weapon_shape.body.velocity.length
-            v_body = body_shape.body.velocity.length
-            impact_speed = max(v_weapon, v_body, abs(float(rel_v)) * 60.0)
+            # Closing speed between the two bodies at the moment of contact —
+            # not each body's own absolute speed, which would overstate
+            # "impact" whenever both happen to be moving the same direction.
+            relative_velocity = weapon_shape.body.velocity - body_shape.body.velocity
+            impact_speed = relative_velocity.length
 
             damage = compute_damage(impact_speed, weapon.stats["damage_mult"])
             if damage <= 0.0:
