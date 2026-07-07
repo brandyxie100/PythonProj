@@ -98,6 +98,18 @@ def _draw_head(
             px = tx + math.cos(angle + sign * 0.35) * 12
             py = ty + math.sin(angle + sign * 0.35) * 12
             pygame.draw.line(surf, color, (int(tx), int(ty)), (int(px), int(py)), 3)
+    elif weapon_key == "axe":
+        # Axe: a blade set crossways just behind the tip.
+        bx = tx - math.cos(angle) * 9
+        by = ty - math.sin(angle) * 9
+        perp = angle + math.pi / 2
+        pygame.draw.line(
+            surf,
+            color,
+            (int(bx - math.cos(perp) * 9), int(by - math.sin(perp) * 9)),
+            (int(bx + math.cos(perp) * 9), int(by + math.sin(perp) * 9)),
+            5,
+        )
     elif weapon_key == "broadsword":
         # Broadsword: a crossguard behind the tip.
         gx = tx - math.cos(angle) * 12

@@ -23,10 +23,17 @@ Point = tuple[float, float]
 
 _PILLAR_TOP_Y: float = 452.0
 _PILLAR_WIDTH: int = 104
-_PLAYER_X: float = 180.0
+_PLAYER_X: float = 320.0  # shifted right so the figure clears the weapon panel
 _ENEMY_X: float = float(c.SCREEN_W) - 180.0
 _PROJECTILE_FLOOR: float = float(c.SCREEN_H) + 30.0
 _TOTAL_STAGES: int = 5
+
+# Left-side weapon-selector panel layout.
+_PANEL_X: int = 18
+_PANEL_Y: int = 196
+_PANEL_BTN_W: int = 176
+_PANEL_BTN_H: int = 34
+_PANEL_GAP: int = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +164,7 @@ class VersusScene:
         self._banner_timer = 1.4
         self._space_prev = False
         self._cycle_prev = False
+        self._prev_enemy_weapon = ""  # ensures each respawn uses a new weapon
 
         self._player = DuelFighter(
             team="player",
@@ -171,14 +179,23 @@ class VersusScene:
         self._load_stage(self._stage_no)
 
     # -- stage lifecycle ----------------------------------------------------
+    def _pick_enemy_weapon(self) -> str:
+        """Choose a random weapon that differs from the last enemy's weapon."""
+        options = [w for w in c.THROW_WEAPON_ORDER if w != self._prev_enemy_weapon]
+        weapon = random.choice(options)
+        self._prev_enemy_weapon = weapon
+        return weapon
+
     def _load_stage(self, number: int) -> None:
         spec = duel_stage(number)
+        # Each newly spawned enemy takes over the same pillar but wields a
+        # different weapon from the one the previous enemy used.
         self._enemy = DuelFighter(
             team="enemy",
             x=_ENEMY_X,
             ground_y=_PILLAR_TOP_Y,
             facing=-1,
-            weapon_key=spec.enemy_weapon,
+            weapon_key=self._pick_enemy_weapon(),
         )
         self._ai = DuelAI(spec)
         self._projectiles.clear()
@@ -186,10 +203,29 @@ class VersusScene:
         self._banner_timer = 1.4
 
     # -- input --------------------------------------------------------------
+    @staticmethod
+    def _weapon_buttons() -> list[tuple[pygame.Rect, str]]:
+        """Return clickable rects paired with their weapon key."""
+        buttons: list[tuple[pygame.Rect, str]] = []
+        for i, key in enumerate(c.THROW_WEAPON_ORDER):
+            rect = pygame.Rect(
+                _PANEL_X,
+                _PANEL_Y + i * (_PANEL_BTN_H + _PANEL_GAP),
+                _PANEL_BTN_W,
+                _PANEL_BTN_H,
+            )
+            buttons.append((rect, key))
+        return buttons
+
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Handle discrete key events (weapon cycling)."""
+        """Handle weapon cycling (E) and left-panel weapon selection (click)."""
         if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
             self._player.cycle_weapon()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for rect, key in self._weapon_buttons():
+                if rect.collidepoint(event.pos):
+                    self._player.weapon_key = key
+                    break
 
     def _handle_player_input(self, dt: float) -> None:
         keys = pygame.key.get_pressed()
@@ -359,8 +395,10 @@ class VersusScene:
         power_label = self._small.render("POWER (hold Space)", True, (30, 40, 30))
         surf.blit(power_label, (250, 133))
 
+        self._draw_weapon_panel(surf)
+
         controls = self._small.render(
-            "W/S or Up/Down: aim  |  Hold Space: charge, release: throw  |  E: cycle weapon",
+            "W/S or Up/Down: aim  |  Hold Space: throw  |  E or click left panel: weapon",
             True,
             (32, 44, 32),
         )
@@ -369,6 +407,33 @@ class VersusScene:
         if self._banner_timer > 0.0:
             banner = self._font.render(f"STAGE {self._stage_no}", True, (20, 30, 20))
             surf.blit(banner, banner.get_rect(center=(c.SCREEN_W // 2, 40)))
+
+    def _draw_weapon_panel(self, surf: pygame.Surface) -> None:
+        """Draw the clickable weapon selector on the left of the screen."""
+        title = self._small.render("WEAPONS", True, (28, 40, 28))
+        surf.blit(title, (_PANEL_X, _PANEL_Y - 22))
+        mouse = pygame.mouse.get_pos()
+        for rect, key in self._weapon_buttons():
+            stats = c.THROW_WEAPONS[key]
+            selected = key == self._player.weapon_key
+            hovered = rect.collidepoint(mouse)
+            if selected:
+                fill = (250, 214, 96)
+            elif hovered:
+                fill = (150, 196, 128)
+            else:
+                fill = (56, 96, 62)
+            pygame.draw.rect(surf, fill, rect, border_radius=7)
+            pygame.draw.rect(surf, (30, 46, 32), rect, 2, border_radius=7)
+
+            # Weapon-color swatch as a mini icon.
+            swatch = pygame.Rect(rect.x + 8, rect.centery - 7, 20, 14)
+            pygame.draw.rect(surf, stats.color, swatch, border_radius=3)
+            pygame.draw.rect(surf, (30, 46, 32), swatch, 1, border_radius=3)
+
+            text_color = (40, 34, 12) if selected else (238, 244, 236)
+            name = self._small.render(stats.name, True, text_color)
+            surf.blit(name, (rect.x + 36, rect.centery - name.get_height() // 2))
 
     def _draw_integrity(
         self,

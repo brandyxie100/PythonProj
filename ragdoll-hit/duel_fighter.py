@@ -22,11 +22,12 @@ class BodySegment:
     weight: float
     is_head: bool
     radius: float
+    damage_mult: float = 1.0  # scales incoming damage (head/torso hit harder)
     redness: float = 0.0  # 0..1, drives red glow and death calculation
 
     def add_damage(self, amount: float) -> None:
-        """Increase redness, clamped to fully saturated."""
-        self.redness = max(0.0, min(1.0, self.redness + amount))
+        """Increase redness by the multiplier-scaled amount, clamped to 1.0."""
+        self.redness = max(0.0, min(1.0, self.redness + amount * self.damage_mult))
 
 
 @dataclass(slots=True)
@@ -39,14 +40,15 @@ class EmbeddedWeapon:
     angle: float
 
 
-# Segment layout: names map to weights (weights sum to ~1.0 for the red ratio).
-_SEGMENT_LAYOUT: tuple[tuple[str, float, bool, float], ...] = (
-    ("head", 0.10, True, c.HEAD_R + 2.0),
-    ("torso", 0.34, False, 11.0),
-    ("arm_throw", 0.11, False, 7.0),
-    ("arm_off", 0.11, False, 7.0),
-    ("leg_front", 0.17, False, 8.0),
-    ("leg_back", 0.17, False, 8.0),
+# Segment layout: (name, weight, is_head, radius, damage_mult).
+# Weights sum to ~1.0 for the body-red ratio; limbs are the 1x damage baseline.
+_SEGMENT_LAYOUT: tuple[tuple[str, float, bool, float, float], ...] = (
+    ("head", 0.10, True, c.HEAD_R + 2.0, c.HEAD_DAMAGE_MULT),
+    ("torso", 0.34, False, 11.0, c.TORSO_DAMAGE_MULT),
+    ("arm_throw", 0.11, False, 7.0, c.LIMB_DAMAGE_MULT),
+    ("arm_off", 0.11, False, 7.0, c.LIMB_DAMAGE_MULT),
+    ("leg_front", 0.17, False, 8.0, c.LIMB_DAMAGE_MULT),
+    ("leg_back", 0.17, False, 8.0, c.LIMB_DAMAGE_MULT),
 )
 
 
@@ -84,8 +86,8 @@ class DuelFighter:
         self.dead = False
 
         self.segments: dict[str, BodySegment] = {
-            name: BodySegment(name, weight, is_head, radius)
-            for name, weight, is_head, radius in _SEGMENT_LAYOUT
+            name: BodySegment(name, weight, is_head, radius, damage_mult)
+            for name, weight, is_head, radius, damage_mult in _SEGMENT_LAYOUT
         }
         self.embedded: list[EmbeddedWeapon] = []
 
@@ -268,8 +270,11 @@ class DuelFighter:
 
     # -- rendering ----------------------------------------------------------
     def _segment_color(self, name: str) -> tuple[int, int, int]:
-        """Interpolate segment color from silhouette black toward damage red."""
-        redness = self.segments[name].redness
+        """Interpolate segment color from silhouette black toward damage red.
+
+        Uses a gain so even light wounds read clearly against the black body.
+        """
+        redness = min(1.0, self.segments[name].redness * c.DAMAGE_COLOR_GAIN)
         base = c.DUEL_FIGHTER_BLACK
         return (
             int(lerp(base[0], c.DAMAGE_RED[0], redness)),
@@ -277,9 +282,47 @@ class DuelFighter:
             int(lerp(base[2], c.DAMAGE_RED[2], redness)),
         )
 
+    def _draw_damage_glow(self, surf: pygame.Surface, geometry: dict[str, tuple]) -> None:
+        """Draw a translucent red halo behind any wounded body segment."""
+        top = int(self.head_center[1] - 44)
+        left = int(self.x - 130)
+        width = 260
+        height = int(self.ground_y - top + 34)
+        glow = pygame.Surface((width, height), pygame.SRCALPHA)
+        wounded = False
+        for name, shape in geometry.items():
+            redness = self.segments[name].redness
+            if redness <= 0.02:
+                continue
+            wounded = True
+            alpha = int(min(1.0, redness) * 185)
+            color = (*c.DAMAGE_GLOW, alpha)
+            if shape[0] == "circle":
+                _, center, radius = shape
+                pygame.draw.circle(
+                    glow,
+                    color,
+                    (int(center[0] - left), int(center[1] - top)),
+                    int(radius + 9),
+                )
+            else:
+                _, a, b, radius = shape
+                pygame.draw.line(
+                    glow,
+                    color,
+                    (int(a[0] - left), int(a[1] - top)),
+                    (int(b[0] - left), int(b[1] - top)),
+                    int(radius * 2 + 11),
+                )
+        if wounded:
+            surf.blit(glow, (left, top))
+
     def draw(self, surf: pygame.Surface) -> None:
         """Draw the silhouette fighter with red-glowing damaged segments."""
         geometry = self._geometry()
+
+        # Red halo behind the body highlights damaged segments.
+        self._draw_damage_glow(surf, geometry)
 
         # Legs
         for leg in ("leg_back", "leg_front"):

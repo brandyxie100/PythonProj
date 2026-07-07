@@ -126,7 +126,9 @@ DUEL_BG_BOTTOM: tuple[int, int, int] = (112, 194, 94)
 DUEL_FIGHTER_BLACK: tuple[int, int, int] = (24, 26, 28)
 DUEL_PILLAR_COLOR: tuple[int, int, int] = (58, 64, 72)
 DUEL_PILLAR_TOP: tuple[int, int, int] = (86, 94, 104)
-DAMAGE_RED: tuple[int, int, int] = (214, 46, 40)
+DAMAGE_RED: tuple[int, int, int] = (240, 38, 30)
+DAMAGE_GLOW: tuple[int, int, int] = (255, 60, 45)  # halo drawn behind wounds
+DAMAGE_COLOR_GAIN: float = 1.5  # how fast a segment saturates to red visually
 
 # Projectile flight
 PROJECTILE_GRAVITY: float = 820.0
@@ -144,6 +146,11 @@ AIM_ROTATE_SPEED: float = 1.15
 # Body-segment damage / death rules
 BODY_RED_DEATH_RATIO: float = 0.8  # >80% weighted redness triggers death
 HEAD_LETHAL: bool = True  # any direct head wound is fatal
+
+# Per-segment damage multipliers (limbs are the 1x baseline).
+LIMB_DAMAGE_MULT: float = 1.0
+TORSO_DAMAGE_MULT: float = 2.0  # torso takes double limb damage
+HEAD_DAMAGE_MULT: float = 3.0  # head takes triple limb damage
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,5 +170,14 @@ THROW_WEAPONS: dict[str, ThrowWeaponStats] = {
     "trident": ThrowWeaponStats("Trident", 0.44, 54.0, 6, 1.0, (150, 210, 225)),
     "broadsword": ThrowWeaponStats("Broadsword", 0.52, 52.0, 7, 0.9, (228, 228, 238)),
     "bow": ThrowWeaponStats("Bow", 0.3, 48.0, 3, 1.34, (212, 180, 120)),
+    "axe": ThrowWeaponStats("Axe", 0.5, 46.0, 8, 0.88, (176, 182, 192)),
+    "javelin": ThrowWeaponStats("Javelin", 0.32, 66.0, 3, 1.28, (198, 204, 220)),
 }
-THROW_WEAPON_ORDER: tuple[str, ...] = ("spear", "trident", "broadsword", "bow")
+THROW_WEAPON_ORDER: tuple[str, ...] = (
+    "spear",
+    "trident",
+    "broadsword",
+    "bow",
+    "axe",
+    "javelin",
+)
