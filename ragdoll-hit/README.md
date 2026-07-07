@@ -1,113 +1,56 @@
-# Ragdoll Hit
+# Ragdoll-Hit Stickman Stage Mode
 
-A physics-driven stick-figure brawler inspired by [Ragdoll Hit](https://poki.com/en/g/ragdoll-hit). Characters are **pymunk ragdolls** — each limb is a rigid body linked by joints. Weapons swing with real inertia and deal damage from collision momentum.
+Single-player stickman battle game with:
 
-**Milestone 1** (current): single-player stage, default staff weapon, one AI opponent, win/lose loop.
+- Red, blue, and yellow fighters
+- Weapons: sword, pickaxe, stick, hammer
+- Keyboard-controlled movement + limb control
+- 180-degree weapon attack swings
+- Consecutive jump system (ground jump + one mid-air jump)
+- Sequential stage mode (Levels 1 to 6)
+- Increasing enemy strength and terrain complexity
+- Gold coin rewards per cleared level
 
----
-
-## Requirements
-
-| Dependency | Version |
-|------------|---------|
-| Python     | 3.11+   |
-| pygame     | 2.6+    |
-| pymunk     | 7.2+    |
-
----
-
-## Installation and running
+## Run
 
 ```bash
-cd ragdoll-hit
 pip install -r requirements.txt
 python main.py
 ```
 
-From the project virtualenv:
+## Controls
 
-```bash
-/Users/brandyxie/Downloads/09Education/PythonProj/.gamevenv/bin/pip install -r requirements.txt
-/Users/brandyxie/Downloads/09Education/PythonProj/.gamevenv/bin/python main.py
-```
+- `A / D`: move
+- `W`: jump (supports one extra mid-air jump)
+- `J / L`: rotate primary (weapon) arm
+- `U / O`: rotate off-hand arm
+- `N / M`: adjust leg pose
+- `Space` or `K`: attack (180-degree weapon swing)
+- `E`: cycle weapon type
 
----
+## Stage Goal
 
-## Controls (Milestone 1)
+Defeat all enemies in each stage to clear the level and earn coins.
+Clear Levels **1 -> 6** sequentially to win.
 
-| Key | Action |
-|-----|--------|
-| `A` / `←` | Move left |
-| `D` / `→` | Move right |
-| `W` / `↑` | Jump |
-| `Space` / `J` | Swing staff |
+## Versus Projectile Duel Mode
 
-Mouse: click **1 PLAYER** on the menu, then fight until one health bar is empty.
+A second, stationary artillery mode inspired by classic stick-figure throwing
+duels. Two fighters stand atop pillars and lob weapons across a parabolic arc.
 
----
+- Weapons: spear, trident, broadsword, and bow (arrows) — each with its own
+  damage, drawn shape, and launch speed.
+- Projectiles fly along a realistic gravity-driven parabola and **embed** in the
+  body on impact.
+- Damaged body segments **glow red**. A fighter dies when it takes a **direct
+  head wound** or when **more than 80%** of its body has turned red.
+- You cannot move — only aim and throw.
+- Clear all **5 stages** of escalating AI accuracy to win; each cleared stage
+  awards coins.
 
-## Milestone 1 scope
+### Duel Controls
 
-- Pymunk ragdoll (head, torso, arms, legs, joints, torso stabilizer / stagger)
-- Staff weapon with swing motor and impact-based damage
-- One stage: ground + raised platform
-- AI opponent (approach → attack → recover)
-- Menu → Stage → Game Over (Play Again / Main Menu)
-
-**Not in Milestone 1:** weapon shop, gold, save file, multi-stage progression, wheels/spikes/destructibles, local 2-player versus.
-
----
-
-## Roadmap
-
-### Milestone 2 — Weapon shop and progression
-
-- Gold currency and JSON save/load
-- Left-side shop panel (weapon rows with icon, name, price, equip)
-- 6–8 weapons with distinct mass, length, damage, and swing speed
-
-### Milestone 3 — Interactive terrain and multi-stage
-
-- Rolling wheels, spike traps, destructible tiles
-- Level 1…N with scaling AI and terrain
-- Coin rewards per stage clear
-
-### Milestone 4 — Local 2-player versus
-
-- Second keyboard layout (e.g. arrows + `/`)
-- Fixed arena, dual health HUD
-- Reuses ragdoll/weapon systems from Milestone 1
-
----
-
-## Project layout
-
-```
-ragdoll-hit/
-├── main.py           # Scenes and game loop
-├── config.py         # Constants and WEAPON_DATA
-├── physics_world.py  # Pymunk space and damage
-├── ragdoll.py        # Ragdoll bodies and joints
-├── weapon.py         # Staff weapon
-├── ai_controller.py  # Enemy AI state machine
-├── terrain.py        # Ground and platform
-├── coords.py         # Pygame ↔ pymunk coordinates
-├── requirements.txt
-├── README.md
-└── tests/
-```
-
----
-
-## Tests
-
-```bash
-cd ragdoll-hit
-pytest tests/ -v
-```
-
----
-
-## Development workflow
-
-Branch: `feature/ragdoll-hit-core-combat` off `main`. Tests written before domain logic per project rules.
+- `W / S` or `Up / Down`: raise / lower aim
+- `Space` (hold): charge throw power; release to throw (the stickman winds up
+  and throws)
+- `E`: cycle weapon

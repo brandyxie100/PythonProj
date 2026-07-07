@@ -1,106 +1,78 @@
-"""Pymunk space setup, collision handling, and damage calculation."""
+"""Lightweight combat collision helpers for stickman battles."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
-
-import pymunk
+from dataclasses import dataclass
 
 import config as c
-
-if TYPE_CHECKING:
-    from ragdoll import Ragdoll
-    from weapon import Weapon
-
-# Maps collision shapes back to game objects for arbiter callbacks.
-BODY_SHAPE_OWNER: dict[pymunk.Shape, Ragdoll] = {}
-WEAPON_SHAPE_OWNER: dict[pymunk.Shape, Weapon] = {}
-
-# Pending hits drained by the stage each frame: (victim, damage, impulse, part_name).
-HitCallback = Callable[["Ragdoll", float, pymunk.Vec2d, str], None]
+from stickman import Stickman
 
 
-def compute_damage(impact_speed: float, weapon_damage_mult: float) -> float:
-    """Scale collision impulse into hit-point damage.
+@dataclass(frozen=True, slots=True)
+class HitResult:
+    """One attack result produced during simulation step."""
 
-    Args:
-        impact_speed: Relative contact speed in px/s.
-        weapon_damage_mult: Per-weapon damage multiplier from config.
-
-    Returns:
-        Damage amount, or zero if impact is too weak.
-    """
-    if impact_speed < c.MIN_IMPACT_SPEED:
-        return 0.0
-    return impact_speed * c.DAMAGE_VELOCITY_SCALE * weapon_damage_mult
+    victim_id: int
+    damage: float
+    knockback_x: float
+    knockback_y: float
 
 
-class PhysicsWorld:
-    """Owns the pymunk space and weapon-vs-body collision routing."""
+def _distance_sq(a: tuple[float, float], b: tuple[float, float]) -> float:
+    dx = a[0] - b[0]
+    dy = a[1] - b[1]
+    return dx * dx + dy * dy
 
-    def __init__(self) -> None:
-        """Create space, gravity, and collision handlers."""
-        self.space = pymunk.Space()
-        self.space.gravity = c.GRAVITY
-        self._pending_hits: list[tuple[Ragdoll, float, pymunk.Vec2d, str]] = []
-        self._register_handlers()
 
-    def _register_handlers(self) -> None:
-        """Wire weapon-body post-solve damage."""
+def _point_segment_distance_sq(
+    p: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> float:
+    """Squared distance from point p to segment ab."""
+    abx = b[0] - a[0]
+    aby = b[1] - a[1]
+    apx = p[0] - a[0]
+    apy = p[1] - a[1]
+    ab_len_sq = abx * abx + aby * aby
+    if ab_len_sq <= 1e-6:
+        return _distance_sq(p, a)
+    t = max(0.0, min(1.0, (apx * abx + apy * aby) / ab_len_sq))
+    nearest = (a[0] + abx * t, a[1] + aby * t)
+    return _distance_sq(p, nearest)
 
-        def post_solve(arbiter: pymunk.Arbiter, _space: pymunk.Space, _data: object) -> None:
-            # Only score a fresh impact, not every frame a weapon happens to
-            # stay in (or get tangled in) contact with a body — otherwise a
-            # weapon wedged against an opponent racks up damage every single
-            # physics substep it remains touching, instead of once per swing.
-            if not arbiter.is_first_contact:
-                return
 
-            weapon_shape, body_shape = arbiter.shapes
-            weapon = WEAPON_SHAPE_OWNER.get(weapon_shape)
-            victim = BODY_SHAPE_OWNER.get(body_shape)
-            if weapon is None or victim is None:
-                return
-            if weapon.owner is victim:
-                return
-            if weapon.owner.team == victim.team:
-                return
+def _segment_hits_circle(
+    seg_a: tuple[float, float],
+    seg_b: tuple[float, float],
+    center: tuple[float, float],
+    radius: float,
+) -> bool:
+    return _point_segment_distance_sq(center, seg_a, seg_b) <= radius * radius
 
-            # Closing speed between the two bodies at the moment of contact —
-            # not each body's own absolute speed, which would overstate
-            # "impact" whenever both happen to be moving the same direction.
-            relative_velocity = weapon_shape.body.velocity - body_shape.body.velocity
-            impact_speed = relative_velocity.length
 
-            damage = compute_damage(impact_speed, weapon.stats["damage_mult"])
-            if damage <= 0.0:
-                return
+def weapon_hit(attacker: Stickman, victim: Stickman) -> HitResult | None:
+    """Return hit result when attack segment intersects victim body."""
+    if not attacker.weapon.is_attacking:
+        return None
+    if not attacker.weapon.can_hit(victim.sid):
+        return None
 
-            part_name = victim.part_name_for_shape(body_shape)
-            impulse = pymunk.Vec2d(weapon.shape.body.velocity.x, weapon.shape.body.velocity.y)
-            if impulse.length > 0:
-                impulse = impulse.normalized() * (damage * 12.0)
-            self._pending_hits.append((victim, damage, impulse, part_name))
+    seg_a, seg_b, damage = attacker.weapon_segment()
+    hit = _segment_hits_circle(seg_a, seg_b, victim.torso_center, c.BODY_RADIUS)
+    hit = hit or _segment_hits_circle(seg_a, seg_b, victim.head_center, c.HEAD_R + 2.0)
+    if not hit:
+        # Close fist follow-through hitbox.
+        fist = attacker.fist_point()
+        hit = _distance_sq(fist, victim.torso_center) <= (c.BODY_RADIUS + 10.0) ** 2
+    if not hit:
+        return None
 
-        self.space.on_collision(c.COL_WEAPON, c.COL_BODY, post_solve=post_solve)
-
-    def step(self) -> None:
-        """Advance physics by one frame with substeps."""
-        dt = c.PHYSICS_DT / c.PHYSICS_SUBSTEPS
-        for _ in range(c.PHYSICS_SUBSTEPS):
-            self.space.step(dt)
-
-    def drain_hits(self) -> list[tuple[Ragdoll, float, pymunk.Vec2d, str]]:
-        """Return and clear hits queued during the last step.
-
-        Returns:
-            List of (victim, damage, impulse, part_name) tuples.
-        """
-        hits = self._pending_hits
-        self._pending_hits = []
-        return hits
-
-    def clear_registries(self) -> None:
-        """Remove shape ownership maps (used when resetting a stage)."""
-        BODY_SHAPE_OWNER.clear()
-        WEAPON_SHAPE_OWNER.clear()
+    attacker.weapon.mark_hit(victim.sid)
+    knock_sign = 1.0 if attacker.facing >= 0 else -1.0
+    return HitResult(
+        victim_id=victim.sid,
+        damage=damage,
+        knockback_x=knock_sign * c.ATTACK_HIT_KNOCKBACK_X,
+        knockback_y=c.ATTACK_HIT_KNOCKBACK_Y,
+    )

@@ -1,124 +1,74 @@
-"""Weapon rigid bodies attached to ragdoll hands."""
+"""Weapon handling and swing geometry."""
 
 from __future__ import annotations
 
-from typing import Optional
-
-import pygame
-import pymunk
+from dataclasses import dataclass, field
 
 import config as c
-from coords import pymunk_to_pygame
-from physics_world import WEAPON_SHAPE_OWNER
-from ragdoll import Ragdoll
 
 
+@dataclass(slots=True)
 class Weapon:
-    """Physics weapon pinned to a ragdoll hand with a motor-driven swing."""
+    """Attack state and damage model for a stickman weapon."""
 
-    def __init__(
-        self,
-        space: pymunk.Space,
-        owner: Ragdoll,
-        weapon_name: str = c.DEFAULT_WEAPON,
-    ) -> None:
-        """Create weapon body, shape, and hand pivot joint.
+    weapon_key: str
+    cooldown_timer: float = 0.0
+    attack_timer: float = 0.0
+    attack_start_angle: float = 0.0
+    attack_sign: float = 1.0
+    hit_target_ids: set[int] = field(default_factory=set)
 
-        Args:
-            space: Active pymunk space.
-            owner: Ragdoll wielding the weapon.
-            weapon_name: Key into ``WEAPON_DATA``.
-        """
-        self.space = space
-        self.owner = owner
-        self.stats = c.WEAPON_DATA[weapon_name]
-        self.swing_frames = 0
-        self._motor: Optional[pymunk.SimpleMotor] = None
-        self._pivot: Optional[pymunk.PivotJoint] = None
+    @property
+    def stats(self) -> c.WeaponStats:
+        """Return stats for current weapon key."""
+        return c.WEAPONS[self.weapon_key]
 
-        hand = owner.hand_body
-        grip = owner.hand_anchor
-        length = self.stats["length"]
-        half = length * 0.5
-        moment = pymunk.moment_for_segment(
-            self.stats["mass"],
-            (-half, 0),
-            (half, 0),
-            self.stats["thickness"],
-        )
-        self.body = pymunk.Body(self.stats["mass"], moment)
-        self.body.position = grip
-        self.body.angle = hand.angle
+    @property
+    def is_attacking(self) -> bool:
+        """Whether the weapon is in its active swing window."""
+        return self.attack_timer > 0.0
 
-        self.shape = pymunk.Segment(
-            self.body,
-            (-half, 0),
-            (half, 0),
-            self.stats["thickness"],
-        )
-        self.shape.friction = 0.6
-        self.shape.collision_type = c.COL_WEAPON
-        # Share the wielder's collision group so the weapon never physically
-        # collides with its own owner's body parts (only the opponent's).
-        self.shape.filter = pymunk.ShapeFilter(group=owner.group)
-        self.space.add(self.body, self.shape)
+    def cycle(self) -> None:
+        """Switch to next weapon type in the configured order."""
+        idx = c.WEAPON_ORDER.index(self.weapon_key)
+        next_idx = (idx + 1) % len(c.WEAPON_ORDER)
+        self.weapon_key = c.WEAPON_ORDER[next_idx]
+        self.cooldown_timer = 0.0
+        self.attack_timer = 0.0
+        self.hit_target_ids.clear()
 
-        self._pivot = pymunk.PivotJoint(self.body, hand, grip)
-        self._pivot.collide_bodies = False
-        self.space.add(self._pivot)
+    def try_start_attack(self, arm_angle: float, facing: int) -> bool:
+        """Begin a 180-degree swing if cooldown permits."""
+        if self.cooldown_timer > 0.0 or self.attack_timer > 0.0:
+            return False
+        self.attack_start_angle = arm_angle
+        self.attack_sign = 1.0 if facing >= 0 else -1.0
+        self.attack_timer = self.stats.sweep_time
+        self.cooldown_timer = self.stats.cooldown
+        self.hit_target_ids.clear()
+        return True
 
-        WEAPON_SHAPE_OWNER[self.shape] = self
+    def update(self, dt: float) -> None:
+        """Advance attack and cooldown timers."""
+        if self.cooldown_timer > 0.0:
+            self.cooldown_timer = max(0.0, self.cooldown_timer - dt)
+        if self.attack_timer > 0.0:
+            self.attack_timer = max(0.0, self.attack_timer - dt)
+            if self.attack_timer <= 0.0:
+                self.hit_target_ids.clear()
 
-    def _lock_to_hand(self) -> None:
-        """Pin weapon motion to the forearm while not swinging.
+    def current_angle(self, resting_arm_angle: float) -> float:
+        """Return weapon arm angle; animated through a 180-degree sweep."""
+        if not self.is_attacking:
+            return resting_arm_angle
+        elapsed = self.stats.sweep_time - self.attack_timer
+        progress = max(0.0, min(1.0, elapsed / self.stats.sweep_time))
+        return self.attack_start_angle + self.attack_sign * c.ATTACK_SWEEP_RAD * progress
 
-        A free-hanging staff applies constant gravity torque on the arm
-        chain, which slowly topples an otherwise stable standing pose.
-        """
-        hand = self.owner.hand_body
-        grip = self.owner.hand_anchor
-        self.body.position = grip
-        self.body.angle = hand.angle
-        self.body.velocity = hand.velocity
-        self.body.angular_velocity = hand.angular_velocity
+    def can_hit(self, target_id: int) -> bool:
+        """Return True when target has not been hit in current swing."""
+        return target_id not in self.hit_target_ids
 
-    def begin_swing(self) -> None:
-        """Start a timed weapon swing if not already swinging."""
-        if self.swing_frames > 0 or self.owner.is_down:
-            return
-        self.swing_frames = self.stats["swing_duration_f"]
-        direction = self.owner.facing
-        self.body.apply_impulse_at_local_point(
-            (0, direction * self.stats["mass"] * self.stats["swing_speed"] * 40.0),
-            (self.stats["length"] * 0.4, 0),
-        )
-
-    def update(self) -> None:
-        """Tick swing timer and apply motor torque while attacking."""
-        if self.swing_frames <= 0:
-            if self._motor is not None:
-                self.space.remove(self._motor)
-                self._motor = None
-            self._lock_to_hand()
-            return
-
-        self.swing_frames -= 1
-        if self._motor is None:
-            self._motor = pymunk.SimpleMotor(
-                self.body,
-                self.owner.hand_body,
-                self.owner.facing * self.stats["swing_speed"],
-            )
-            self.space.add(self._motor)
-
-    def draw(self, surf: pygame.Surface) -> None:
-        """Draw the weapon segment."""
-        a = pymunk_to_pygame(self.body.local_to_world(self.shape.a))
-        b = pymunk_to_pygame(self.body.local_to_world(self.shape.b))
-        pygame.draw.line(
-            surf,
-            self.stats["colour"],
-            a,
-            b,
-            int(self.stats["thickness"] * 2),
-        )
+    def mark_hit(self, target_id: int) -> None:
+        """Store one-hit-per-target for the current swing."""
+        self.hit_target_ids.add(target_id)

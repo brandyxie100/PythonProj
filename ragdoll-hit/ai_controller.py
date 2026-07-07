@@ -1,81 +1,70 @@
-"""Enemy AI state machine for stage combat."""
+"""Simple AI controller for enemy stickmen."""
 
 from __future__ import annotations
 
-from enum import Enum
+import math
+from dataclasses import dataclass
 
 import config as c
+from stickman import Stickman
+from terrain import Arena
 
 
-class AIState(str, Enum):
-    """High-level enemy behaviour states."""
+@dataclass(slots=True)
+class EnemyAI:
+    """Momentum-aware AI tuned for platform fighting."""
 
-    APPROACH = "approach"
-    ATTACK = "attack"
-    RECOVER = "recover"
-
-
-class AIController:
-    """Drives enemy movement and attacks toward the player."""
-
-    def __init__(self) -> None:
-        """Initialize idle AI state."""
-        self.state = AIState.APPROACH
-        self.cooldown = 0
-        self.recover_timer = 0
-        self.jump_cooldown = 0
-
-    def reset(self) -> None:
-        """Return AI to default approach behaviour."""
-        self.state = AIState.APPROACH
-        self.cooldown = 0
-        self.recover_timer = 0
-        self.jump_cooldown = 0
+    aggressiveness: float
+    jump_cooldown: float = 0.0
+    attack_cooldown: float = 0.0
 
     def update(
         self,
-        self_x: float,
-        target_x: float,
-        distance: float,
-    ) -> tuple[int, bool, bool]:
-        """Advance the state machine and return control outputs.
+        enemy: Stickman,
+        player: Stickman,
+        arena: Arena,
+        dt: float,
+    ) -> tuple[int, bool, bool, int, int]:
+        """Return (move_axis, jump, attack, arm_dir, leg_dir)."""
+        del arena
+        self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
+        self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
+        if not enemy.alive or not player.alive:
+            return 0, False, False, 0, 0
 
-        Args:
-            self_x: Enemy horizontal position.
-            target_x: Player horizontal position.
-            distance: Euclidean distance between ragdolls.
+        dx = player.x - enemy.x
+        dy = player.y - enemy.y
+        abs_dx = abs(dx)
+        move_axis = 0
+        desired = 80.0 - 20.0 * self.aggressiveness
+        if abs_dx > desired:
+            move_axis = 1 if dx > 0 else -1
 
-        Returns:
-            Tuple of (move_dir, jump, attack) where move_dir is -1, 0, or 1.
-        """
-        if self.cooldown > 0:
-            self.cooldown -= 1
-        if self.jump_cooldown > 0:
-            self.jump_cooldown -= 1
+        # Rotate attack arm toward player.
+        sx, sy = enemy.shoulder
+        target_angle = math.atan2(player.y - sy, player.x - sx)
+        angle_delta = target_angle - enemy.arm_main_angle
+        if angle_delta > math.pi:
+            angle_delta -= 2 * math.pi
+        elif angle_delta < -math.pi:
+            angle_delta += 2 * math.pi
+        arm_dir = 1 if angle_delta > 0.07 else -1 if angle_delta < -0.07 else 0
 
-        if self.state == AIState.RECOVER:
-            self.recover_timer -= 1
-            if self.recover_timer <= 0:
-                self.state = AIState.APPROACH
-            return 0, False, False
+        jump = False
+        if enemy.grounded and self.jump_cooldown <= 0.0:
+            # Jump to contest elevated player or add pressure while approaching.
+            should_hop = (dy < -58.0 and abs_dx < 260.0) or (
+                abs_dx > 220.0 and self.aggressiveness > 1.0
+            )
+            if should_hop:
+                jump = True
+                self.jump_cooldown = 0.65 + 0.25 * (2.0 - self.aggressiveness)
 
-        if distance <= c.AI_ATTACK_RANGE and self.cooldown <= 0:
-            self.state = AIState.ATTACK
-            self.cooldown = c.AI_ATTACK_COOLDOWN_F
-            self.recover_timer = c.AI_RECOVER_F
-            self.state = AIState.RECOVER
-            return 0, False, True
+        reach = enemy.weapon.stats.length + c.ARM_LEN + 18.0
+        attack = False
+        if abs_dx <= reach and abs(dy) <= 95.0 and self.attack_cooldown <= 0.0:
+            attack = True
+            self.attack_cooldown = 0.35 + 0.28 * (2.0 - self.aggressiveness)
 
-        if distance > c.AI_APPROACH_RANGE:
-            move_dir = 1 if target_x > self_x else -1
-            return move_dir, False, False
-
-        move_dir = 1 if target_x > self_x else -1
-        # Occasional hop while closing in — ragdoll enforces grounded + cooldown.
-        want_jump = (
-            c.AI_ATTACK_RANGE < distance < c.AI_APPROACH_RANGE
-            and self.jump_cooldown <= 0
-        )
-        if want_jump:
-            self.jump_cooldown = c.AI_JUMP_COOLDOWN_F
-        return move_dir, want_jump, False
+        leg_dir = move_axis
+        return move_axis, jump, attack, arm_dir, leg_dir
