@@ -15,7 +15,7 @@ GRAVITY: float = 1900.0
 MOVE_SPEED: float = 260.0
 MOVE_ACCEL: float = 1700.0
 MOVE_FRICTION: float = 0.86
-JUMP_SPEED: float = 760.0
+JUMP_SPEED: float = 760.0 
 MAX_FALL_SPEED: float = 1300.0
 MAX_JUMPS: int = 2  # normal jump + one extra mid-air jump
 
