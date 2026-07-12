@@ -818,6 +818,10 @@ const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 const wrap   = document.getElementById('game-wrap');
 
+// Deep-sea scene photo used as the full-canvas backdrop.
+const bgImage = new Image();
+bgImage.src = 'deep_sea_game_bg.jpg';
+
 let W, H;
 function resize() {
   W = wrap.clientWidth;
@@ -858,11 +862,11 @@ let debrisSpawnMs = 0;                // ms until next drop wave
 // Timers
 let lastPassive = performance.now();
 const AUTO_CLICK_INTERVAL_MS = 400; // ms between auto-taps per creature
-let autoClickEnabled = true;
+let autoClickEnabled = false;
 
 // Idle bonus: no user input for 1 minute → huge coin reward
-const IDLE_BONUS_MS = 60 * 1000;
-const IDLE_BONUS_COINS = 10_000_000_000_000;
+const IDLE_BONUS_MS = 1 * 1000;
+const IDLE_BONUS_COINS = 10_000;
 let lastUserActivity = performance.now();
 
 function registerUserActivity() {
@@ -1190,56 +1194,36 @@ function lerpColor(a, b, t) {
   return `rgb(${r},${g},${bl})`;
 }
 
-let bgAnimT = 0; // for ray animation
+let bgAnimT = 0; // for bubble / sparkle animation
 
 function drawBackground() {
   bgAnimT += 0.008;
-  const { top, bot } = getZoneBg();
 
-  // Ocean gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, top);
-  grad.addColorStop(1, bot);
-  ctx.fillStyle = grad;
+  // Cover the canvas with deep_sea_game_bg.jpg (object-fit: cover style).
+  if (bgImage.complete && bgImage.naturalWidth > 0) {
+    const imgW = bgImage.naturalWidth;
+    const imgH = bgImage.naturalHeight;
+    const scale = Math.max(W / imgW, H / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const dx = (W - drawW) / 2;
+    const dy = (H - drawH) / 2;
+    ctx.drawImage(bgImage, dx, dy, drawW, drawH);
+  } else {
+    // Fallback while the image is still loading.
+    const { top, bot } = getZoneBg();
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bot);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Soft vignette so HUD / creatures stay readable over the photo.
+  ctx.fillStyle = 'rgba(0, 8, 28, 0.22)';
   ctx.fillRect(0, 0, W, H);
 
-  // Light rays (only in shallow zones)
-  const rayAlpha = Math.max(0, 0.07 - maxDiscoveredTier * 0.0006);
-  if (rayAlpha > 0.005) {
-    ctx.save();
-    for (let i = 0; i < 6; i++) {
-      const x = W * (0.08 + i * 0.17) + Math.sin(bgAnimT + i) * 12;
-      const rayGrad = ctx.createLinearGradient(x, 0, x + 35, H);
-      rayGrad.addColorStop(0,   `rgba(100,200,255,${rayAlpha})`);
-      rayGrad.addColorStop(1,   'rgba(100,200,255,0)');
-      ctx.fillStyle = rayGrad;
-      ctx.beginPath();
-      ctx.moveTo(x - 10, 0);
-      ctx.lineTo(x + 45, 0);
-      ctx.lineTo(x + 75, H);
-      ctx.lineTo(x + 18, H);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // Bioluminescent sparkles for deep zones
-  const bioAlpha = Math.max(0, (maxDiscoveredTier - 30) * 0.002);
-  if (bioAlpha > 0) {
-    ctx.save();
-    ctx.globalAlpha = bioAlpha;
-    for (const b of bgBubbles) {
-      const pulse = 0.5 + 0.5 * Math.sin(b.wobble * 1.3 + bgAnimT * 2);
-      ctx.fillStyle = `hsl(${(b.wobble * 60 + bgAnimT * 20) % 360},100%,70%)`;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 0.3 * pulse, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // Decorative floating bubbles
+  // Decorative floating bubbles over the photo.
   for (const b of bgBubbles) {
     ctx.save();
     ctx.globalAlpha = b.alpha;
@@ -1254,19 +1238,6 @@ function drawBackground() {
     ctx.fill();
     ctx.restore();
   }
-
-  // Seafloor
-  ctx.save();
-  ctx.fillStyle = lerpColor('#001428', '#010204', maxDiscoveredTier / 100);
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  for (let x = 0; x <= W; x += 38) {
-    ctx.lineTo(x, H - 7 - Math.sin(x * 0.06 + bgAnimT * 0.3) * 5);
-  }
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════════════
