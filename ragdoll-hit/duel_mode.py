@@ -28,7 +28,7 @@ _PILLAR_WIDTH: int = 104
 _PLAYER_X: float = 320.0  # shifted right so the figure clears the weapon panel
 _ENEMY_X: float = float(c.SCREEN_W) - 180.0
 _PROJECTILE_FLOOR: float = float(c.SCREEN_H) + 30.0
-_TOTAL_STAGES: int = 5
+_TOTAL_STAGES: int = 7
 
 # Left-side weapon-selector panel layout.
 _PANEL_X: int = 18
@@ -36,6 +36,12 @@ _PANEL_Y: int = 196
 _PANEL_BTN_W: int = 176
 _PANEL_BTN_H: int = 34
 _PANEL_GAP: int = 8
+
+# Stage-clear popup layout.
+_POPUP_W: int = 420
+_POPUP_H: int = 260
+_CONTINUE_BTN_W: int = 200
+_CONTINUE_BTN_H: int = 44
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +55,16 @@ class DuelStageSpec:
     reward: int
 
 
+@dataclass(frozen=True, slots=True)
+class StageClearPopup:
+    """Overlay shown after defeating a stage opponent."""
+
+    cleared_stage: int
+    reward: int
+    total_score: int
+    is_final: bool
+
+
 def duel_stage(number: int) -> DuelStageSpec:
     """Build one of the escalating duel stages."""
     specs = {
@@ -56,7 +72,9 @@ def duel_stage(number: int) -> DuelStageSpec:
         2: DuelStageSpec(2, "bow", 2.2, 0.15, 40),
         3: DuelStageSpec(3, "trident", 1.9, 0.11, 60),
         4: DuelStageSpec(4, "broadsword", 1.6, 0.08, 85),
-        5: DuelStageSpec(5, "trident", 1.3, 0.05, 120),
+        5: DuelStageSpec(5, "axe", 1.45, 0.06, 110),
+        6: DuelStageSpec(6, "javelin", 1.25, 0.04, 140),
+        7: DuelStageSpec(7, "trident", 1.05, 0.03, 180),
     }
     return specs[number]
 
@@ -159,6 +177,7 @@ class VersusScene:
     def __init__(self) -> None:
         """Set up fonts, the player fighter, and the first stage."""
         self._font = pygame.font.SysFont("Arial", 22, bold=True)
+        self._title = pygame.font.SysFont("Arial", 34, bold=True)
         self._small = pygame.font.SysFont("Arial", 17)
         self._stage_no = 1
         self._score = 0
@@ -167,6 +186,7 @@ class VersusScene:
         self._space_prev = False
         self._cycle_prev = False
         self._prev_enemy_weapon = ""  # ensures each respawn uses a new weapon
+        self._clear_popup: Optional[StageClearPopup] = None
 
         self._player = DuelFighter(
             team="player",
@@ -189,6 +209,7 @@ class VersusScene:
         return weapon
 
     def _load_stage(self, number: int) -> None:
+        """Spawn the next opponent and reset the player for a fresh duel."""
         spec = duel_stage(number)
         # Each newly spawned enemy takes over the same pillar but wields a
         # different weapon from the one the previous enemy used.
@@ -203,6 +224,55 @@ class VersusScene:
         self._projectiles.clear()
         self._player.reset_health()
         self._banner_timer = 1.4
+        self._clear_popup = None
+        self._space_prev = True  # ignore held Space from dismissing the popup
+
+    def _open_stage_clear_popup(self) -> None:
+        """Award coins and show the stage-clear / final-win score window."""
+        reward = duel_stage(self._stage_no).reward
+        self._score += reward
+        self._projectiles.clear()
+        self._player.charging = False
+        self._clear_popup = StageClearPopup(
+            cleared_stage=self._stage_no,
+            reward=reward,
+            total_score=self._score,
+            is_final=self._stage_no >= _TOTAL_STAGES,
+        )
+
+    def _dismiss_stage_clear_popup(self) -> Optional[str]:
+        """Advance to the next stage, or finish the run on the final stage."""
+        popup = self._clear_popup
+        if popup is None:
+            return None
+        if popup.is_final:
+            self._result = "win"
+            self._clear_popup = None
+            return self._result
+        self._stage_no += 1
+        self._load_stage(self._stage_no)
+        return None
+
+    @staticmethod
+    def _popup_rect() -> pygame.Rect:
+        """Centered modal panel for the stage-clear overlay."""
+        return pygame.Rect(
+            (c.SCREEN_W - _POPUP_W) // 2,
+            (c.SCREEN_H - _POPUP_H) // 2,
+            _POPUP_W,
+            _POPUP_H,
+        )
+
+    @staticmethod
+    def _continue_button_rect() -> pygame.Rect:
+        """Continue button inside the stage-clear popup."""
+        panel = VersusScene._popup_rect()
+        return pygame.Rect(
+            panel.centerx - _CONTINUE_BTN_W // 2,
+            panel.bottom - 64,
+            _CONTINUE_BTN_W,
+            _CONTINUE_BTN_H,
+        )
 
     # -- input --------------------------------------------------------------
     @staticmethod
@@ -220,7 +290,19 @@ class VersusScene:
         return buttons
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Handle weapon cycling (E) and left-panel weapon selection (click)."""
+        """Handle weapon selection and stage-clear popup dismissal."""
+        if self._clear_popup is not None:
+            if event.type == pygame.KEYDOWN and event.key in (
+                pygame.K_SPACE,
+                pygame.K_RETURN,
+                pygame.K_KP_ENTER,
+            ):
+                self._dismiss_stage_clear_popup()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._continue_button_rect().collidepoint(event.pos):
+                    self._dismiss_stage_clear_popup()
+            return
+
         if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
             self._player.cycle_weapon()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -265,6 +347,10 @@ class VersusScene:
         if self._result is not None:
             return self._result
 
+        # Freeze combat while the stage-clear score window is open.
+        if self._clear_popup is not None:
+            return None
+
         self._handle_player_input(dt)
         self._player.update(dt)
         self._enemy.update(dt)
@@ -279,13 +365,9 @@ class VersusScene:
             self._result = "lose"
             return self._result
 
-        if self._enemy.dead:
-            self._score += duel_stage(self._stage_no).reward
-            if self._stage_no >= _TOTAL_STAGES:
-                self._result = "win"
-                return self._result
-            self._stage_no += 1
-            self._load_stage(self._stage_no)
+        if self._enemy.dead and self._clear_popup is None:
+            self._open_stage_clear_popup()
+            return None
 
         if self._banner_timer > 0.0:
             self._banner_timer = max(0.0, self._banner_timer - dt)
@@ -344,6 +426,8 @@ class VersusScene:
             proj.draw(surf)
 
         self._draw_hud(surf)
+        if self._clear_popup is not None:
+            self._draw_stage_clear_popup(surf, self._clear_popup)
 
     def _draw_background(self, surf: pygame.Surface) -> None:
         for y in range(c.SCREEN_H):
@@ -412,9 +496,59 @@ class VersusScene:
         )
         surf.blit(controls, (20, c.SCREEN_H - 28))
 
-        if self._banner_timer > 0.0:
+        if self._banner_timer > 0.0 and self._clear_popup is None:
             banner = self._font.render(f"STAGE {self._stage_no}", True, (20, 30, 20))
             surf.blit(banner, banner.get_rect(center=(c.SCREEN_W // 2, 40)))
+
+    def _draw_stage_clear_popup(self, surf: pygame.Surface, popup: StageClearPopup) -> None:
+        """Draw a modal window celebrating the stage win and showing scores."""
+        dim = pygame.Surface((c.SCREEN_W, c.SCREEN_H), pygame.SRCALPHA)
+        dim.fill((12, 18, 12, 150))
+        surf.blit(dim, (0, 0))
+
+        panel = self._popup_rect()
+        pygame.draw.rect(surf, (236, 244, 228), panel, border_radius=14)
+        pygame.draw.rect(surf, (42, 78, 46), panel, 3, border_radius=14)
+
+        if popup.is_final:
+            title = self._title.render("YOU WIN!", True, (28, 92, 40))
+            subtitle = self._font.render(
+                f"All {_TOTAL_STAGES} stages cleared", True, (50, 70, 50)
+            )
+            button_label = "Finish"
+        else:
+            title = self._title.render("STAGE CLEARED!", True, (28, 92, 40))
+            subtitle = self._font.render(
+                f"Stage {popup.cleared_stage} of {_TOTAL_STAGES}",
+                True,
+                (50, 70, 50),
+            )
+            button_label = "Next Stage"
+
+        surf.blit(title, title.get_rect(centerx=panel.centerx, y=panel.y + 28))
+        surf.blit(subtitle, subtitle.get_rect(centerx=panel.centerx, y=panel.y + 78))
+
+        reward_txt = self._font.render(
+            f"+{popup.reward} coins this stage", True, (140, 90, 20)
+        )
+        total_txt = self._font.render(
+            f"Total score: {popup.total_score}", True, (40, 55, 40)
+        )
+        surf.blit(reward_txt, reward_txt.get_rect(centerx=panel.centerx, y=panel.y + 118))
+        surf.blit(total_txt, total_txt.get_rect(centerx=panel.centerx, y=panel.y + 150))
+
+        btn = self._continue_button_rect()
+        hovered = btn.collidepoint(pygame.mouse.get_pos())
+        fill = (92, 176, 110) if hovered else (64, 148, 86)
+        pygame.draw.rect(surf, fill, btn, border_radius=8)
+        pygame.draw.rect(surf, (28, 70, 40), btn, 2, border_radius=8)
+        label = self._font.render(button_label, True, (248, 252, 246))
+        surf.blit(label, label.get_rect(center=btn.center))
+
+        hint = self._small.render(
+            "Press Space / Enter or click to continue", True, (70, 90, 70)
+        )
+        surf.blit(hint, hint.get_rect(centerx=panel.centerx, y=panel.bottom - 22))
 
     def _draw_weapon_panel(self, surf: pygame.Surface) -> None:
         """Draw the clickable weapon selector on the left of the screen."""
@@ -467,3 +601,8 @@ class VersusScene:
     def score(self) -> int:
         """Coins earned so far in this duel run."""
         return self._score
+
+    @property
+    def stage_count(self) -> int:
+        """Total number of duel stages in a full clear."""
+        return _TOTAL_STAGES

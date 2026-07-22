@@ -98,3 +98,33 @@ def test_reset_health_returns_to_pillar_center() -> None:
     assert fighter.x == fighter.anchor_x
     assert not fighter.falling
     assert fighter.ground_y == fighter.pillar_top_y
+
+
+def test_strafe_advances_walk_phase() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    before = fighter.walk_phase
+    fighter.apply_move_axis(1, 0.016)
+    fighter.update(0.05)
+    assert fighter.walk_phase > before
+
+
+def test_apply_hit_starts_flinch_animation() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter.apply_hit("torso", 0.2, _embed(fighter))
+    assert fighter.hit_flinch_timer > 0.0
+    assert fighter.hit_flinch_dir == -1.0
+
+
+def test_falling_advances_fall_phase() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter._begin_fall()
+    before = fighter.fall_phase
+    fighter.update(0.05)
+    assert fighter.fall_phase > before
+
+
+def test_cycle_weapon_triggers_swap_animation() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter.cycle_weapon()
+    assert fighter.weapon_key != "spear"
+    assert fighter.weapon_swap_timer > 0.0

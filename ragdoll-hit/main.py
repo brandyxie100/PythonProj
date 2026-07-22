@@ -67,7 +67,7 @@ class MenuScene:
         mouse = pygame.mouse.get_pos()
         buttons = (
             (self._start_rect, "Melee Stage Mode (Levels 1 -> 6)", (76, 126, 204), (98, 150, 235)),
-            (self._duel_rect, "Versus Projectile Duel (5 Stages)", (64, 158, 96), (86, 190, 120)),
+            (self._duel_rect, "Versus Projectile Duel (7 Stages)", (64, 158, 96), (86, 190, 120)),
         )
         for rect, label, base, hover in buttons:
             color = hover if rect.collidepoint(mouse) else base
@@ -184,7 +184,7 @@ class StageScene:
 
         cycle_pressed = bool(keys[pygame.K_e])
         if cycle_pressed and not self._edges.cycle_prev:
-            self._player.weapon.cycle()
+            self._player.cycle_weapon()
             self._player_weapon_key = self._player.weapon.weapon_key
         self._edges.cycle_prev = cycle_pressed
 

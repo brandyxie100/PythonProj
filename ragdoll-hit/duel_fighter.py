@@ -1,9 +1,9 @@
-"""Stationary pillar-top fighter for the versus projectile duel mode."""
+"""Pillar-top fighter for the versus projectile duel mode."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pygame
 
@@ -54,7 +54,7 @@ _SEGMENT_LAYOUT: tuple[tuple[str, float, bool, float, float], ...] = (
 
 
 class DuelFighter:
-    """A fixed-position stick figure that only aims and throws weapons."""
+    """Stick figure that aims, throws, and can strafe on a pillar top."""
 
     def __init__(
         self,
@@ -91,6 +91,13 @@ class DuelFighter:
         self.falling = False
         self.fall_vy = 0.0
 
+        # Cosmetic animation state (does not affect hitboxes beyond pose).
+        self.walk_phase = 0.0
+        self.hit_flinch_timer = 0.0
+        self.hit_flinch_dir = 0.0  # -1 recoils left, +1 recoils right
+        self.fall_phase = 0.0
+        self.weapon_swap_timer = 0.0
+
         self.segments: dict[str, BodySegment] = {
             name: BodySegment(name, weight, is_head, radius, damage_mult)
             for name, weight, is_head, radius, damage_mult in _SEGMENT_LAYOUT
@@ -98,22 +105,57 @@ class DuelFighter:
         self.embedded: list[EmbeddedWeapon] = []
 
     # -- pose geometry ------------------------------------------------------
+    def _pose_offsets(self) -> tuple[float, float, float]:
+        """Return (hip_bob_y, torso_lean_x, crouch_y) from animation state."""
+        bob = 0.0
+        lean = 0.0
+        crouch = 0.0
+
+        if self.falling:
+            bob = math.sin(self.fall_phase * 1.7) * 4.0
+            lean = math.sin(self.fall_phase) * 18.0
+            return bob, lean, crouch
+
+        if abs(self.vx) > 8.0:
+            bob = abs(math.sin(self.walk_phase)) * c.DUEL_WALK_BOB
+
+        if self.hit_flinch_timer > 0.0:
+            t = self.hit_flinch_timer / c.DUEL_HIT_FLINCH_TIME
+            lean += self.hit_flinch_dir * t * 14.0
+            crouch += t * 4.0
+
+        if self.charging:
+            charge_t = (self.power - c.THROW_POWER_MIN) / max(
+                1.0, c.THROW_POWER_MAX - c.THROW_POWER_MIN
+            )
+            crouch += charge_t * c.DUEL_CHARGE_CROUCH
+            lean -= self.facing * charge_t * 4.0
+
+        if self.weapon_swap_timer > 0.0:
+            swap_t = self.weapon_swap_timer / c.DUEL_WEAPON_SWAP_TIME
+            crouch -= swap_t * 3.0
+
+        return bob, lean, crouch
+
     @property
     def hip(self) -> Point:
-        """Hip joint position."""
-        return self.x, self.ground_y - c.LEG_LEN
+        """Hip joint position (includes walk bob / crouch / flinch)."""
+        bob, lean, crouch = self._pose_offsets()
+        return self.x + lean * 0.15, self.ground_y - c.LEG_LEN + bob + crouch
 
     @property
     def neck(self) -> Point:
         """Neck/top-of-torso position."""
         hx, hy = self.hip
-        return hx, hy - c.TORSO_LEN
+        _, lean, _ = self._pose_offsets()
+        return hx + lean * 0.35, hy - c.TORSO_LEN
 
     @property
     def shoulder(self) -> Point:
         """Shoulder pivot position (where the throwing arm rotates)."""
         hx, hy = self.hip
-        return hx, hy - c.TORSO_LEN * 0.82
+        _, lean, _ = self._pose_offsets()
+        return hx + lean * 0.28, hy - c.TORSO_LEN * 0.82
 
     @property
     def head_center(self) -> Point:
@@ -142,6 +184,10 @@ class DuelFighter:
     def _drawn_arm_direction(self) -> Point:
         """Facing-aware unit vector for the drawn throwing arm (with animation)."""
         elev = self.aim_elev + self._throw_arm_offset()
+        if self.weapon_swap_timer > 0.0:
+            elev += (self.weapon_swap_timer / c.DUEL_WEAPON_SWAP_TIME) * 0.55
+        if self.falling:
+            elev += math.sin(self.fall_phase * 1.4) * 0.9
         return self.facing * math.cos(elev), -math.sin(elev)
 
     def _drawn_hand(self) -> Point:
@@ -168,12 +214,52 @@ class DuelFighter:
         neck = self.neck
         shoulder = self.shoulder
         hand = self._drawn_hand()
-        # Off-arm rests across the body, slightly downward and backward.
-        off_dir = (-self.facing * 0.55, 0.83)
-        off_hand = (shoulder[0] + off_dir[0] * c.ARM_LEN, shoulder[1] + off_dir[1] * c.ARM_LEN)
-        # Wide stance like the reference image (one leg forward, one back).
-        front_foot = (hip[0] + self.facing * c.LEG_LEN * 0.62, self.ground_y)
-        back_foot = (hip[0] - self.facing * c.LEG_LEN * 0.5, self.ground_y)
+
+        # Off-arm rests across the body; swings opposite the walk / flail / flinch.
+        off_swing = 0.0
+        if abs(self.vx) > 8.0 and not self.falling:
+            off_swing = math.sin(self.walk_phase) * 0.28
+        if self.hit_flinch_timer > 0.0:
+            off_swing += self.hit_flinch_dir * (self.hit_flinch_timer / c.DUEL_HIT_FLINCH_TIME) * 0.45
+        if self.falling:
+            off_swing = math.sin(self.fall_phase * 1.3 + 1.0) * 1.1
+        off_dir = (
+            -self.facing * (0.55 + off_swing * 0.4),
+            0.83 + off_swing * 0.25,
+        )
+        off_len = math.hypot(off_dir[0], off_dir[1]) or 1.0
+        off_dir = (off_dir[0] / off_len, off_dir[1] / off_len)
+        off_hand = (
+            shoulder[0] + off_dir[0] * c.ARM_LEN,
+            shoulder[1] + off_dir[1] * c.ARM_LEN,
+        )
+
+        # Wide stance; stride while strafing, tumble while falling.
+        stride = 0.0
+        if abs(self.vx) > 8.0 and not self.falling:
+            stride = math.sin(self.walk_phase) * c.DUEL_WALK_STRIDE
+        if self.falling:
+            tumble = math.sin(self.fall_phase)
+            front_foot = (
+                hip[0] + self.facing * c.LEG_LEN * (0.35 + tumble * 0.55),
+                hip[1] + c.LEG_LEN * (0.55 + abs(tumble) * 0.35),
+            )
+            back_foot = (
+                hip[0] - self.facing * c.LEG_LEN * (0.35 - tumble * 0.45),
+                hip[1] + c.LEG_LEN * (0.45 + abs(math.cos(self.fall_phase)) * 0.4),
+            )
+        else:
+            front_foot = (
+                hip[0] + self.facing * c.LEG_LEN * (0.62 + stride * 0.35),
+                self.ground_y - abs(stride) * 2.0,
+            )
+            back_foot = (
+                hip[0] - self.facing * c.LEG_LEN * (0.5 - stride * 0.35),
+                self.ground_y - abs(math.sin(self.walk_phase + math.pi)) * 1.5
+                if abs(self.vx) > 8.0
+                else self.ground_y,
+            )
+
         return {
             "head": ("circle", self.head_center, self.segments["head"].radius),
             "torso": ("capsule", hip, neck, self.segments["torso"].radius),
@@ -205,9 +291,10 @@ class DuelFighter:
         self.aim_elev = max(c.AIM_MIN_ELEV, min(c.AIM_MAX_ELEV, self.aim_elev))
 
     def cycle_weapon(self) -> None:
-        """Switch to the next throw weapon."""
+        """Switch to the next throw weapon and play a brief raise animation."""
         idx = c.THROW_WEAPON_ORDER.index(self.weapon_key)
         self.weapon_key = c.THROW_WEAPON_ORDER[(idx + 1) % len(c.THROW_WEAPON_ORDER)]
+        self.weapon_swap_timer = c.DUEL_WEAPON_SWAP_TIME
 
     def start_charge(self) -> None:
         """Begin charging throw power if allowed."""
@@ -240,6 +327,10 @@ class DuelFighter:
             self.throw_cooldown = max(0.0, self.throw_cooldown - dt)
         if self.throw_anim_timer > 0.0:
             self.throw_anim_timer = max(0.0, self.throw_anim_timer - dt)
+        if self.hit_flinch_timer > 0.0:
+            self.hit_flinch_timer = max(0.0, self.hit_flinch_timer - dt)
+        if self.weapon_swap_timer > 0.0:
+            self.weapon_swap_timer = max(0.0, self.weapon_swap_timer - dt)
         if self.charging and not self.falling:
             self.power = min(c.THROW_POWER_MAX, self.power + c.THROW_CHARGE_RATE * dt)
 
@@ -247,12 +338,19 @@ class DuelFighter:
             return
 
         if self.falling:
+            self.fall_phase += c.DUEL_FALL_SPIN * dt
             self.fall_vy += c.DUEL_FALL_GRAVITY * dt
             self.ground_y += self.fall_vy * dt
             self.x += self.vx * dt
             if self.ground_y > c.SCREEN_H + 60.0:
                 self.dead = True
             return
+
+        if abs(self.vx) > 8.0:
+            self.walk_phase += dt * (6.0 + abs(self.vx) * 0.025)
+        else:
+            # Ease stride back toward a neutral idle stance.
+            self.walk_phase *= 0.9
 
         self.x += self.vx * dt
         if abs(self.x - self.anchor_x) > c.DUEL_PILLAR_HALF_WIDTH:
@@ -267,6 +365,7 @@ class DuelFighter:
         edge_sign = 1.0 if self.x >= self.anchor_x else -1.0
         self.vx = edge_sign * 80.0
         self.fall_vy = 40.0
+        self.fall_phase = 0.0
 
     # -- damage -------------------------------------------------------------
     def hit_test(self, point: Point) -> str | None:
@@ -294,6 +393,9 @@ class DuelFighter:
             return
         segment.add_damage(damage)
         self.embedded.append(embed)
+        # Recoil away from the thrower (opposite facing = toward impact side).
+        self.hit_flinch_timer = c.DUEL_HIT_FLINCH_TIME
+        self.hit_flinch_dir = -float(self.facing)
         self._check_death(segment)
 
     def body_red_ratio(self) -> float:
@@ -323,6 +425,11 @@ class DuelFighter:
         self.falling = False
         self.fall_vy = 0.0
         self.throw_anim_timer = 0.0
+        self.walk_phase = 0.0
+        self.hit_flinch_timer = 0.0
+        self.hit_flinch_dir = 0.0
+        self.fall_phase = 0.0
+        self.weapon_swap_timer = 0.0
 
     # -- rendering ----------------------------------------------------------
     def _segment_color(self, name: str) -> tuple[int, int, int]:
@@ -332,6 +439,14 @@ class DuelFighter:
         """
         redness = min(1.0, self.segments[name].redness * c.DAMAGE_COLOR_GAIN)
         base = c.DUEL_FIGHTER_BLACK
+        # Brief white flash on impact so the hit reads instantly.
+        if self.hit_flinch_timer > c.DUEL_HIT_FLINCH_TIME * 0.55:
+            flash = (self.hit_flinch_timer / c.DUEL_HIT_FLINCH_TIME - 0.55) / 0.45
+            return (
+                int(lerp(base[0], 255, flash * 0.85)),
+                int(lerp(base[1], 220, flash * 0.85)),
+                int(lerp(base[2], 220, flash * 0.85)),
+            )
         return (
             int(lerp(base[0], c.DAMAGE_RED[0], redness)),
             int(lerp(base[1], c.DAMAGE_RED[1], redness)),
@@ -344,6 +459,8 @@ class DuelFighter:
         left = int(self.x - 130)
         width = 260
         height = int(self.ground_y - top + 34)
+        if height < 40:
+            height = 120
         glow = pygame.Surface((width, height), pygame.SRCALPHA)
         wounded = False
         for name, shape in geometry.items():
@@ -383,9 +500,7 @@ class DuelFighter:
         # Legs
         for leg in ("leg_back", "leg_front"):
             _, a, b, _ = geometry[leg]
-            pygame.draw.line(
-                surf, self._segment_color(leg), _i(a), _i(b), 6
-            )
+            pygame.draw.line(surf, self._segment_color(leg), _i(a), _i(b), 6)
         # Torso
         _, hip, neck, _ = geometry["torso"]
         pygame.draw.line(surf, self._segment_color("torso"), _i(hip), _i(neck), 7)
@@ -410,6 +525,8 @@ class DuelFighter:
         Hidden briefly right after release so the weapon reads as thrown.
         """
         if self.throw_anim_timer > c.THROW_ANIM_TIME * 0.5:
+            return
+        if self.falling:
             return
         stats = c.THROW_WEAPONS[self.weapon_key]
         hand = self._drawn_hand()

@@ -47,8 +47,8 @@ duels. Two fighters stand atop pillars and lob weapons across a parabolic arc.
   head wound** or when **more than 80%** of its body has turned red.
 - Strafe with `A` / `D` to dodge incoming shots. Step too far past the pillar
   edge and you fall — that ends the duel as a loss.
-- Clear all **5 stages** of escalating AI accuracy to win; each cleared stage
-  awards coins.
+- Clear all **7 stages** of escalating AI accuracy to win; each cleared stage
+  opens a score popup, then advances when you continue.
 
 ### Duel Controls
 

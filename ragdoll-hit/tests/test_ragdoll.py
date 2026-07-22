@@ -57,3 +57,31 @@ def test_update_lands_on_floor_and_resets_jumps() -> None:
     fighter.update(arena, 1 / 30)
     assert fighter.y <= arena.floor_y - c.LEG_LEN + 1.0
     assert fighter.jumps_used == 0
+
+
+def test_walk_phase_advances_when_moving() -> None:
+    fighter = _player()
+    before = fighter.walk_phase
+    fighter.apply_move_axis(1, 0.05)
+    assert fighter.walk_phase > before
+
+
+def test_take_damage_leans_via_stun_offsets() -> None:
+    fighter = _player()
+    fighter.take_damage(10.0, 400.0, 200.0)
+    lean, _bob = fighter._body_offsets()
+    assert lean != 0.0
+
+
+def test_cycle_weapon_starts_swap_flash() -> None:
+    fighter = _player()
+    old = fighter.weapon.weapon_key
+    fighter.cycle_weapon()
+    assert fighter.weapon.weapon_key != old
+    assert fighter.weapon_swap_timer > 0.0
+
+
+def test_jump_sets_squash_stretch() -> None:
+    fighter = _player()
+    fighter.try_jump()
+    assert fighter.jump_squash > 0.0

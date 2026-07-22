@@ -41,6 +41,8 @@ class Stickman:
     leg_pose: float = 0.1
     walk_phase: float = 0.0
     stun_timer: float = 0.0  # remaining knockback stun (blocks full movement)
+    weapon_swap_timer: float = 0.0  # brief raise when cycling weapons
+    jump_squash: float = 0.0  # landing/takeoff squash-stretch amount
 
     def __post_init__(self) -> None:
         self.health = self.max_health
@@ -55,26 +57,51 @@ class Stickman:
         """True while recovering from a hit knockback."""
         return self.stun_timer > 0.0
 
+    def _body_offsets(self) -> tuple[float, float]:
+        """Return (lean_x, bob_y) applied to torso/head drawing."""
+        lean = 0.0
+        bob = 0.0
+
+        if self.is_stunned:
+            t = self.stun_timer / c.ATTACK_HIT_STUN
+            # Lean away from the hit (facing already flipped toward impact side).
+            lean = -self.facing * t * 10.0 * c.HIT_FLINCH_LEAN
+            bob = t * 3.0
+
+        if self.grounded and abs(self.vx) > 20.0 and not self.is_stunned:
+            bob -= abs(math.sin(self.walk_phase)) * c.WALK_BOB_AMP
+
+        if self.jump_squash > 0.0:
+            bob += self.jump_squash * 4.0
+
+        if self.weapon_swap_timer > 0.0:
+            bob -= (self.weapon_swap_timer / c.WEAPON_SWAP_FLASH) * 2.0
+
+        return lean, bob
+
     @property
     def shoulder(self) -> tuple[float, float]:
         """Approximate shoulder pivot in screen coordinates."""
-        return self.x, self.y - c.TORSO_LEN * 0.78
+        lean, bob = self._body_offsets()
+        return self.x + lean * 0.55, self.y - c.TORSO_LEN * 0.78 + bob
 
     @property
     def neck(self) -> tuple[float, float]:
         """Top of torso segment."""
-        return self.x, self.y - c.TORSO_LEN
+        lean, bob = self._body_offsets()
+        return self.x + lean * 0.7, self.y - c.TORSO_LEN + bob
 
     @property
     def torso_center(self) -> tuple[float, float]:
         """Torso hit center used by combat checks."""
-        return self.x, self.y - c.TORSO_LEN * 0.45
+        lean, bob = self._body_offsets()
+        return self.x + lean * 0.35, self.y - c.TORSO_LEN * 0.45 + bob
 
     @property
     def head_center(self) -> tuple[float, float]:
         """Head center used by combat checks."""
-        _, neck_y = self.neck
-        return self.x, neck_y - c.HEAD_R
+        neck_x, neck_y = self.neck
+        return neck_x, neck_y - c.HEAD_R
 
     def apply_move_axis(self, axis: int, dt: float) -> None:
         """Accelerate toward horizontal movement target.
@@ -126,6 +153,7 @@ class Stickman:
         self.vy = -c.JUMP_SPEED
         self.jumps_used += 1
         self.grounded = False
+        self.jump_squash = 1.0  # stretch on takeoff
         return True
 
     def try_attack(self) -> bool:
@@ -133,6 +161,11 @@ class Stickman:
         if self.is_stunned:
             return False
         return self.weapon.try_start_attack(self.arm_main_angle, self.facing)
+
+    def cycle_weapon(self) -> None:
+        """Switch weapon and play a short raise flash."""
+        self.weapon.cycle()
+        self.weapon_swap_timer = c.WEAPON_SWAP_FLASH
 
     def take_damage(self, amount: float, knockback_x: float, knockback_y: float) -> None:
         """Apply damage and launch the fighter with knockback.
@@ -155,7 +188,13 @@ class Stickman:
         self.weapon.update(dt)
         if self.stun_timer > 0.0:
             self.stun_timer = max(0.0, self.stun_timer - dt)
+        if self.weapon_swap_timer > 0.0:
+            self.weapon_swap_timer = max(0.0, self.weapon_swap_timer - dt)
+        if self.jump_squash > 0.0:
+            self.jump_squash = max(0.0, self.jump_squash - dt * 4.5)
+
         previous_foot_y = self.y + c.LEG_LEN
+        was_grounded = self.grounded
 
         self.vy = min(self.vy + c.GRAVITY * dt, c.MAX_FALL_SPEED)
         self.x += self.vx * dt
@@ -169,13 +208,14 @@ class Stickman:
         )
         if self.grounded:
             self.jumps_used = 0
+            if not was_grounded and self.vy >= 0.0:
+                # Squash on landing for a readable impact.
+                self.jump_squash = max(self.jump_squash, 0.85)
             if self.weapon.is_attacking:
                 self.vx *= 0.95
             elif self.is_stunned:
                 # Slide to a stop after landing from a hit.
                 self.vx *= 0.88
-            else:
-                pass
         else:
             self.vx *= 0.995
 
@@ -188,19 +228,63 @@ class Stickman:
 
     def _leg_points(self) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float], tuple[float, float]]:
         """Compute left/right leg segment endpoints for drawing."""
-        hip = (self.x, self.y)
+        lean, bob = self._body_offsets()
+        hip = (self.x + lean * 0.2, self.y + bob)
+
         stride = 0.28 * math.sin(self.walk_phase)
-        left_angle = math.pi / 2 + self.leg_pose + stride
-        right_angle = math.pi / 2 - self.leg_pose - stride
+        if not self.grounded:
+            # Tuck / splay in the air depending on rising vs falling.
+            tuck = c.AIR_LEG_TUCK
+            if self.vy < -80.0:
+                # Rising: legs gather under the body.
+                left_angle = math.pi / 2 + 0.35 + self.leg_pose * 0.3
+                right_angle = math.pi / 2 - 0.35 - self.leg_pose * 0.3
+            else:
+                # Falling / knockback: legs flail wider.
+                flail = math.sin(self.walk_phase * 0.5 + abs(self.vy) * 0.002) * 0.4
+                left_angle = math.pi / 2 + tuck + flail + self.leg_pose
+                right_angle = math.pi / 2 - tuck - flail - self.leg_pose
+            leg_len = c.LEG_LEN * (0.85 if self.vy < 0 else 1.0)
+        else:
+            left_angle = math.pi / 2 + self.leg_pose + stride
+            right_angle = math.pi / 2 - self.leg_pose - stride
+            leg_len = c.LEG_LEN * (1.0 - self.jump_squash * 0.12)
+
         left_foot = (
-            hip[0] + math.cos(left_angle) * c.LEG_LEN,
-            hip[1] + math.sin(left_angle) * c.LEG_LEN,
+            hip[0] + math.cos(left_angle) * leg_len,
+            hip[1] + math.sin(left_angle) * leg_len,
         )
         right_foot = (
-            hip[0] + math.cos(right_angle) * c.LEG_LEN,
-            hip[1] + math.sin(right_angle) * c.LEG_LEN,
+            hip[0] + math.cos(right_angle) * leg_len,
+            hip[1] + math.sin(right_angle) * leg_len,
         )
         return hip, left_foot, hip, right_foot
+
+    def _drawn_off_arm_angle(self) -> float:
+        """Off-arm angle with walk swing, hit flinch, and attack counterpose."""
+        angle = self.arm_off_angle
+        if self.grounded and abs(self.vx) > 20.0 and not self.weapon.is_attacking:
+            angle += math.sin(self.walk_phase) * c.WALK_ARM_SWING * self.facing
+        if self.weapon.is_attacking:
+            progress = 1.0 - self.weapon.attack_timer / max(0.001, self.weapon.stats.sweep_time)
+            # Kick the off-arm backward as the weapon sweeps through.
+            angle -= self.facing * math.sin(progress * math.pi) * c.ATTACK_OFF_ARM_KICK
+        if self.is_stunned:
+            t = self.stun_timer / c.ATTACK_HIT_STUN
+            angle += self.facing * t * 0.8
+        if self.weapon_swap_timer > 0.0:
+            angle -= (self.weapon_swap_timer / c.WEAPON_SWAP_FLASH) * 0.4
+        return angle
+
+    def _drawn_main_arm_angle(self) -> float:
+        """Primary arm angle including weapon swing and swap flash."""
+        angle = self.weapon.current_angle(self.arm_main_angle)
+        if self.weapon_swap_timer > 0.0 and not self.weapon.is_attacking:
+            angle -= (self.weapon_swap_timer / c.WEAPON_SWAP_FLASH) * 0.9 * self.facing
+        if self.is_stunned and not self.weapon.is_attacking:
+            t = self.stun_timer / c.ATTACK_HIT_STUN
+            angle += self.facing * t * 0.35
+        return angle
 
     def weapon_segment(self) -> tuple[tuple[float, float], tuple[float, float], float]:
         """Return attacking segment and weapon damage for hit checks."""
@@ -221,33 +305,46 @@ class Stickman:
             shoulder_y + math.sin(arm_angle) * c.ARM_LEN,
         )
 
+    def _draw_color(self) -> tuple[int, int, int]:
+        """Body color with a brief flash when freshly hit."""
+        if self.stun_timer > c.ATTACK_HIT_STUN * 0.65:
+            flash = (self.stun_timer / c.ATTACK_HIT_STUN - 0.65) / 0.35
+            return (
+                int(_clamp(self.color[0] + flash * 90, 0, 255)),
+                int(_clamp(self.color[1] + flash * 90, 0, 255)),
+                int(_clamp(self.color[2] + flash * 90, 0, 255)),
+            )
+        return self.color
+
     def draw(self, surf: pygame.Surface, is_player: bool = False) -> None:
         """Render stickman with head, torso, arms, legs, and weapon."""
+        color = self._draw_color()
+        lean, bob = self._body_offsets()
         neck_x, neck_y = self.neck
         shoulder_x, shoulder_y = self.shoulder
-        hip_x, hip_y = self.x, self.y
+        hip_x, hip_y = self.x + lean * 0.2, self.y + bob
 
         # Torso
         pygame.draw.line(
             surf,
-            self.color,
+            color,
             (int(hip_x), int(hip_y)),
             (int(neck_x), int(neck_y)),
             5,
         )
         # Head
         head_x, head_y = self.head_center
-        pygame.draw.circle(surf, self.color, (int(head_x), int(head_y)), int(c.HEAD_R), 0)
+        pygame.draw.circle(surf, color, (int(head_x), int(head_y)), int(c.HEAD_R), 0)
 
-        # Arms
-        main_angle = self.weapon.current_angle(self.arm_main_angle)
-        off_angle = self.arm_off_angle
+        # Arms (animated for walk / attack / hit / weapon swap)
+        main_angle = self._drawn_main_arm_angle()
+        off_angle = self._drawn_off_arm_angle()
         for angle, width in ((main_angle, 4), (off_angle, 3)):
             hx = shoulder_x + math.cos(angle) * c.ARM_LEN
             hy = shoulder_y + math.sin(angle) * c.ARM_LEN
             pygame.draw.line(
                 surf,
-                self.color,
+                color,
                 (int(shoulder_x), int(shoulder_y)),
                 (int(hx), int(hy)),
                 width,
@@ -257,14 +354,14 @@ class Stickman:
         hip_l, foot_l, hip_r, foot_r = self._leg_points()
         pygame.draw.line(
             surf,
-            self.color,
+            color,
             (int(hip_l[0]), int(hip_l[1])),
             (int(foot_l[0]), int(foot_l[1])),
             4,
         )
         pygame.draw.line(
             surf,
-            self.color,
+            color,
             (int(hip_r[0]), int(hip_r[1])),
             (int(foot_r[0]), int(foot_r[1])),
             4,
@@ -272,6 +369,14 @@ class Stickman:
 
         # Weapon (multi-part silhouette matching real-world structure)
         (wx1, wy1), (wx2, wy2), _ = self.weapon_segment()
+        # Use drawn main-arm angle so swap flash matches the held weapon.
+        if not self.weapon.is_attacking and self.weapon_swap_timer > 0.0:
+            shoulder_x, shoulder_y = self.shoulder
+            arm_angle = self._drawn_main_arm_angle()
+            wx1 = shoulder_x + math.cos(arm_angle) * c.ARM_LEN
+            wy1 = shoulder_y + math.sin(arm_angle) * c.ARM_LEN
+            wx2 = wx1 + math.cos(arm_angle) * self.weapon.stats.length
+            wy2 = wy1 + math.sin(arm_angle) * self.weapon.stats.length
         draw_weapon(
             surf,
             self.weapon.weapon_key,

@@ -44,6 +44,14 @@ ATTACK_HIT_KNOCKBACK_Y: float = 420.0
 ATTACK_HIT_STUN: float = 0.38  # seconds of reduced control after being hit
 ATTACK_HIT_STUN_MOVE_SCALE: float = 0.15  # movement authority while stunned
 
+# Stickman body animation (melee stage mode)
+WALK_BOB_AMP: float = 3.2  # vertical bounce while walking (pixels)
+WALK_ARM_SWING: float = 0.35  # off-arm counter-swing while walking (radians)
+HIT_FLINCH_LEAN: float = 0.55  # torso lean away from impact while stunned
+AIR_LEG_TUCK: float = 0.55  # how much legs tuck when airborne / falling
+ATTACK_OFF_ARM_KICK: float = 0.7  # off-arm recoil during a weapon swing
+WEAPON_SWAP_FLASH: float = 0.18  # brief raise when cycling weapons
+
 # Health and economy
 PLAYER_MAX_HEALTH: float = 140.0
 BASE_ENEMY_HEALTH: float = 70.0
@@ -165,6 +173,12 @@ THROW_POWER_MAX: float = 1360.0
 THROW_CHARGE_RATE: float = 820.0  # power units gained per second while charging
 THROW_COOLDOWN: float = 0.4  # seconds between throws
 THROW_ANIM_TIME: float = 0.34  # seconds of throwing-arm swing animation
+DUEL_HIT_FLINCH_TIME: float = 0.32  # recoil pose after a projectile lands
+DUEL_WALK_STRIDE: float = 0.48  # leg stride amplitude while strafing
+DUEL_WALK_BOB: float = 2.8  # vertical bob while strafing (pixels)
+DUEL_CHARGE_CROUCH: float = 6.0  # hip drop while charging a throw (pixels)
+DUEL_FALL_SPIN: float = 5.5  # limb tumble speed after leaving the pillar
+DUEL_WEAPON_SWAP_TIME: float = 0.2  # brief raise when cycling throw weapons
 
 # Pillar dodging (Versus Duel Mode)
 DUEL_MOVE_SPEED: float = 210.0  # horizontal dodge speed on the pillar top
