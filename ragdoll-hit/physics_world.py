@@ -69,10 +69,17 @@ def weapon_hit(attacker: Stickman, victim: Stickman) -> HitResult | None:
         return None
 
     attacker.weapon.mark_hit(victim.sid)
-    knock_sign = 1.0 if attacker.facing >= 0 else -1.0
+    # Push the victim away from the attacker (not just along facing).
+    dx = victim.x - attacker.x
+    if abs(dx) < 1.0:
+        knock_sign = 1.0 if attacker.facing >= 0 else -1.0
+    else:
+        knock_sign = 1.0 if dx > 0.0 else -1.0
+    # Heavier weapons shove a bit harder.
+    weight = 0.85 + min(0.45, attacker.weapon.stats.damage / 80.0)
     return HitResult(
         victim_id=victim.sid,
         damage=damage,
-        knockback_x=knock_sign * c.ATTACK_HIT_KNOCKBACK_X,
-        knockback_y=c.ATTACK_HIT_KNOCKBACK_Y,
+        knockback_x=knock_sign * c.ATTACK_HIT_KNOCKBACK_X * weight,
+        knockback_y=c.ATTACK_HIT_KNOCKBACK_Y * weight,
     )

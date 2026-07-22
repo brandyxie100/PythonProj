@@ -7,7 +7,8 @@ Single-player stickman battle game with:
 - Keyboard-controlled movement + limb control
 - 180-degree weapon attack swings
 - Consecutive jump system (ground jump + one mid-air jump)
-- Sequential stage mode (Levels 1 to 6)
+- Sequential stage mode (Levels 1 to 6) with multi-tier platforms, ramps,
+  floating pads, and hazards for jump combat
 - Increasing enemy strength and terrain complexity
 - Gold coin rewards per cleared level
 

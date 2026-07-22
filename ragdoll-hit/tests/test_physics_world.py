@@ -37,6 +37,8 @@ def test_weapon_hit_returns_damage_when_target_in_swing_path() -> None:
     hit = weapon_hit(attacker, victim)
     assert hit is not None
     assert hit.damage > 0
+    assert hit.knockback_x != 0.0
+    assert hit.knockback_y > 0.0
 
 
 def test_weapon_hit_is_one_per_target_per_swing() -> None:
@@ -48,3 +50,19 @@ def test_weapon_hit_is_one_per_target_per_swing() -> None:
     second = weapon_hit(attacker, victim)
     assert first is not None
     assert second is None
+
+
+def test_weapon_hit_knockback_pushes_victim_away() -> None:
+    attacker = _fighter(1, "player", 240.0, 500.0, "axe")
+    victim = _fighter(2, "enemy", 320.0, 500.0, "spear")
+    attacker.arm_main_angle = 0.0
+    attacker.try_attack()
+    attacker.weapon.attack_timer = attacker.weapon.stats.sweep_time * 0.45
+    seg_a, seg_b, _ = attacker.weapon_segment()
+    victim.x = (seg_a[0] + seg_b[0]) * 0.5
+    victim.y = (seg_a[1] + seg_b[1]) * 0.5 + c.TORSO_LEN * 0.45
+    hit = weapon_hit(attacker, victim)
+    assert hit is not None
+    # Knockback should push the victim away from the attacker.
+    assert hit.knockback_x * (victim.x - attacker.x) > 0.0
+    assert hit.knockback_y > 0.0

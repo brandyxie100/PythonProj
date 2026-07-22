@@ -35,6 +35,20 @@ def test_attack_starts_and_respects_cooldown() -> None:
     assert not fighter.try_attack()
 
 
+def test_take_damage_launches_and_stuns() -> None:
+    fighter = _player()
+    fighter.grounded = True
+    fighter.vx = 0.0
+    fighter.vy = 0.0
+    fighter.take_damage(10.0, 400.0, 350.0)
+    assert fighter.vx == 400.0
+    assert fighter.vy == -350.0
+    assert not fighter.grounded
+    assert fighter.is_stunned
+    assert not fighter.try_attack()
+    assert not fighter.try_jump()
+
+
 def test_update_lands_on_floor_and_resets_jumps() -> None:
     fighter = _player()
     arena = level_config(1).arena

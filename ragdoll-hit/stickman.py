@@ -40,6 +40,7 @@ class Stickman:
     arm_off_angle: float = -2.8
     leg_pose: float = 0.1
     walk_phase: float = 0.0
+    stun_timer: float = 0.0  # remaining knockback stun (blocks full movement)
 
     def __post_init__(self) -> None:
         self.health = self.max_health
@@ -48,6 +49,11 @@ class Stickman:
     def alive(self) -> bool:
         """Return True while fighter has health."""
         return self.health > 0.0
+
+    @property
+    def is_stunned(self) -> bool:
+        """True while recovering from a hit knockback."""
+        return self.stun_timer > 0.0
 
     @property
     def shoulder(self) -> tuple[float, float]:
@@ -71,21 +77,28 @@ class Stickman:
         return self.x, neck_y - c.HEAD_R
 
     def apply_move_axis(self, axis: int, dt: float) -> None:
-        """Accelerate toward horizontal movement target."""
+        """Accelerate toward horizontal movement target.
+
+        While stunned from a hit, movement authority is heavily reduced so
+        knockback is not cancelled by AI/player steering on the next frame.
+        """
         axis = int(_clamp(float(axis), -1.0, 1.0))
         target = axis * c.MOVE_SPEED * self.move_scale
         accel = c.MOVE_ACCEL * dt
         if self.weapon.is_attacking:
             target *= 0.72
+        if self.is_stunned:
+            target *= c.ATTACK_HIT_STUN_MOVE_SCALE
+            accel *= c.ATTACK_HIT_STUN_MOVE_SCALE
         if self.vx < target:
             self.vx = min(target, self.vx + accel)
         else:
             self.vx = max(target, self.vx - accel)
-        if axis == 0:
+        if axis == 0 and not self.is_stunned:
             self.vx *= c.MOVE_FRICTION
             if abs(self.vx) < 3.0:
                 self.vx = 0.0
-        else:
+        elif axis != 0:
             self.walk_phase += dt * (5.0 + abs(self.vx) * 0.02)
             self.facing = axis
 
@@ -106,6 +119,8 @@ class Stickman:
 
     def try_jump(self) -> bool:
         """Perform jump if allowed (includes one extra mid-air jump)."""
+        if self.is_stunned:
+            return False
         if self.jumps_used >= c.MAX_JUMPS:
             return False
         self.vy = -c.JUMP_SPEED
@@ -115,17 +130,31 @@ class Stickman:
 
     def try_attack(self) -> bool:
         """Start attack swing for current weapon."""
+        if self.is_stunned:
+            return False
         return self.weapon.try_start_attack(self.arm_main_angle, self.facing)
 
     def take_damage(self, amount: float, knockback_x: float, knockback_y: float) -> None:
-        """Apply damage and impulse knockback."""
+        """Apply damage and launch the fighter with knockback.
+
+        Sets the fighter airborne and starts a short stun so the impulse is
+        not immediately cancelled by movement input.
+        """
         self.health = max(0.0, self.health - amount)
         self.vx += knockback_x
-        self.vy -= knockback_y
+        # Absolute upward launch so grounded fighters leave the floor.
+        self.vy = min(self.vy, 0.0) - knockback_y
+        self.grounded = False
+        self.jumps_used = max(1, self.jumps_used)
+        self.stun_timer = max(self.stun_timer, c.ATTACK_HIT_STUN)
+        if abs(knockback_x) > 1.0:
+            self.facing = -1 if knockback_x > 0.0 else 1
 
     def update(self, arena: Arena, dt: float) -> None:
         """Advance fighter physics and environment interactions."""
         self.weapon.update(dt)
+        if self.stun_timer > 0.0:
+            self.stun_timer = max(0.0, self.stun_timer - dt)
         previous_foot_y = self.y + c.LEG_LEN
 
         self.vy = min(self.vy + c.GRAVITY * dt, c.MAX_FALL_SPEED)
@@ -140,9 +169,13 @@ class Stickman:
         )
         if self.grounded:
             self.jumps_used = 0
-            # Keep fighters planted after attack torque.
             if self.weapon.is_attacking:
                 self.vx *= 0.95
+            elif self.is_stunned:
+                # Slide to a stop after landing from a hit.
+                self.vx *= 0.88
+            else:
+                pass
         else:
             self.vx *= 0.995
 

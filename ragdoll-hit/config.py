@@ -38,8 +38,11 @@ MAX_LEG_POSE: float = 0.75
 ATTACK_SWEEP_RAD: float = 6.283185  # 360 degrees
 ATTACK_SWING_TIME: float = 0.2
 ATTACK_COOLDOWN: float = 0.2
-ATTACK_HIT_KNOCKBACK_X: float = 250.0
-ATTACK_HIT_KNOCKBACK_Y: float = 220.0
+# Hit knockback — strong enough to visibly launch fighters off platforms.
+ATTACK_HIT_KNOCKBACK_X: float = 480.0
+ATTACK_HIT_KNOCKBACK_Y: float = 420.0
+ATTACK_HIT_STUN: float = 0.38  # seconds of reduced control after being hit
+ATTACK_HIT_STUN_MOVE_SCALE: float = 0.15  # movement authority while stunned
 
 # Health and economy
 PLAYER_MAX_HEALTH: float = 140.0

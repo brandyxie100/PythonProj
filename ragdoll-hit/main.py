@@ -239,10 +239,12 @@ class StageScene:
         self._handle_player_input(dt)
         self._update_enemies(dt)
 
+        # Resolve hits before physics so knockback moves fighters this frame.
+        self._resolve_combat()
+
         self._player.update(self._level_data.arena, dt)
         for enemy in self._enemies:
             enemy.update(self._level_data.arena, dt)
-        self._resolve_combat()
 
         if self._player.health <= 0.0:
             self._result = "lose"
