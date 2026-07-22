@@ -45,12 +45,14 @@ duels. Two fighters stand atop pillars and lob weapons across a parabolic arc.
   body on impact.
 - Damaged body segments **glow red**. A fighter dies when it takes a **direct
   head wound** or when **more than 80%** of its body has turned red.
-- You cannot move — only aim and throw.
+- Strafe with `A` / `D` to dodge incoming shots. Step too far past the pillar
+  edge and you fall — that ends the duel as a loss.
 - Clear all **5 stages** of escalating AI accuracy to win; each cleared stage
   awards coins.
 
 ### Duel Controls
 
+- `A / D` or `Left / Right`: dodge left / right on the pillar (don't fall off!)
 - `W / S` or `Up / Down`: raise / lower aim
 - `Space` (hold): charge throw power; release to throw (the stickman winds up
   and throws)

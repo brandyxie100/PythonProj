@@ -61,3 +61,40 @@ def test_reset_health_clears_damage() -> None:
     assert fighter.body_red_ratio() == 0.0
     assert not fighter.embedded
     assert not fighter.dead
+
+
+def test_strafe_moves_on_pillar() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter.apply_move_axis(1, 0.016)
+    fighter.update(0.1)
+    assert fighter.x > fighter.anchor_x
+    assert not fighter.falling
+
+
+def test_stepping_past_pillar_edge_starts_fall() -> None:
+    import config as c
+
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter.x = fighter.anchor_x + c.DUEL_PILLAR_HALF_WIDTH + 1.0
+    fighter.update(0.016)
+    assert fighter.falling
+
+
+def test_falling_off_screen_is_fatal() -> None:
+    import config as c
+
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter._begin_fall()
+    fighter.ground_y = c.SCREEN_H + 100.0
+    fighter.update(0.016)
+    assert fighter.dead
+
+
+def test_reset_health_returns_to_pillar_center() -> None:
+    fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    fighter.x = 380.0
+    fighter._begin_fall()
+    fighter.reset_health()
+    assert fighter.x == fighter.anchor_x
+    assert not fighter.falling
+    assert fighter.ground_y == fighter.pillar_top_y

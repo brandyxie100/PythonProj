@@ -1,9 +1,10 @@
 """Versus stage-clearing projectile-duel mode.
 
 Two stick figures stand atop pillars and lob weapons along parabolic arcs.
-The player only aims and throws (no movement). Hits embed weapons and turn the
-struck body segment red; a fighter dies when a head is hit or more than 80% of
-the body has turned red. Clear each stage's opponent to advance.
+The player can strafe left/right to dodge, but stepping past the pillar edge
+causes a fatal fall. Hits embed weapons and turn the struck body segment red;
+a fighter dies when a head is hit or when more than 80% of the body has turned
+red. Clear each stage's opponent to advance.
 """
 
 from __future__ import annotations
@@ -230,6 +231,11 @@ class VersusScene:
 
     def _handle_player_input(self, dt: float) -> None:
         keys = pygame.key.get_pressed()
+        move_axis = int(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - int(
+            keys[pygame.K_a] or keys[pygame.K_LEFT]
+        )
+        self._player.apply_move_axis(move_axis, dt)
+
         aim_dir = int(keys[pygame.K_w] or keys[pygame.K_UP]) - int(
             keys[pygame.K_s] or keys[pygame.K_DOWN]
         )
@@ -399,7 +405,8 @@ class VersusScene:
         self._draw_weapon_panel(surf)
 
         controls = self._small.render(
-            "W/S or Up/Down: aim  |  Hold Space: throw  |  E or click left panel: weapon",
+            "A/D dodge  |  W/S aim  |  Hold Space: throw  |  E or click panel: weapon"
+            "  |  Don't fall off!",
             True,
             (32, 44, 32),
         )

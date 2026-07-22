@@ -74,8 +74,10 @@ class DuelFighter:
             weapon_key: Initial throw-weapon key.
         """
         self.team = team
+        self.anchor_x = x  # pillar center — stepping too far from this causes a fall
         self.x = x
         self.ground_y = ground_y
+        self.pillar_top_y = ground_y
         self.facing = facing
         self.weapon_key = weapon_key
 
@@ -85,6 +87,9 @@ class DuelFighter:
         self.throw_cooldown = 0.0
         self.throw_anim_timer = 0.0  # counts down during the throw swing
         self.dead = False
+        self.vx = 0.0
+        self.falling = False
+        self.fall_vy = 0.0
 
         self.segments: dict[str, BodySegment] = {
             name: BodySegment(name, weight, is_head, radius, damage_mult)
@@ -179,8 +184,23 @@ class DuelFighter:
         }
 
     # -- control ------------------------------------------------------------
+    def apply_move_axis(self, axis: int, dt: float) -> None:
+        """Strafe left/right on the pillar top to dodge projectiles.
+
+        Moving past the pillar edge starts a fall that ends the match for that
+        fighter.
+        """
+        del dt  # velocity is set directly each frame from held input
+        if self.dead or self.falling:
+            self.vx = 0.0
+            return
+        axis = max(-1, min(1, int(axis)))
+        self.vx = axis * c.DUEL_MOVE_SPEED
+
     def rotate_aim(self, direction: int, dt: float) -> None:
         """Adjust aim elevation; positive direction aims higher."""
+        if self.falling or self.dead:
+            return
         self.aim_elev += direction * c.AIM_ROTATE_SPEED * dt
         self.aim_elev = max(c.AIM_MIN_ELEV, min(c.AIM_MAX_ELEV, self.aim_elev))
 
@@ -191,7 +211,7 @@ class DuelFighter:
 
     def start_charge(self) -> None:
         """Begin charging throw power if allowed."""
-        if self.throw_cooldown <= 0.0 and not self.dead:
+        if self.throw_cooldown <= 0.0 and not self.dead and not self.falling:
             self.charging = True
             self.power = c.THROW_POWER_MIN
 
@@ -204,7 +224,7 @@ class DuelFighter:
         if not self.charging:
             return None
         self.charging = False
-        if self.throw_cooldown > 0.0 or self.dead:
+        if self.throw_cooldown > 0.0 or self.dead or self.falling:
             return None
         self.throw_cooldown = c.THROW_COOLDOWN
         self.start_throw_animation()
@@ -212,20 +232,47 @@ class DuelFighter:
 
     def can_throw(self) -> bool:
         """Whether a new throw may start this frame."""
-        return self.throw_cooldown <= 0.0 and not self.dead
+        return self.throw_cooldown <= 0.0 and not self.dead and not self.falling
 
     def update(self, dt: float) -> None:
-        """Advance charge, cooldown, and throw-animation timers."""
+        """Advance movement, fall physics, charge, and animation timers."""
         if self.throw_cooldown > 0.0:
             self.throw_cooldown = max(0.0, self.throw_cooldown - dt)
         if self.throw_anim_timer > 0.0:
             self.throw_anim_timer = max(0.0, self.throw_anim_timer - dt)
-        if self.charging:
+        if self.charging and not self.falling:
             self.power = min(c.THROW_POWER_MAX, self.power + c.THROW_CHARGE_RATE * dt)
+
+        if self.dead:
+            return
+
+        if self.falling:
+            self.fall_vy += c.DUEL_FALL_GRAVITY * dt
+            self.ground_y += self.fall_vy * dt
+            self.x += self.vx * dt
+            if self.ground_y > c.SCREEN_H + 60.0:
+                self.dead = True
+            return
+
+        self.x += self.vx * dt
+        if abs(self.x - self.anchor_x) > c.DUEL_PILLAR_HALF_WIDTH:
+            self._begin_fall()
+
+    def _begin_fall(self) -> None:
+        """Start falling off the pillar (fatal once off-screen)."""
+        if self.falling or self.dead:
+            return
+        self.falling = True
+        self.charging = False
+        edge_sign = 1.0 if self.x >= self.anchor_x else -1.0
+        self.vx = edge_sign * 80.0
+        self.fall_vy = 40.0
 
     # -- damage -------------------------------------------------------------
     def hit_test(self, point: Point) -> str | None:
         """Return the name of the first body segment containing ``point``."""
+        if self.falling:
+            return None
         geometry = self._geometry()
         for name, shape in geometry.items():
             if shape[0] == "circle":
@@ -240,6 +287,8 @@ class DuelFighter:
 
     def apply_hit(self, segment_name: str, damage: float, embed: EmbeddedWeapon) -> None:
         """Apply projectile damage to a segment and embed the weapon."""
+        if self.falling or self.dead:
+            return
         segment = self.segments.get(segment_name)
         if segment is None:
             return
@@ -260,7 +309,7 @@ class DuelFighter:
             self.dead = True
 
     def reset_health(self) -> None:
-        """Clear all damage and embedded weapons for a fresh duel."""
+        """Clear damage and reset stance to the pillar center."""
         for segment in self.segments.values():
             segment.redness = 0.0
         self.embedded.clear()
@@ -268,6 +317,12 @@ class DuelFighter:
         self.throw_cooldown = 0.0
         self.charging = False
         self.power = c.THROW_POWER_MIN
+        self.x = self.anchor_x
+        self.ground_y = self.pillar_top_y
+        self.vx = 0.0
+        self.falling = False
+        self.fall_vy = 0.0
+        self.throw_anim_timer = 0.0
 
     # -- rendering ----------------------------------------------------------
     def _segment_color(self, name: str) -> tuple[int, int, int]:

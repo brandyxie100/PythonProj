@@ -166,6 +166,11 @@ THROW_CHARGE_RATE: float = 820.0  # power units gained per second while charging
 THROW_COOLDOWN: float = 0.4  # seconds between throws
 THROW_ANIM_TIME: float = 0.34  # seconds of throwing-arm swing animation
 
+# Pillar dodging (Versus Duel Mode)
+DUEL_MOVE_SPEED: float = 210.0  # horizontal dodge speed on the pillar top
+DUEL_PILLAR_HALF_WIDTH: float = 48.0  # safe standing range from pillar center
+DUEL_FALL_GRAVITY: float = 1600.0  # gravity after stepping off the pillar
+
 # Aiming (elevation above horizontal, radians; positive points upward)
 AIM_MIN_ELEV: float = -0.1
 AIM_MAX_ELEV: float = 1.48
