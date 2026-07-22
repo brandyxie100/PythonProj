@@ -1,176 +1,183 @@
-"""Ragdoll Hit — shared constants and weapon definitions.
-
-All tuneable gameplay values live here so nothing is hard-coded elsewhere.
-"""
+"""Shared configuration for the stickman battle game."""
 
 from __future__ import annotations
 
-from typing import TypedDict
+from dataclasses import dataclass
 
-# ---------------------------------------------------------------------------
 # Display
-# ---------------------------------------------------------------------------
+SCREEN_W: int = 1180
+SCREEN_H: int = 680
 FPS: int = 60
-SCREEN_W: int = 1024
-SCREEN_H: int = 600
-TITLE: str = "Ragdoll Hit"
+TITLE: str = "Ragdoll Hit - Stickman Stage Mode"
 
-# ---------------------------------------------------------------------------
-# Physics (pymunk space uses Y-up; draw flips to pygame Y-down)
-# ---------------------------------------------------------------------------
-GRAVITY: tuple[float, float] = (0.0, -1200.0)
-PHYSICS_DT: float = 1.0 / FPS
-PHYSICS_SUBSTEPS: int = 3
+# Physics
+GRAVITY: float = 1900.0
+MOVE_SPEED: float = 260.0
+MOVE_ACCEL: float = 1700.0
+MOVE_FRICTION: float = 0.86
+JUMP_SPEED: float = 760.0 
+MAX_FALL_SPEED: float = 1300.0
+MAX_JUMPS: int = 2  # normal jump + one extra mid-air jump
 
-# Collision type IDs
-COL_TERRAIN: int = 1
-COL_BODY: int = 2
-COL_WEAPON: int = 3
+# Stickman geometry
+HEAD_R: float = 11.0
+TORSO_LEN: float = 46.0
+ARM_LEN: float = 34.0
+LEG_LEN: float = 38.0
+BODY_RADIUS: float = 15.0
+HEAD_OFFSET_Y: float = TORSO_LEN + HEAD_R + 2.0
 
-# ---------------------------------------------------------------------------
-# Ragdoll anatomy (pixels, pymunk units == screen pixels when drawn)
-# ---------------------------------------------------------------------------
-HEAD_R: float = 14.0
-TORSO_W: float = 22.0
-TORSO_H: float = 36.0
-UPPER_LIMB: float = 22.0
-LOWER_LIMB: float = 20.0
-LIMB_THICK: float = 8.0
+# Limb controls
+ARM_ROTATE_SPEED: float = 4.3  # radians per second
+LEG_ROTATE_SPEED: float = 3.0
+MIN_ARM_ANGLE: float = -3.14
+MAX_ARM_ANGLE: float = 3.14
+MAX_LEG_POSE: float = 0.75
 
-PART_MASS_HEAD: float = 1.2
-PART_MASS_TORSO: float = 4.0
-PART_MASS_LIMB: float = 1.0
+# Attack controls
+ATTACK_SWEEP_RAD: float = 6.283185  # 360 degrees
+ATTACK_SWING_TIME: float = 0.2
+ATTACK_COOLDOWN: float = 0.2
+ATTACK_HIT_KNOCKBACK_X: float = 250.0
+ATTACK_HIT_KNOCKBACK_Y: float = 220.0
 
-MAX_HEALTH: float = 100.0
-STAGGER_DAMAGE_THRESHOLD: float = 8.0
-STAGGER_DURATION_F: int = 45
-GET_UP_DURATION_F: int = 30
+# Health and economy
+PLAYER_MAX_HEALTH: float = 140.0
+BASE_ENEMY_HEALTH: float = 70.0
+COIN_REWARD_PER_LEVEL: tuple[int, ...] = (30, 45, 65, 90, 120, 160)
 
-# Locomotion is velocity-driven (arcade-style) rather than force-driven:
-# once legs are held rigidly upright for a stable stance, ground friction
-# (below) comfortably exceeds any reasonable push force, so a force-based
-# walk would never overcome static friction and the character would never
-# move. Setting velocity directly on every body part each frame sidesteps
-# that tug-of-war and keeps the whole rigid stance moving as one unit.
-MOVE_SPEED: float = 190.0
-# Max horizontal velocity change per frame when ramping into/out of a walk.
-# Smoothing avoids a jolt when leg friction snaps back to standing values.
-MOVE_ACCEL: float = 45.0
-JUMP_IMPULSE: float = 420.0
-# Frames after a jump before another is allowed (prevents hold-key / AI spam).
-JUMP_COOLDOWN_F: int = 28
-# Feet must be within this many pymunk units of the ground surface to count as grounded.
-GROUNDED_TOLERANCE: float = 12.0
-# Cap upward speed so physics glitches cannot launch the ragdoll skyward.
-MAX_UPWARD_VELOCITY: float = 520.0
-GROUND_FRICTION: float = 0.9
-# Lower friction on leg/foot shapes while walking so imposed horizontal
-# velocity does not fight high ground friction and topple the ragdoll.
-MOVE_GROUND_FRICTION: float = 0.2
-GROUND_ELASTICITY: float = 0.05
-
-# Torso stabilizer (keeps ragdoll upright until staggered)
-STABILIZER_STIFFNESS: float = 15000.0
-STABILIZER_DAMPING: float = 1500.0
-
-# Leg posture springs (hold hips/knees near a standing pose; removed on
-# stagger alongside the torso stabilizer so a hit causes a full-body flop).
-HIP_STIFFNESS: float = 25000.0
-HIP_DAMPING: float = 1500.0
-KNEE_STIFFNESS: float = 25000.0
-KNEE_DAMPING: float = 900.0
-
-# Standing on two legs is an unstable inverted-pendulum problem that a pure
-# spring can only dampen, not solve outright. A hard rotary limit alongside
-# each spring caps how far the torso/thighs can tilt from upright during
-# normal play (arcade-friendly, matches the reference game's stable stance),
-# while stagger still removes these limits entirely for a full ragdoll flop.
-TORSO_TILT_LIMIT: float = 0.35  # ~20 degrees
-HIP_TILT_LIMIT: float = 0.5  # ~29 degrees
-
-# Joint limits (radians)
-ELBOW_MIN: float = -2.4
-ELBOW_MAX: float = 0.2
-KNEE_MIN: float = -0.2
-KNEE_MAX: float = 2.2
-
-# ---------------------------------------------------------------------------
-# Damage
-# ---------------------------------------------------------------------------
-MIN_IMPACT_SPEED: float = 80.0
-DAMAGE_VELOCITY_SCALE: float = 0.08
-
-# ---------------------------------------------------------------------------
-# AI
-# ---------------------------------------------------------------------------
-AI_APPROACH_RANGE: float = 280.0
-AI_ATTACK_RANGE: float = 95.0
-AI_ATTACK_COOLDOWN_F: int = 50
-AI_RECOVER_F: int = 35
-# Minimum frames between AI jump attempts (approach only, still needs grounded check).
-AI_JUMP_COOLDOWN_F: int = 90
-
-# Damp residual spin on every part while planted and idle (arcade stance lock).
-IDLE_ANGULAR_DAMPING: float = 0.75
-
-# ---------------------------------------------------------------------------
-# Terrain (pygame Y coordinates)
-# ---------------------------------------------------------------------------
-GROUND_Y: int = 540
-PLATFORM_RECT: tuple[int, int, int, int] = (380, 420, 220, 24)
-TERRAIN_THICKNESS: float = 8.0  # pymunk Segment radius used for ground/platform shapes
-
-# Distance from the torso center down to the bottom of the foot capsule
-# (hip drop + upper leg + lower leg + foot radius), used to spawn ragdolls
-# standing exactly on the ground surface instead of embedded inside it.
-_STANDING_LEG_DROP: float = TORSO_H * 0.35 + UPPER_LIMB + LOWER_LIMB + LIMB_THICK
-SPAWN_Y: float = GROUND_Y - TERRAIN_THICKNESS - _STANDING_LEG_DROP
-
-# Spawn positions (pygame x, pygame y)
-PLAYER_SPAWN: tuple[float, float] = (180.0, SPAWN_Y)
-ENEMY_SPAWN: tuple[float, float] = (820.0, SPAWN_Y)
-
-# ---------------------------------------------------------------------------
-# Colours
-# ---------------------------------------------------------------------------
-BG_TOP: tuple[int, int, int] = (18, 18, 22)
-BG_BOT: tuple[int, int, int] = (32, 32, 38)
-PLAYER_COL: tuple[int, int, int] = (240, 240, 245)
-ENEMY_COL: tuple[int, int, int] = (220, 80, 80)
-JOINT_COL: tuple[int, int, int] = (200, 200, 210)
-GROUND_COL: tuple[int, int, int] = (70, 72, 78)
-PLATFORM_COL: tuple[int, int, int] = (90, 92, 100)
-PLATFORM_EDGE: tuple[int, int, int] = (160, 165, 175)
-HEALTH_BG: tuple[int, int, int] = (40, 40, 45)
-HEALTH_PLAYER: tuple[int, int, int] = (60, 200, 90)
-HEALTH_ENEMY: tuple[int, int, int] = (220, 60, 60)
-UI_TEXT: tuple[int, int, int] = (235, 235, 240)
+# Colors
+BG_TOP: tuple[int, int, int] = (24, 26, 33)
+BG_BOTTOM: tuple[int, int, int] = (40, 44, 58)
+GROUND_COLOR: tuple[int, int, int] = (66, 73, 84)
+PLATFORM_COLOR: tuple[int, int, int] = (88, 100, 120)
+RAMP_COLOR: tuple[int, int, int] = (120, 132, 156)
+OBSTACLE_COLOR: tuple[int, int, int] = (190, 70, 70)
+UI_TEXT: tuple[int, int, int] = (235, 238, 248)
+UI_FAINT: tuple[int, int, int] = (178, 183, 196)
+PLAYER_BLUE: tuple[int, int, int] = (76, 155, 255)
+ENEMY_RED: tuple[int, int, int] = (238, 82, 82)
+ENEMY_YELLOW: tuple[int, int, int] = (240, 212, 90)
+ENEMY_BLUE: tuple[int, int, int] = (96, 188, 255)
+WHITE: tuple[int, int, int] = (248, 248, 250)
 
 
-class WeaponStats(TypedDict):
-    """Stats for a weapon type."""
+@dataclass(frozen=True, slots=True)
+class WeaponStats:
+    """Stats describing weapon handling and damage."""
 
-    label: str
+    name: str
     length: float
-    mass: float
-    thickness: float
-    damage_mult: float
-    swing_speed: float
-    swing_duration_f: int
-    colour: tuple[int, int, int]
+    thickness: int
+    damage: float
+    cooldown: float
+    sweep_time: float
+    color: tuple[int, int, int]
 
 
-WEAPON_DATA: dict[str, WeaponStats] = {
-    "staff": {
-        "label": "Staff",
-        "length": 72.0,
-        "mass": 1.8,
-        "thickness": 6.0,
-        "damage_mult": 1.0,
-        "swing_speed": 9.0,
-        "swing_duration_f": 18,
-        "colour": (220, 180, 60),
-    },
+WEAPONS: dict[str, WeaponStats] = {
+    "sword": WeaponStats(
+        name="Sword",
+        length=56.0,
+        thickness=4,
+        damage=18.0,
+        cooldown=0.2,
+        sweep_time=0.2,
+        color=(210, 220, 236),
+    ),
+    "pickaxe": WeaponStats(
+        name="Pickaxe",
+        length=50.0,
+        thickness=6,
+        damage=23.0,
+        cooldown=0.33,
+        sweep_time=0.26,
+        color=(205, 165, 110),
+    ),
+    "stick": WeaponStats(
+        name="Stick",
+        length=62.0,
+        thickness=5,
+        damage=14.0,
+        cooldown=0.16,
+        sweep_time=0.2,
+        color=(176, 134, 84),
+    ),
+    "hammer": WeaponStats(
+        name="Hammer",
+        length=54.0,
+        thickness=8,
+        damage=28.0,
+        cooldown=0.38,
+        sweep_time=0.3,
+        color=(160, 167, 178),
+    ),
 }
 
-DEFAULT_WEAPON: str = "staff"
+WEAPON_ORDER: tuple[str, ...] = ("sword", "pickaxe", "stick", "hammer")
+
+
+# ---------------------------------------------------------------------------
+# Versus projectile-duel mode
+# ---------------------------------------------------------------------------
+# Bright silhouette style referencing the throwing/archery stick-figure image.
+DUEL_BG_TOP: tuple[int, int, int] = (152, 228, 122)
+DUEL_BG_BOTTOM: tuple[int, int, int] = (112, 194, 94)
+DUEL_FIGHTER_BLACK: tuple[int, int, int] = (24, 26, 28)
+DUEL_PILLAR_COLOR: tuple[int, int, int] = (58, 64, 72)
+DUEL_PILLAR_TOP: tuple[int, int, int] = (86, 94, 104)
+DAMAGE_RED: tuple[int, int, int] = (240, 38, 30)
+DAMAGE_GLOW: tuple[int, int, int] = (255, 60, 45)  # halo drawn behind wounds
+DAMAGE_COLOR_GAIN: float = 1.5  # how fast a segment saturates to red visually
+
+# Projectile flight
+PROJECTILE_GRAVITY: float = 820.0
+THROW_POWER_MIN: float = 620.0
+THROW_POWER_MAX: float = 1360.0
+THROW_CHARGE_RATE: float = 820.0  # power units gained per second while charging
+THROW_COOLDOWN: float = 0.4  # seconds between throws
+THROW_ANIM_TIME: float = 0.34  # seconds of throwing-arm swing animation
+
+# Aiming (elevation above horizontal, radians; positive points upward)
+AIM_MIN_ELEV: float = -0.1
+AIM_MAX_ELEV: float = 1.48
+AIM_ROTATE_SPEED: float = 1.15
+
+# Body-segment damage / death rules
+BODY_RED_DEATH_RATIO: float = 0.8  # >80% weighted redness triggers death
+HEAD_LETHAL: bool = True  # any direct head wound is fatal
+
+# Per-segment damage multipliers (limbs are the 1x baseline).
+LIMB_DAMAGE_MULT: float = 1.0
+TORSO_DAMAGE_MULT: float = 2.0  # torso takes double limb damage
+HEAD_DAMAGE_MULT: float = 3.0  # head takes triple limb damage
+
+
+@dataclass(frozen=True, slots=True)
+class ThrowWeaponStats:
+    """Stats for a thrown/launched projectile weapon."""
+
+    name: str
+    damage: float  # redness (0..1) added to the struck body segment
+    length: float  # drawn length in pixels
+    thickness: int
+    speed_scale: float  # multiplies launch power
+    color: tuple[int, int, int]
+
+
+THROW_WEAPONS: dict[str, ThrowWeaponStats] = {
+    "spear": ThrowWeaponStats("Spear", 0.34, 60.0, 4, 1.16, (208, 214, 226)),
+    "trident": ThrowWeaponStats("Trident", 0.44, 54.0, 6, 1.0, (150, 210, 225)),
+    "broadsword": ThrowWeaponStats("Broadsword", 0.52, 52.0, 7, 0.9, (228, 228, 238)),
+    "bow": ThrowWeaponStats("Bow", 0.3, 48.0, 3, 1.34, (212, 180, 120)),
+    "axe": ThrowWeaponStats("Axe", 0.5, 46.0, 8, 0.88, (176, 182, 192)),
+    "javelin": ThrowWeaponStats("Javelin", 0.32, 66.0, 3, 1.28, (198, 204, 220)),
+}
+THROW_WEAPON_ORDER: tuple[str, ...] = (
+    "spear",
+    "trident",
+    "broadsword",
+    "bow",
+    "axe",
+    "javelin",
+)

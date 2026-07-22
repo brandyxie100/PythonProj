@@ -1,40 +1,45 @@
-"""Tests for ragdoll anatomy and damage handling."""
+"""Tests for stickman movement and attack controls."""
 
 from __future__ import annotations
 
-import pymunk
-import pytest
-
 import config as c
-from ragdoll import Ragdoll
+from stickman import Stickman
+from terrain import level_config
+from weapon import Weapon
 
 
-@pytest.fixture
-def space() -> pymunk.Space:
-    """Empty pymunk space for ragdoll construction."""
-    return pymunk.Space()
+def _player() -> Stickman:
+    return Stickman(
+        sid=1,
+        team="player",
+        x=220.0,
+        y=500.0,
+        color=c.PLAYER_BLUE,
+        weapon=Weapon("sword"),
+        max_health=120.0,
+        move_scale=1.0,
+        attack_scale=1.0,
+    )
 
 
-def test_ragdoll_builds_ten_body_parts(space: pymunk.Space) -> None:
-    """Ragdoll should create all planned anatomical segments."""
-    doll = Ragdoll(space, 200, 400, team="player", colour=c.PLAYER_COL)
-    assert len(doll.bodies) == len(Ragdoll.PART_NAMES)
-    assert set(doll.bodies.keys()) == set(Ragdoll.PART_NAMES)
+def test_double_jump_limit() -> None:
+    fighter = _player()
+    assert fighter.try_jump()
+    assert fighter.try_jump()
+    assert not fighter.try_jump()
 
 
-def test_take_hit_reduces_health_and_staggers(space: pymunk.Space) -> None:
-    """Large hits should subtract health and enter stagger state."""
-    doll = Ragdoll(space, 200, 400, team="enemy", colour=c.ENEMY_COL)
-    before = doll.health
-    doll.take_hit("torso", c.STAGGER_DAMAGE_THRESHOLD, pymunk.Vec2d(100, 0))
-    assert doll.health < before
-    assert doll.stagger_frames > 0
+def test_attack_starts_and_respects_cooldown() -> None:
+    fighter = _player()
+    assert fighter.try_attack()
+    assert not fighter.try_attack()
 
 
-def test_take_hit_applies_knockback(space: pymunk.Space) -> None:
-    """Impulse should change body velocity."""
-    doll = Ragdoll(space, 200, 400, team="enemy", colour=c.ENEMY_COL)
-    torso = doll.torso
-    torso.velocity = (0, 0)
-    doll.take_hit("torso", 5.0, pymunk.Vec2d(250, 0))
-    assert torso.velocity.x != 0.0
+def test_update_lands_on_floor_and_resets_jumps() -> None:
+    fighter = _player()
+    arena = level_config(1).arena
+    fighter.vy = 700.0
+    fighter.update(arena, 1 / 30)
+    fighter.update(arena, 1 / 30)
+    assert fighter.y <= arena.floor_y - c.LEG_LEN + 1.0
+    assert fighter.jumps_used == 0

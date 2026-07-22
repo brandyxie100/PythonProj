@@ -1,10 +1,14 @@
-"""Pytest path setup for ragdoll-hit package imports."""
+"""Shared pytest fixtures for stickman battle tests."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import pygame
+import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+
+@pytest.fixture(autouse=True)
+def _pygame_bootstrap() -> None:
+    """Initialize pygame modules used by terrain rectangles."""
+    pygame.init()
+    yield
+    pygame.quit()
