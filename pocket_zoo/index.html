@@ -821,6 +821,28 @@ const wrap   = document.getElementById('game-wrap');
 // Deep-sea scene photo used as the full-canvas backdrop.
 const bgImage = new Image();
 bgImage.src = 'deep_sea_game_bg.png';
+let bgCache = null; // offscreen cache — avoid redrawing the photo every frame
+
+function rebuildBgCache() {
+  if (!bgImage.complete || bgImage.naturalWidth === 0 || W <= 0 || H <= 0) {
+    bgCache = null;
+    return;
+  }
+  const cache = document.createElement('canvas');
+  cache.width = W;
+  cache.height = H;
+  const bctx = cache.getContext('2d');
+  const imgW = bgImage.naturalWidth;
+  const imgH = bgImage.naturalHeight;
+  const scale = Math.max(W / imgW, H / imgH);
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  bctx.drawImage(bgImage, (W - drawW) / 2, (H - drawH) / 2, drawW, drawH);
+  bctx.fillStyle = 'rgba(0, 8, 28, 0.22)';
+  bctx.fillRect(0, 0, W, H);
+  bgCache = cache;
+}
+bgImage.onload = rebuildBgCache;
 
 let W, H;
 function resize() {
@@ -828,6 +850,7 @@ function resize() {
   H = window.innerHeight - document.getElementById('hud').offsetHeight;
   canvas.width  = W;
   canvas.height = H;
+  rebuildBgCache();
 }
 resize();
 window.addEventListener('resize', resize);
@@ -861,8 +884,12 @@ let debrisSpawnMs = 0;                // ms until next drop wave
 
 // Timers
 let lastPassive = performance.now();
-const AUTO_CLICK_INTERVAL_MS = 400; // ms between auto-taps per creature
+const AUTO_CLICK_INTERVAL_MS = 700; // ms between auto-taps per creature
 let autoClickEnabled = true;
+let hudDirty = false;                 // batch HUD redraws (auto-click used to spam this)
+const MAX_DEBRIS = 8;
+const MAX_COIN_PARTICLES = 40;
+const MAX_FLOAT_TEXTS = 12;
 
 // Idle bonus: no user input for 1 minute → huge coin reward
 const IDLE_BONUS_MS = 60 * 1000;
@@ -873,9 +900,9 @@ function registerUserActivity() {
   lastUserActivity = performance.now();
 }
 
-// ── Creature radius for a given tier
+// ── Creature radius for a given tier (capped so late tiers stay draggable)
 function tierRadius(t) {
-  return Math.floor(20 + Math.sqrt(t) * 6.5);
+  return Math.min(52, Math.floor(20 + Math.sqrt(t) * 6.5));
 }
 
 // ── Coin bubble cost
@@ -944,8 +971,14 @@ function spawnDebris() {
 }
 
 function spawnDebrisWave() {
-  const count = Math.random() < 0.5 ? 1 : 2; // 5× quantity (was 1–2)
+  const count = Math.random() < 0.5 ? 1 : 2;
   for (let i = 0; i < count; i++) spawnDebris();
+  // Cap debris so the seafloor never fills up and freezes input at late levels.
+  while (debrisList.length > MAX_DEBRIS) {
+    const oldest = debrisList.findIndex(d => d.settled) ;
+    if (oldest >= 0) debrisList.splice(oldest, 1);
+    else debrisList.shift();
+  }
   scheduleDebrisDrop();
 }
 
@@ -974,12 +1007,15 @@ function handleDebrisTap(d) {
 }
 
 function spawnCoinBurst(x, y, amount) {
+  if (coinParticles.length >= MAX_COIN_PARTICLES) return;
   coinParticles.push({
     x, y, vx: 0, vy: -2.2, life: 34, maxLife: 34,
     text: `+${amount}`, size: 16, gold: true,
   });
-  for (let i = 0; i < 7; i++) {
-    const ang = (Math.PI * 2 * i) / 7 + Math.random() * 0.4;
+  // Fewer sparkles — old path spawned 7 every burst and flooded late-game FPS.
+  for (let i = 0; i < 3; i++) {
+    if (coinParticles.length >= MAX_COIN_PARTICLES) break;
+    const ang = (Math.PI * 2 * i) / 3 + Math.random() * 0.4;
     const spd = 1.4 + Math.random() * 2.2;
     coinParticles.push({
       x, y,
@@ -1199,18 +1235,12 @@ let bgAnimT = 0; // for bubble animation
 function drawBackground() {
   bgAnimT += 0.008;
 
-  // Cover the canvas with deep_sea_game_bg.png (object-fit: cover style).
-  if (bgImage.complete && bgImage.naturalWidth > 0) {
-    const imgW = bgImage.naturalWidth;
-    const imgH = bgImage.naturalHeight;
-    const scale = Math.max(W / imgW, H / imgH);
-    const drawW = imgW * scale;
-    const drawH = imgH * scale;
-    const dx = (W - drawW) / 2;
-    const dy = (H - drawH) / 2;
-    ctx.drawImage(bgImage, dx, dy, drawW, drawH);
+  if (bgCache) {
+    ctx.drawImage(bgCache, 0, 0);
+  } else if (bgImage.complete && bgImage.naturalWidth > 0) {
+    rebuildBgCache();
+    if (bgCache) ctx.drawImage(bgCache, 0, 0);
   } else {
-    // Fallback while the image is still loading.
     const { top, bot } = getZoneBg();
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, top);
@@ -1218,10 +1248,6 @@ function drawBackground() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
   }
-
-  // Soft vignette so HUD / creatures stay readable over the photo.
-  ctx.fillStyle = 'rgba(0, 8, 28, 0.22)';
-  ctx.fillRect(0, 0, W, H);
 
   // Decorative floating bubbles over the photo.
   for (const b of bgBubbles) {
@@ -1417,6 +1443,12 @@ function loop(now) {
   // Idle bonus (1 minute without user input)
   updateIdleBonus(now);
 
+  // One HUD refresh per frame max — auto-click used to call updateHUD per creature.
+  if (hudDirty) {
+    hudDirty = false;
+    updateHUD();
+  }
+
   // Draw everything
   ctx.clearRect(0, 0, W, H);
   drawBackground();
@@ -1435,6 +1467,20 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// Avoid a huge dt jump when returning to a backgrounded tab.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) lastTime = performance.now();
+});
+
+// Escape closes blocking overlays so the game never feels stuck behind a modal.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  document.getElementById('popup-overlay').classList.remove('show');
+  document.getElementById('shop-overlay').classList.remove('show');
+  popupOpen = false;
+  popupQueue.length = 0;
+});
 
 // ═══════════════════════════════════════════════════════════════════
 //  INPUT
@@ -1499,10 +1545,13 @@ function onMove(e) {
   dragging.y = y - dragOffY;
 }
 
-canvas.addEventListener('mouseup',  onUp);
-canvas.addEventListener('touchend', onUp);
+// Release on window so drag never sticks when the pointer leaves the canvas.
+window.addEventListener('mouseup',  onUp);
+window.addEventListener('touchend', onUp, { passive: false });
+window.addEventListener('pointercancel', onUp);
 
 function onUp(e) {
+  if (e && e.type === 'touchend' && e.touches && e.touches.length > 0) return;
   const elapsed = performance.now() - pointerDownTime;
 
   // Tap settled debris (no creature drag)
@@ -1543,39 +1592,56 @@ function onUp(e) {
 // ═══════════════════════════════════════════════════════════════════
 //  GAME ACTIONS
 // ═══════════════════════════════════════════════════════════════════
-function handleTap(c) {
+function handleTap(c, opts = {}) {
+  const silent = !!opts.silent; // auto-click: skip DOM floats / per-tap HUD
   if (c.tier === 0) {
     // Hatch bubble → tier 1 Starfish
     c.tier   = 1;
     c.r      = tierRadius(1);
     c.scale  = 1.4;
     mergeFlashes.push({ x: c.x, y: c.y, life: 30, color: ZONES[0].color });
-    showFloat(c.x, c.y, '🌟 New!');
+    if (!silent) showFloat(c.x, c.y, '🌟 New!');
     if (!discovered.has(1)) {
       discovered.add(1);
       maxDiscoveredTier = Math.max(maxDiscoveredTier, 1);
       showDiscovery(1);
     }
-    updateHUD();
+    if (silent) hudDirty = true;
+    else updateHUD();
   } else {
     // Earn coins
     const earned = TIERS[c.tier].coins;
     coins  += earned;
     c.scale = 1.22;
-    showFloat(c.x, c.y, `+${fmt(earned)}🪙`);
-    updateHUD();
+    if (silent) {
+      // Lightweight canvas sparkle instead of a DOM float every auto-tap.
+      if (coinParticles.length < MAX_COIN_PARTICLES) {
+        coinParticles.push({
+          x: c.x, y: c.y - c.r * 0.4,
+          vx: (Math.random() - 0.5) * 0.6, vy: -1.8,
+          life: 22, maxLife: 22,
+          text: `+${fmt(earned)}`, size: 12, gold: true,
+        });
+      }
+      hudDirty = true;
+    } else {
+      showFloat(c.x, c.y, `+${fmt(earned)}🪙`);
+      updateHUD();
+    }
   }
 }
 
-// Automatically tap every creature on the board (runs forever).
+// Automatically tap every sea creature (and bubbles) forever.
 function autoClickCreatures(now) {
   if (!autoClickEnabled || dragging) return;
+  // Slow auto-click as the board grows so late levels stay responsive.
+  const interval = AUTO_CLICK_INTERVAL_MS + Math.min(800, creatures.length * 40);
   for (const c of creatures) {
     if (c === dragging) continue;
     const last = c.lastAutoClick || 0;
-    if (now - last < AUTO_CLICK_INTERVAL_MS) continue;
+    if (now - last < interval) continue;
     c.lastAutoClick = now;
-    handleTap(c);
+    handleTap(c, { silent: true });
   }
 }
 
@@ -1650,10 +1716,14 @@ function updateHUD() {
   zLabel.style.color   = zone.color;
   zLabel.style.textShadow = `0 0 8px ${zone.color}88`;
 
-  // Keep marketplace affordability/lock states fresh while it is open.
-  // Query the DOM directly so this works before `shopOverlay` is declared.
+  // Keep marketplace affordability fresh, but not every auto-click frame.
   const ov = document.getElementById('shop-overlay');
-  if (ov && ov.classList.contains('show')) renderShop();
+  if (ov && ov.classList.contains('show')) {
+    if (!updateHUD._lastShop || performance.now() - updateHUD._lastShop > 500) {
+      updateHUD._lastShop = performance.now();
+      renderShop();
+    }
+  }
 }
 updateHUD();
 
@@ -1723,6 +1793,11 @@ function showZoneUnlock(zoneIdx) {
 //  FLOATING COIN TEXT
 // ═══════════════════════════════════════════════════════════════════
 function showFloat(cx, cy, text) {
+  // Cap floating DOM labels — uncapped auto-click used to freeze the page.
+  const existing = wrap.querySelectorAll('.float-text');
+  if (existing.length >= MAX_FLOAT_TEXTS) {
+    existing[0].remove();
+  }
   const el       = document.createElement('div');
   el.className   = 'float-text';
   el.textContent = text;
