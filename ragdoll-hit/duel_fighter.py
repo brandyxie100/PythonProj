@@ -10,6 +10,7 @@ import pygame
 import config as c
 from coords import lerp
 from geom import point_in_circle, point_near_segment
+from weapon_draw import draw_weapon
 
 Point = tuple[float, float]
 
@@ -359,22 +360,18 @@ class DuelFighter:
         hand = self._drawn_hand()
         dx, dy = self._drawn_arm_direction()
         tip = (hand[0] + dx * stats.length, hand[1] + dy * stats.length)
-        pygame.draw.line(surf, stats.color, _i(hand), _i(tip), stats.thickness)
+        draw_weapon(surf, self.weapon_key, hand, tip, scale=1.0)
 
 
 def _draw_embedded(surf: pygame.Surface, weapon: EmbeddedWeapon) -> None:
     """Draw a weapon embedded in a body, protruding at its impact angle."""
     stats = c.THROW_WEAPONS[weapon.weapon_key]
-    protrude = stats.length * 0.6
+    protrude = stats.length * 0.55
     back_x = weapon.x - math.cos(weapon.angle) * protrude
     back_y = weapon.y - math.sin(weapon.angle) * protrude
-    pygame.draw.line(
-        surf,
-        stats.color,
-        (int(back_x), int(back_y)),
-        (int(weapon.x), int(weapon.y)),
-        stats.thickness,
-    )
+    # Bow impacts as an arrow shaft stuck in the body.
+    key = "arrow" if weapon.weapon_key == "bow" else weapon.weapon_key
+    draw_weapon(surf, key, (back_x, back_y), (weapon.x, weapon.y), scale=0.75)
 
 
 def _i(point: Point) -> tuple[int, int]:

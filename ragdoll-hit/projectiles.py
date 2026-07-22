@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import pygame
 
 import config as c
+from weapon_draw import draw_projectile_weapon
 
 Point = tuple[float, float]
 
@@ -63,67 +64,8 @@ class Projectile:
             self.dead = True
 
     def draw(self, surf: pygame.Surface) -> None:
-        """Render the projectile as an oriented weapon with a tip marker."""
-        tail = self.tail()
-        tip = self.tip()
-        pygame.draw.line(
-            surf,
-            self.stats.color,
-            (int(tail[0]), int(tail[1])),
-            (int(tip[0]), int(tip[1])),
-            self.stats.thickness,
-        )
-        _draw_head(surf, self.weapon_key, tail, tip, self.stats.color)
-
-
-def _draw_head(
-    surf: pygame.Surface,
-    weapon_key: str,
-    tail: Point,
-    tip: Point,
-    color: tuple[int, int, int],
-) -> None:
-    """Draw a weapon-specific head/blade near the projectile tip."""
-    tx, ty = tip
-    angle = math.atan2(tip[1] - tail[1], tip[0] - tail[0])
-    if weapon_key == "bow":
-        # Arrowhead: two short barbs.
-        for sign in (-1, 1):
-            bx = tx - math.cos(angle) * 10 + math.cos(angle + sign * 1.9) * 9
-            by = ty - math.sin(angle) * 10 + math.sin(angle + sign * 1.9) * 9
-            pygame.draw.line(surf, color, (int(tx), int(ty)), (int(bx), int(by)), 2)
-    elif weapon_key == "trident":
-        # Trident: three prongs at the tip.
-        for sign in (-1, 0, 1):
-            px = tx + math.cos(angle + sign * 0.35) * 12
-            py = ty + math.sin(angle + sign * 0.35) * 12
-            pygame.draw.line(surf, color, (int(tx), int(ty)), (int(px), int(py)), 3)
-    elif weapon_key == "axe":
-        # Axe: a blade set crossways just behind the tip.
-        bx = tx - math.cos(angle) * 9
-        by = ty - math.sin(angle) * 9
-        perp = angle + math.pi / 2
-        pygame.draw.line(
-            surf,
-            color,
-            (int(bx - math.cos(perp) * 9), int(by - math.sin(perp) * 9)),
-            (int(bx + math.cos(perp) * 9), int(by + math.sin(perp) * 9)),
-            5,
-        )
-    elif weapon_key == "broadsword":
-        # Broadsword: a crossguard behind the tip.
-        gx = tx - math.cos(angle) * 12
-        gy = ty - math.sin(angle) * 12
-        perp = angle + math.pi / 2
-        pygame.draw.line(
-            surf,
-            color,
-            (int(gx - math.cos(perp) * 8), int(gy - math.sin(perp) * 8)),
-            (int(gx + math.cos(perp) * 8), int(gy + math.sin(perp) * 8)),
-            3,
-        )
-    else:  # spear
-        pygame.draw.circle(surf, color, (int(tx), int(ty)), 3)
+        """Render the projectile as a multi-part oriented weapon."""
+        draw_projectile_weapon(surf, self.weapon_key, self.tail(), self.tip())
 
 
 def spawn_projectile(

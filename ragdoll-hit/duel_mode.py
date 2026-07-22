@@ -18,6 +18,7 @@ import pygame
 import config as c
 from duel_fighter import DuelFighter, EmbeddedWeapon
 from projectiles import Projectile, spawn_projectile
+from weapon_draw import draw_panel_icon
 
 Point = tuple[float, float]
 
@@ -426,14 +427,13 @@ class VersusScene:
             pygame.draw.rect(surf, fill, rect, border_radius=7)
             pygame.draw.rect(surf, (30, 46, 32), rect, 2, border_radius=7)
 
-            # Weapon-color swatch as a mini icon.
-            swatch = pygame.Rect(rect.x + 8, rect.centery - 7, 20, 14)
-            pygame.draw.rect(surf, stats.color, swatch, border_radius=3)
-            pygame.draw.rect(surf, (30, 46, 32), swatch, 1, border_radius=3)
+            # Mini multi-part weapon icon instead of a flat color swatch.
+            icon_center = (rect.x + 22, rect.centery)
+            draw_panel_icon(surf, key, icon_center, size=24.0)
 
             text_color = (40, 34, 12) if selected else (238, 244, 236)
             name = self._small.render(stats.name, True, text_color)
-            surf.blit(name, (rect.x + 36, rect.centery - name.get_height() // 2))
+            surf.blit(name, (rect.x + 42, rect.centery - name.get_height() // 2))
 
     def _draw_integrity(
         self,

@@ -10,6 +10,7 @@ import pygame
 import config as c
 from terrain import Arena
 from weapon import Weapon
+from weapon_draw import draw_weapon
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -236,16 +237,14 @@ class Stickman:
             4,
         )
 
-        # Weapon
+        # Weapon (multi-part silhouette matching real-world structure)
         (wx1, wy1), (wx2, wy2), _ = self.weapon_segment()
-        pygame.draw.line(
+        draw_weapon(
             surf,
-            self.weapon.stats.color,
-            (int(wx1), int(wy1)),
-            (int(wx2), int(wy2)),
-            self.weapon.stats.thickness,
+            self.weapon.weapon_key,
+            (wx1, wy1),
+            (wx2, wy2),
+            scale=1.0,
         )
-        if self.weapon.weapon_key in {"hammer", "pickaxe"}:
-            pygame.draw.circle(surf, self.weapon.stats.color, (int(wx2), int(wy2)), 8)
         if is_player:
             pygame.draw.circle(surf, c.WHITE, (int(head_x), int(head_y)), int(c.HEAD_R), 1)
