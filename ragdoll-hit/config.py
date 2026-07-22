@@ -76,45 +76,70 @@ class WeaponStats:
 
 
 WEAPONS: dict[str, WeaponStats] = {
-    "sword": WeaponStats(
-        name="Sword",
-        length=56.0,
+    "spear": WeaponStats(
+        name="Spear",
+        length=64.0,
         thickness=4,
-        damage=18.0,
-        cooldown=0.2,
+        damage=16.0,
+        cooldown=0.18,
         sweep_time=0.2,
-        color=(210, 220, 236),
+        color=(208, 214, 226),
     ),
-    "pickaxe": WeaponStats(
-        name="Pickaxe",
-        length=50.0,
-        thickness=6,
-        damage=23.0,
-        cooldown=0.33,
-        sweep_time=0.26,
-        color=(205, 165, 110),
-    ),
-    "stick": WeaponStats(
-        name="Stick",
-        length=62.0,
+    "trident": WeaponStats(
+        name="Trident",
+        length=58.0,
         thickness=5,
+        damage=22.0,
+        cooldown=0.28,
+        sweep_time=0.24,
+        color=(150, 210, 225),
+    ),
+    "broadsword": WeaponStats(
+        name="Broadsword",
+        length=56.0,
+        thickness=6,
+        damage=24.0,
+        cooldown=0.26,
+        sweep_time=0.22,
+        color=(228, 228, 238),
+    ),
+    "bow": WeaponStats(
+        name="Bow",
+        length=50.0,
+        thickness=3,
         damage=14.0,
         cooldown=0.16,
-        sweep_time=0.2,
-        color=(176, 134, 84),
+        sweep_time=0.18,
+        color=(212, 180, 120),
     ),
-    "hammer": WeaponStats(
-        name="Hammer",
-        length=54.0,
-        thickness=8,
+    "axe": WeaponStats(
+        name="Axe",
+        length=48.0,
+        thickness=7,
         damage=28.0,
-        cooldown=0.38,
-        sweep_time=0.3,
-        color=(160, 167, 178),
+        cooldown=0.34,
+        sweep_time=0.28,
+        color=(176, 182, 192),
+    ),
+    "javelin": WeaponStats(
+        name="Javelin",
+        length=68.0,
+        thickness=3,
+        damage=15.0,
+        cooldown=0.17,
+        sweep_time=0.19,
+        color=(198, 204, 220),
     ),
 }
 
-WEAPON_ORDER: tuple[str, ...] = ("sword", "pickaxe", "stick", "hammer")
+WEAPON_ORDER: tuple[str, ...] = (
+    "spear",
+    "trident",
+    "broadsword",
+    "bow",
+    "axe",
+    "javelin",
+)
 
 
 # ---------------------------------------------------------------------------

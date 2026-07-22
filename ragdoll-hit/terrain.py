@@ -148,7 +148,7 @@ def level_config(level_number: int) -> LevelConfig:
             obstacles=(),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_RED, "stick", 0.9, 1.0, 0.9), (900.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "javelin", 0.9, 1.0, 0.9), (900.0, floor - c.LEG_LEN)),
         )
     elif level_number == 2:
         arena = Arena(
@@ -161,8 +161,8 @@ def level_config(level_number: int) -> LevelConfig:
             obstacles=(Obstacle(pygame.Rect(560, int(floor) - 18, 70, 18), 18.0),),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_YELLOW, "sword", 1.0, 1.05, 1.0), (845.0, floor - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_RED, "stick", 1.0, 1.0, 0.95), (980.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_YELLOW, "spear", 1.0, 1.05, 1.0), (845.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "bow", 1.0, 1.0, 0.95), (980.0, floor - c.LEG_LEN)),
         )
     elif level_number == 3:
         arena = Arena(
@@ -176,8 +176,8 @@ def level_config(level_number: int) -> LevelConfig:
             obstacles=(Obstacle(pygame.Rect(420, int(floor) - 18, 85, 18), 22.0),),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_RED, "pickaxe", 1.05, 1.15, 1.1), (930.0, floor - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_YELLOW, "sword", 1.03, 1.1, 1.0), (760.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "axe", 1.05, 1.15, 1.1), (930.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_YELLOW, "broadsword", 1.03, 1.1, 1.0), (760.0, floor - c.LEG_LEN)),
         )
     elif level_number == 4:
         arena = Arena(
@@ -195,9 +195,9 @@ def level_config(level_number: int) -> LevelConfig:
             ),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_RED, "hammer", 1.08, 1.25, 1.2), (960.0, 350 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_YELLOW, "pickaxe", 1.08, 1.18, 1.1), (760.0, 405 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_BLUE, "stick", 1.02, 1.1, 0.95), (885.0, floor - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "trident", 1.08, 1.25, 1.2), (960.0, 350 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_YELLOW, "axe", 1.08, 1.18, 1.1), (760.0, 405 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_BLUE, "spear", 1.02, 1.1, 0.95), (885.0, floor - c.LEG_LEN)),
         )
     elif level_number == 5:
         arena = Arena(
@@ -220,9 +220,9 @@ def level_config(level_number: int) -> LevelConfig:
             ),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_RED, "hammer", 1.15, 1.38, 1.28), (1010.0, 315 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_YELLOW, "sword", 1.12, 1.23, 1.18), (830.0, 365 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_BLUE, "pickaxe", 1.1, 1.2, 1.1), (590.0, 420 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "trident", 1.15, 1.38, 1.28), (1010.0, 315 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_YELLOW, "broadsword", 1.12, 1.23, 1.18), (830.0, 365 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_BLUE, "axe", 1.1, 1.2, 1.1), (590.0, 420 - c.LEG_LEN)),
         )
     else:  # level 6
         arena = Arena(
@@ -250,10 +250,10 @@ def level_config(level_number: int) -> LevelConfig:
             ),
         )
         enemies = (
-            (EnemySpawn(c.ENEMY_RED, "hammer", 1.2, 1.55, 1.35), (1065.0, 280 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_YELLOW, "pickaxe", 1.18, 1.42, 1.3), (915.0, 320 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_BLUE, "sword", 1.16, 1.35, 1.2), (735.0, 365 - c.LEG_LEN)),
-            (EnemySpawn(c.ENEMY_RED, "stick", 1.14, 1.25, 1.15), (555.0, 410 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "trident", 1.2, 1.55, 1.35), (1065.0, 280 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_YELLOW, "axe", 1.18, 1.42, 1.3), (915.0, 320 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_BLUE, "broadsword", 1.16, 1.35, 1.2), (735.0, 365 - c.LEG_LEN)),
+            (EnemySpawn(c.ENEMY_RED, "javelin", 1.14, 1.25, 1.15), (555.0, 410 - c.LEG_LEN)),
         )
 
     player_spawn = (120.0, floor - c.LEG_LEN)

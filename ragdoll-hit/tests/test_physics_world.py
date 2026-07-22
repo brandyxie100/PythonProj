@@ -24,8 +24,8 @@ def _fighter(sid: int, team: str, x: float, y: float, weapon_name: str) -> Stick
 
 
 def test_weapon_hit_returns_damage_when_target_in_swing_path() -> None:
-    attacker = _fighter(1, "player", 240.0, 500.0, "hammer")
-    victim = _fighter(2, "enemy", 298.0, 486.0, "stick")
+    attacker = _fighter(1, "player", 240.0, 500.0, "axe")
+    victim = _fighter(2, "enemy", 298.0, 486.0, "javelin")
     attacker.arm_main_angle = 0.0
     attacker.try_attack()
     attacker.weapon.attack_timer = attacker.weapon.stats.sweep_time * 0.45
@@ -40,8 +40,8 @@ def test_weapon_hit_returns_damage_when_target_in_swing_path() -> None:
 
 
 def test_weapon_hit_is_one_per_target_per_swing() -> None:
-    attacker = _fighter(1, "player", 240.0, 500.0, "sword")
-    victim = _fighter(2, "enemy", 292.0, 485.0, "stick")
+    attacker = _fighter(1, "player", 240.0, 500.0, "broadsword")
+    victim = _fighter(2, "enemy", 292.0, 485.0, "spear")
     attacker.arm_main_angle = 0.0
     attacker.try_attack()
     first = weapon_hit(attacker, victim)

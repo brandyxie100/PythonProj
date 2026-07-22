@@ -93,7 +93,7 @@ class StageScene:
         self._small_font = pygame.font.SysFont("Arial", 17)
         self._level_no = 1
         self._coins = 0
-        self._player_weapon_key = "sword"
+        self._player_weapon_key = "spear"
         self._player: Stickman | None = None
         self._enemies: list[Stickman] = []
         self._enemy_ai: dict[int, EnemyAI] = {}

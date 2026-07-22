@@ -15,7 +15,7 @@ def _player() -> Stickman:
         x=220.0,
         y=500.0,
         color=c.PLAYER_BLUE,
-        weapon=Weapon("sword"),
+        weapon=Weapon("broadsword"),
         max_health=120.0,
         move_scale=1.0,
         attack_scale=1.0,

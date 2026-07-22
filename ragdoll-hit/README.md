@@ -3,7 +3,7 @@
 Single-player stickman battle game with:
 
 - Red, blue, and yellow fighters
-- Weapons: sword, pickaxe, stick, hammer
+- Weapons: spear, trident, broadsword, bow, axe, javelin
 - Keyboard-controlled movement + limb control
 - 180-degree weapon attack swings
 - Consecutive jump system (ground jump + one mid-air jump)
@@ -26,7 +26,7 @@ python main.py
 - `U / O`: rotate off-hand arm
 - `N / M`: adjust leg pose
 - `Space` or `K`: attack (180-degree weapon swing)
-- `E`: cycle weapon type
+- `E`: cycle weapon (spear / trident / broadsword / bow / axe / javelin)
 
 ## Stage Goal
 
