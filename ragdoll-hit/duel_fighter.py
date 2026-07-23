@@ -99,6 +99,12 @@ class DuelFighter:
         self.fall_phase = 0.0
         self.weapon_swap_timer = 0.0
 
+        # Optional defense gear (player shop / late-stage enemies).
+        self.helmet_key: str | None = None
+        self.shield_key: str | None = None
+        self.helmet_hp: int = 0
+        self.shield_hp: int = 0
+
         self.segments: dict[str, BodySegment] = {
             name: BodySegment(name, weight, is_head, radius, damage_mult)
             for name, weight, is_head, radius, damage_mult in _SEGMENT_LAYOUT
@@ -385,19 +391,54 @@ class DuelFighter:
                     return name
         return None
 
+    def equip_helmet(self, key: str | None) -> None:
+        """Equip a helmet (or clear it) and reset its durability."""
+        self.helmet_key = key
+        if key is None:
+            self.helmet_hp = 0
+        else:
+            self.helmet_hp = c.HELMETS[key].durability
+
+    def equip_shield(self, key: str | None) -> None:
+        """Equip a shield (or clear it) and reset its durability."""
+        self.shield_key = key
+        if key is None:
+            self.shield_hp = 0
+        else:
+            self.shield_hp = c.SHIELDS[key].durability
+
     def apply_hit(self, segment_name: str, damage: float, embed: EmbeddedWeapon) -> None:
-        """Apply projectile damage to a segment and embed the weapon."""
+        """Apply projectile damage, reduced by helmet/shield when equipped."""
         if self.falling or self.dead:
             return
         segment = self.segments.get(segment_name)
         if segment is None:
             return
-        segment.add_damage(damage)
+
+        blocked_lethal = False
+        final_damage = damage
+        if segment_name == "head" and self.helmet_key is not None and self.helmet_hp > 0:
+            helm = c.HELMETS[self.helmet_key]
+            final_damage *= helm.damage_factor
+            blocked_lethal = helm.blocks_lethal
+            self.helmet_hp -= 1
+            if self.helmet_hp <= 0:
+                self.helmet_key = None
+                self.helmet_hp = 0
+        elif segment_name != "head" and self.shield_key is not None and self.shield_hp > 0:
+            shield = c.SHIELDS[self.shield_key]
+            final_damage *= shield.damage_factor
+            self.shield_hp -= 1
+            if self.shield_hp <= 0:
+                self.shield_key = None
+                self.shield_hp = 0
+
+        segment.add_damage(final_damage)
         self.embedded.append(embed)
         # Recoil away from the thrower (opposite facing = toward impact side).
         self.hit_flinch_timer = c.DUEL_HIT_FLINCH_TIME
         self.hit_flinch_dir = -float(self.facing)
-        self._check_death(segment)
+        self._check_death(segment, blocked_lethal=blocked_lethal)
 
     def apply_safe_knockback(self) -> None:
         """Slide a random distance along the pillar without ever falling off.
@@ -430,16 +471,24 @@ class DuelFighter:
         """Weighted fraction of the body that has turned red."""
         return sum(seg.redness * seg.weight for seg in self.segments.values())
 
-    def _check_death(self, struck: BodySegment) -> None:
+    def _check_death(self, struck: BodySegment, *, blocked_lethal: bool = False) -> None:
         """Evaluate death conditions after a hit."""
-        if c.HEAD_LETHAL and struck.is_head and struck.redness > 0.0:
+        if (
+            c.HEAD_LETHAL
+            and struck.is_head
+            and struck.redness > 0.0
+            and not blocked_lethal
+        ):
             self.dead = True
             return
         if self.body_red_ratio() >= c.BODY_RED_DEATH_RATIO:
             self.dead = True
 
     def reset_health(self) -> None:
-        """Clear damage and reset stance to the pillar center."""
+        """Clear damage and reset stance to the pillar center.
+
+        Equipped player gear is kept; durability is refreshed to full.
+        """
         for segment in self.segments.values():
             segment.redness = 0.0
         self.embedded.clear()
@@ -458,6 +507,10 @@ class DuelFighter:
         self.hit_flinch_dir = 0.0
         self.fall_phase = 0.0
         self.weapon_swap_timer = 0.0
+        if self.helmet_key is not None:
+            self.helmet_hp = c.HELMETS[self.helmet_key].durability
+        if self.shield_key is not None:
+            self.shield_hp = c.SHIELDS[self.shield_key].durability
 
     # -- rendering ----------------------------------------------------------
     def _segment_color(self, name: str) -> tuple[int, int, int]:
@@ -540,12 +593,38 @@ class DuelFighter:
         _, center, radius = geometry["head"]
         pygame.draw.circle(surf, self._segment_color("head"), _i(center), int(radius))
 
+        self._draw_defense_gear(surf, geometry)
+
         # Held weapon in the throwing hand (shows current loadout while aiming).
         self._draw_held_weapon(surf)
 
         # Embedded weapons stuck in the body.
         for weapon in self.embedded:
             _draw_embedded(surf, weapon)
+
+    def _draw_defense_gear(self, surf: pygame.Surface, geometry: dict[str, tuple]) -> None:
+        """Draw equipped helmet and shield silhouettes."""
+        if self.helmet_key is not None:
+            color = c.HELMETS[self.helmet_key].color
+            _, center, radius = geometry["head"]
+            pygame.draw.circle(surf, color, _i(center), int(radius + 4), 3)
+            # Visor bar across the face.
+            pygame.draw.line(
+                surf,
+                color,
+                (int(center[0] - radius), int(center[1])),
+                (int(center[0] + radius), int(center[1])),
+                2,
+            )
+        if self.shield_key is not None:
+            color = c.SHIELDS[self.shield_key].color
+            hx, hy = self.hip
+            # Shield sits on the off-hand side of the torso.
+            sx = hx - self.facing * 18.0
+            sy = hy - c.TORSO_LEN * 0.45
+            rect = pygame.Rect(int(sx - 10), int(sy - 18), 20, 36)
+            pygame.draw.ellipse(surf, color, rect, 0)
+            pygame.draw.ellipse(surf, (30, 30, 30), rect, 2)
 
     def _draw_held_weapon(self, surf: pygame.Surface) -> None:
         """Draw the loaded weapon in the (animated) throwing hand.

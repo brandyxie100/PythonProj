@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Display
-SCREEN_W: int = 1180
-SCREEN_H: int = 680
+SCREEN_W: int = 1280
+SCREEN_H: int = 720
 FPS: int = 60
 TITLE: str = "Ragdoll Hit - Versus Projectile Duel"
 
@@ -79,6 +79,10 @@ HIT_COINS_TORSO: int = 10  # body — double limb
 HIT_COINS_HEAD: int = 15  # head — triple limb
 DUEL_STARTER_WEAPON: str = "spear"
 
+# Stage campaign length / dual-enemy breakpoint (latter half).
+DUEL_TOTAL_STAGES: int = 30
+DUEL_DUAL_ENEMY_FROM: int = 16  # stage 16+ adds a taller second pillar + foe
+
 
 @dataclass(frozen=True, slots=True)
 class ThrowWeaponStats:
@@ -114,6 +118,48 @@ THROW_WEAPON_ORDER: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class DefenseGearStats:
+    """Helmet or shield bought to reduce incoming projectile damage."""
+
+    name: str
+    kind: str  # "helmet" or "shield"
+    price: int
+    damage_factor: float  # multiplies damage to protected segments (lower = tankier)
+    durability: int  # hits absorbed before the gear breaks
+    blocks_lethal: bool  # helmets can cancel instant head-kill while intact
+    color: tuple[int, int, int]
+
+
+# Defense ladder: priced so mid-campaign farming unlocks leather/wood, late
+# campaign can afford iron/knight tiers without trivializing broadsword DPS.
+# Helmet protects head; shield protects torso + limbs.
+HELMETS: dict[str, DefenseGearStats] = {
+    "leather_helm": DefenseGearStats(
+        "Leather Helm", "helmet", 55, 0.50, 3, True, (150, 110, 70)
+    ),
+    "iron_helm": DefenseGearStats(
+        "Iron Helm", "helmet", 115, 0.32, 5, True, (160, 168, 180)
+    ),
+    "knight_helm": DefenseGearStats(
+        "Knight Helm", "helmet", 210, 0.18, 8, True, (210, 190, 90)
+    ),
+}
+SHIELDS: dict[str, DefenseGearStats] = {
+    "wood_shield": DefenseGearStats(
+        "Wood Shield", "shield", 50, 0.55, 4, False, (140, 95, 55)
+    ),
+    "iron_shield": DefenseGearStats(
+        "Iron Shield", "shield", 105, 0.38, 6, False, (150, 158, 170)
+    ),
+    "tower_shield": DefenseGearStats(
+        "Tower Shield", "shield", 195, 0.22, 9, False, (90, 120, 150)
+    ),
+}
+HELMET_ORDER: tuple[str, ...] = ("leather_helm", "iron_helm", "knight_helm")
+SHIELD_ORDER: tuple[str, ...] = ("wood_shield", "iron_shield", "tower_shield")
+
+
 def hit_coins_for_segment(segment_name: str) -> int:
     """Return coins awarded for striking a body segment.
 
@@ -124,3 +170,21 @@ def hit_coins_for_segment(segment_name: str) -> int:
     if segment_name == "torso":
         return HIT_COINS_TORSO
     return HIT_COINS_LIMB
+
+
+def duel_coin_goal(stage: int) -> int:
+    """Coin goal for a stage — rises steadily, with a bump after dual enemies."""
+    goal = 22 + stage * 7
+    if stage >= DUEL_DUAL_ENEMY_FROM:
+        goal += (stage - DUEL_DUAL_ENEMY_FROM + 1) * 6
+    return goal
+
+
+def duel_fire_interval(stage: int) -> float:
+    """Seconds between enemy throws (faster in later stages)."""
+    return max(0.85, 2.65 - (stage - 1) * 0.058)
+
+
+def duel_aim_noise(stage: int) -> float:
+    """AI elevation jitter in radians (tighter aim later)."""
+    return max(0.02, 0.21 - (stage - 1) * 0.0065)

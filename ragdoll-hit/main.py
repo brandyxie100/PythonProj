@@ -66,12 +66,12 @@ class MenuScene:
         fill = (86, 190, 120) if self._play_rect.collidepoint(mouse) else (64, 158, 96)
         pygame.draw.rect(surf, fill, self._play_rect, border_radius=12)
         pygame.draw.rect(surf, (28, 70, 40), self._play_rect, 3, border_radius=12)
-        play = self._btn_font.render("Play (7 Stages)", True, c.WHITE)
+        play = self._btn_font.render("Play (30 Stages)", True, c.WHITE)
         surf.blit(play, play.get_rect(center=self._play_rect.center))
 
         hints = (
             "Hit foes for coins: limbs +5 · body +10 · head +15",
-            "Buy stronger weapons in the shop, meet the coin goal, then finish the enemy",
+            "Buy weapons (left) and helmets/shields (right); stages 16–30 add a high pillar foe",
             "A/D dodge  |  W/S aim  |  Hold Space to throw  |  Don't fall off the pillar",
         )
         for idx, line in enumerate(hints):
