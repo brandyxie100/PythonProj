@@ -115,6 +115,32 @@ def test_apply_hit_starts_flinch_animation() -> None:
     assert fighter.hit_flinch_dir == -1.0
 
 
+def test_safe_knockback_moves_but_stays_on_pillar() -> None:
+    import config as c
+
+    fighter = DuelFighter("enemy", 900.0, 452.0, -1, "spear")
+    start_x = fighter.x
+    moved = False
+    for _ in range(40):
+        fighter.x = start_x
+        fighter.apply_safe_knockback()
+        max_offset = c.DUEL_PILLAR_HALF_WIDTH * c.DUEL_HIT_KNOCKBACK_SAFE
+        assert abs(fighter.x - fighter.anchor_x) <= max_offset + 1e-6
+        assert not fighter.falling
+        if abs(fighter.x - start_x) > 0.5:
+            moved = True
+    assert moved
+
+
+def test_safe_knockback_shifts_embedded_weapons() -> None:
+    fighter = DuelFighter("enemy", 900.0, 452.0, -1, "spear")
+    embed = _embed(fighter)
+    fighter.embedded.append(embed)
+    before = embed.x
+    fighter.apply_safe_knockback()
+    assert embed.x == pytest.approx(before + (fighter.x - fighter.anchor_x))
+
+
 def test_falling_advances_fall_phase() -> None:
     fighter = DuelFighter("player", 320.0, 452.0, 1, "spear")
     fighter._begin_fall()

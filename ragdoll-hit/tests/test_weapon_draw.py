@@ -12,7 +12,7 @@ def test_draw_weapon_all_keys_without_error() -> None:
     surf = pygame.Surface((200, 120))
     grip = (20.0, 60.0)
     tip = (160.0, 50.0)
-    keys = set(c.WEAPONS) | set(c.THROW_WEAPONS) | {"arrow"}
+    keys = set(c.THROW_WEAPONS) | {"arrow"}
     for key in keys:
         draw_weapon(surf, key, grip, tip, scale=1.0)
 

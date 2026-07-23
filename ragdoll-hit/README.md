@@ -1,16 +1,18 @@
-# Ragdoll-Hit Stickman Stage Mode
+# Ragdoll-Hit — Versus Projectile Duel
 
-Single-player stickman battle game with:
+Pillar-top throwing duels with a **hit-coin economy** and **weapon shop**.
 
-- Red, blue, and yellow fighters
-- Weapons: spear, trident, broadsword, bow, axe, javelin
-- Keyboard-controlled movement + limb control
-- 180-degree weapon attack swings
-- Consecutive jump system (ground jump + one mid-air jump)
-- Sequential stage mode (Levels 1 to 6) with multi-tier platforms, ramps,
-  floating pads, and hazards for jump combat
-- Increasing enemy strength and terrain complexity
-- Gold coin rewards per cleared level
+- Earn coins by hitting the enemy:
+  - **Arms / legs:** +5 coins (1x)
+  - **Body (torso):** +10 coins (2x)
+  - **Head:** +15 coins (3x)
+- Each stage opens with a popup showing the **coin goal** required to pass.
+- Spend coins in the left **weapon shop**. Stronger weapons cost more and deal
+  more damage (Spear free → Bow → Javelin → Trident → Axe → Broadsword).
+- Pass a stage only when you have **earned the coin goal** and **defeated the
+  enemy**. If you kill them early, a new foe spawns so you can keep farming.
+- Clear all **7 stages** to win.
+- Strafe with `A` / `D` to dodge. Step too far past the pillar edge and you fall.
 
 ## Run
 
@@ -21,39 +23,8 @@ python main.py
 
 ## Controls
 
-- `A / D`: move
-- `W`: jump (supports one extra mid-air jump)
-- `J / L`: rotate primary (weapon) arm
-- `U / O`: rotate off-hand arm
-- `N / M`: adjust leg pose
-- `Space` or `K`: attack (180-degree weapon swing)
-- `E`: cycle weapon (spear / trident / broadsword / bow / axe / javelin)
-
-## Stage Goal
-
-Defeat all enemies in each stage to clear the level and earn coins.
-Clear Levels **1 -> 6** sequentially to win.
-
-## Versus Projectile Duel Mode
-
-A second, stationary artillery mode inspired by classic stick-figure throwing
-duels. Two fighters stand atop pillars and lob weapons across a parabolic arc.
-
-- Weapons: spear, trident, broadsword, and bow (arrows) — each with its own
-  damage, drawn shape, and launch speed.
-- Projectiles fly along a realistic gravity-driven parabola and **embed** in the
-  body on impact.
-- Damaged body segments **glow red**. A fighter dies when it takes a **direct
-  head wound** or when **more than 80%** of its body has turned red.
-- Strafe with `A` / `D` to dodge incoming shots. Step too far past the pillar
-  edge and you fall — that ends the duel as a loss.
-- Clear all **7 stages** of escalating AI accuracy to win; each cleared stage
-  opens a score popup, then advances when you continue.
-
-### Duel Controls
-
 - `A / D` or `Left / Right`: dodge left / right on the pillar (don't fall off!)
 - `W / S` or `Up / Down`: raise / lower aim
-- `Space` (hold): charge throw power; release to throw (the stickman winds up
-  and throws)
-- `E`: cycle weapon
+- `Space` (hold): charge throw power; release to throw
+- Click the left shop: buy a locked weapon or equip an owned one
+- `E`: cycle owned weapons only

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 
 import pygame
@@ -397,6 +398,33 @@ class DuelFighter:
         self.hit_flinch_timer = c.DUEL_HIT_FLINCH_TIME
         self.hit_flinch_dir = -float(self.facing)
         self._check_death(segment)
+
+    def apply_safe_knockback(self) -> None:
+        """Slide a random distance along the pillar without ever falling off.
+
+        Used when the enemy is hit so aim becomes harder, while keeping them
+        inside a safe fraction of the pillar width.
+        """
+        if self.falling or self.dead:
+            return
+        distance = random.uniform(c.DUEL_HIT_KNOCKBACK_MIN, c.DUEL_HIT_KNOCKBACK_MAX)
+        # Prefer sliding away from the attacker (behind the fighter's facing).
+        away = -float(self.facing)
+        # Mix in randomness so the dodge is not perfectly predictable.
+        sign = away if random.random() < 0.65 else -away
+        max_offset = c.DUEL_PILLAR_HALF_WIDTH * c.DUEL_HIT_KNOCKBACK_SAFE
+        old_x = self.x
+        self.x = max(
+            self.anchor_x - max_offset,
+            min(self.anchor_x + max_offset, self.x + sign * distance),
+        )
+        dx = self.x - old_x
+        # Keep embedded weapons stuck to the body as it slides.
+        for weapon in self.embedded:
+            weapon.x += dx
+        # Brief shuffle so the stance reads as a reaction.
+        self.walk_phase += 0.9 + abs(dx) * 0.08
+        self.hit_flinch_dir = 1.0 if dx >= 0.0 else -1.0
 
     def body_red_ratio(self) -> float:
         """Weighted fraction of the body that has turned red."""

@@ -1,10 +1,9 @@
 """Versus stage-clearing projectile-duel mode.
 
 Two stick figures stand atop pillars and lob weapons along parabolic arcs.
-The player can strafe left/right to dodge, but stepping past the pillar edge
-causes a fatal fall. Hits embed weapons and turn the struck body segment red;
-a fighter dies when a head is hit or when more than 80% of the body has turned
-red. Clear each stage's opponent to advance.
+Players earn coins by hitting the enemy (limbs 1x, torso 2x, head 3x), spend
+coins in the weapon shop, and clear a stage only after meeting its coin goal
+and defeating the current opponent.
 """
 
 from __future__ import annotations
@@ -30,51 +29,76 @@ _ENEMY_X: float = float(c.SCREEN_W) - 180.0
 _PROJECTILE_FLOOR: float = float(c.SCREEN_H) + 30.0
 _TOTAL_STAGES: int = 7
 
-# Left-side weapon-selector panel layout.
+# Left-side weapon-shop panel layout.
 _PANEL_X: int = 18
 _PANEL_Y: int = 196
 _PANEL_BTN_W: int = 176
 _PANEL_BTN_H: int = 34
 _PANEL_GAP: int = 8
 
-# Stage-clear popup layout.
-_POPUP_W: int = 420
-_POPUP_H: int = 260
-_CONTINUE_BTN_W: int = 200
+# Modal popup layout (stage intro + stage clear).
+_POPUP_W: int = 460
+_POPUP_H: int = 320
+_CONTINUE_BTN_W: int = 210
 _CONTINUE_BTN_H: int = 44
 
 
 @dataclass(frozen=True, slots=True)
 class DuelStageSpec:
-    """Difficulty and loadout for one duel stage."""
+    """Difficulty and coin goal for one duel stage."""
 
     number: int
     enemy_weapon: str
     fire_interval: float  # seconds between enemy throws
     aim_noise: float  # radians of elevation jitter (lower = more accurate)
-    reward: int
+    coin_goal: int  # coins that must be earned this stage to pass
 
 
 @dataclass(frozen=True, slots=True)
 class StageClearPopup:
-    """Overlay shown after defeating a stage opponent."""
+    """Overlay shown after meeting the coin goal and defeating the enemy."""
 
     cleared_stage: int
-    reward: int
-    total_score: int
+    stage_earned: int
+    coin_goal: int
+    wallet: int
     is_final: bool
 
 
+@dataclass(frozen=True, slots=True)
+class StageIntroPopup:
+    """Overlay shown at the start of each stage with the coin requirement."""
+
+    stage: int
+    coin_goal: int
+
+
+@dataclass(slots=True)
+class FloatingCoinPopup:
+    """A +N coin label that rises and fades above the enemy's head."""
+
+    amount: int
+    x: float
+    y: float
+    age: float = 0.0
+    lifetime: float = 1.05
+
+
 def duel_stage(number: int) -> DuelStageSpec:
-    """Build one of the escalating duel stages."""
+    """Build one of the escalating duel stages.
+
+    Coin goals rise faster than a single headshot payout, so players must land
+    several limb/torso hits (or farm extra enemies) while still being able to
+    unlock mid-tier shop weapons between stages.
+    """
     specs = {
         1: DuelStageSpec(1, "spear", 2.6, 0.20, 25),
         2: DuelStageSpec(2, "bow", 2.2, 0.15, 40),
-        3: DuelStageSpec(3, "trident", 1.9, 0.11, 60),
-        4: DuelStageSpec(4, "broadsword", 1.6, 0.08, 85),
-        5: DuelStageSpec(5, "axe", 1.45, 0.06, 110),
-        6: DuelStageSpec(6, "javelin", 1.25, 0.04, 140),
-        7: DuelStageSpec(7, "trident", 1.05, 0.03, 180),
+        3: DuelStageSpec(3, "javelin", 1.9, 0.11, 55),
+        4: DuelStageSpec(4, "trident", 1.6, 0.08, 75),
+        5: DuelStageSpec(5, "axe", 1.45, 0.06, 95),
+        6: DuelStageSpec(6, "broadsword", 1.25, 0.04, 120),
+        7: DuelStageSpec(7, "trident", 1.05, 0.03, 150),
     }
     return specs[number]
 
@@ -172,33 +196,39 @@ class DuelAI:
 
 
 class VersusScene:
-    """Stage-clearing duel: defeat each pillar opponent to advance."""
+    """Stage-clearing duel with hit coins, a weapon shop, and coin goals."""
 
     def __init__(self) -> None:
-        """Set up fonts, the player fighter, and the first stage."""
+        """Set up fonts, wallet, owned starter weapon, and stage 1."""
         self._font = pygame.font.SysFont("Arial", 22, bold=True)
         self._title = pygame.font.SysFont("Arial", 34, bold=True)
         self._small = pygame.font.SysFont("Arial", 17)
+        self._tiny = pygame.font.SysFont("Arial", 14)
         self._stage_no = 1
-        self._score = 0
+        self._coins = 0  # spendable wallet
+        self._stage_earned = 0  # coins earned toward the current stage goal
+        self._owned_weapons: set[str] = {c.DUEL_STARTER_WEAPON}
         self._result: Optional[str] = None
-        self._banner_timer = 1.4
         self._space_prev = False
-        self._cycle_prev = False
-        self._prev_enemy_weapon = ""  # ensures each respawn uses a new weapon
+        self._prev_enemy_weapon = ""
         self._clear_popup: Optional[StageClearPopup] = None
+        self._intro_popup: Optional[StageIntroPopup] = None
+        self._coin_popups: list[FloatingCoinPopup] = []
+        self._display_coins = 0.0  # smoothly counts up toward wallet
+        self._display_earned = 0.0  # smoothly counts up toward stage goal progress
+        self._need_more_banner = 0.0
 
         self._player = DuelFighter(
             team="player",
             x=_PLAYER_X,
             ground_y=_PILLAR_TOP_Y,
             facing=1,
-            weapon_key="spear",
+            weapon_key=c.DUEL_STARTER_WEAPON,
         )
         self._projectiles: list[Projectile] = []
         self._enemy: DuelFighter
         self._ai: DuelAI
-        self._load_stage(self._stage_no)
+        self._load_stage(self._stage_no, show_intro=True)
 
     # -- stage lifecycle ----------------------------------------------------
     def _pick_enemy_weapon(self) -> str:
@@ -208,11 +238,8 @@ class VersusScene:
         self._prev_enemy_weapon = weapon
         return weapon
 
-    def _load_stage(self, number: int) -> None:
-        """Spawn the next opponent and reset the player for a fresh duel."""
-        spec = duel_stage(number)
-        # Each newly spawned enemy takes over the same pillar but wields a
-        # different weapon from the one the previous enemy used.
+    def _spawn_enemy(self) -> None:
+        """Place a fresh opponent on the enemy pillar."""
         self._enemy = DuelFighter(
             team="enemy",
             x=_ENEMY_X,
@@ -220,25 +247,118 @@ class VersusScene:
             facing=-1,
             weapon_key=self._pick_enemy_weapon(),
         )
-        self._ai = DuelAI(spec)
+        self._ai = DuelAI(duel_stage(self._stage_no))
         self._projectiles.clear()
-        self._player.reset_health()
-        self._banner_timer = 1.4
-        self._clear_popup = None
-        self._space_prev = True  # ignore held Space from dismissing the popup
 
-    def _open_stage_clear_popup(self) -> None:
-        """Award coins and show the stage-clear / final-win score window."""
-        reward = duel_stage(self._stage_no).reward
-        self._score += reward
+    def _load_stage(self, number: int, *, show_intro: bool = True) -> None:
+        """Start a stage: reset stage earnings, heal the player, spawn enemy."""
+        self._stage_no = number
+        self._stage_earned = 0
+        self._display_earned = 0.0
+        self._coin_popups.clear()
+        self._spawn_enemy()
+        self._player.reset_health()
+        if self._player.weapon_key not in self._owned_weapons:
+            self._player.weapon_key = c.DUEL_STARTER_WEAPON
+        self._clear_popup = None
+        self._need_more_banner = 0.0
+        self._space_prev = True  # ignore held Space from dismissing popups
+        if show_intro:
+            self._intro_popup = StageIntroPopup(
+                stage=number,
+                coin_goal=duel_stage(number).coin_goal,
+            )
+        else:
+            self._intro_popup = None
+
+    def _award_hit_coins(self, segment_name: str) -> int:
+        """Add hit payout and spawn a floating +N above the enemy's head."""
+        amount = c.hit_coins_for_segment(segment_name)
+        self._coins += amount
+        self._stage_earned += amount
+        head_x, head_y = self._enemy.head_center
+        # Stack slightly so rapid hits don't fully overlap.
+        stack = len(self._coin_popups) * 10.0
+        self._coin_popups.append(
+            FloatingCoinPopup(
+                amount=amount,
+                x=head_x,
+                y=head_y - c.HEAD_R - 8.0 - stack,
+            )
+        )
+        return amount
+
+    def _update_coin_popups(self, dt: float) -> None:
+        """Advance floating labels and ease the HUD coin counters upward."""
+        for popup in self._coin_popups:
+            popup.age += dt
+            popup.y -= 52.0 * dt  # rise above the head
+        self._coin_popups = [p for p in self._coin_popups if p.age < p.lifetime]
+
+        # Count the HUD numbers up (and snap down immediately after spending).
+        coin_speed = 70.0 * dt
+        if self._display_coins < self._coins:
+            self._display_coins = min(float(self._coins), self._display_coins + coin_speed)
+        else:
+            self._display_coins = float(self._coins)
+
+        earned_speed = 70.0 * dt
+        if self._display_earned < self._stage_earned:
+            self._display_earned = min(
+                float(self._stage_earned), self._display_earned + earned_speed
+            )
+        else:
+            self._display_earned = float(self._stage_earned)
+
+    def _try_buy_weapon(self, key: str) -> bool:
+        """Purchase ``key`` if locked and affordable; equip it when owned."""
+        stats = c.THROW_WEAPONS[key]
+        if key in self._owned_weapons:
+            self._player.weapon_key = key
+            self._player.weapon_swap_timer = c.DUEL_WEAPON_SWAP_TIME
+            return True
+        if self._coins < stats.price:
+            return False
+        self._coins -= stats.price
+        self._owned_weapons.add(key)
+        self._player.weapon_key = key
+        self._player.weapon_swap_timer = c.DUEL_WEAPON_SWAP_TIME
+        return True
+
+    def _cycle_owned_weapon(self) -> None:
+        """Cycle only through weapons the player has unlocked."""
+        owned = [k for k in c.THROW_WEAPON_ORDER if k in self._owned_weapons]
+        if not owned:
+            return
+        if self._player.weapon_key not in owned:
+            self._player.weapon_key = owned[0]
+            return
+        idx = owned.index(self._player.weapon_key)
+        self._player.weapon_key = owned[(idx + 1) % len(owned)]
+        self._player.weapon_swap_timer = c.DUEL_WEAPON_SWAP_TIME
+
+    def _on_enemy_defeated(self) -> None:
+        """Pass the stage if the coin goal is met; otherwise farm another foe."""
+        goal = duel_stage(self._stage_no).coin_goal
         self._projectiles.clear()
         self._player.charging = False
-        self._clear_popup = StageClearPopup(
-            cleared_stage=self._stage_no,
-            reward=reward,
-            total_score=self._score,
-            is_final=self._stage_no >= _TOTAL_STAGES,
-        )
+        if self._stage_earned >= goal:
+            self._clear_popup = StageClearPopup(
+                cleared_stage=self._stage_no,
+                stage_earned=self._stage_earned,
+                coin_goal=goal,
+                wallet=self._coins,
+                is_final=self._stage_no >= _TOTAL_STAGES,
+            )
+            return
+        # Keep stage earnings and spawn another enemy to farm remaining coins.
+        self._spawn_enemy()
+        self._need_more_banner = 2.4
+
+    def _dismiss_intro_popup(self) -> None:
+        """Close the stage-requirement window and begin combat."""
+        self._intro_popup = None
+        self._space_prev = True
 
     def _dismiss_stage_clear_popup(self) -> Optional[str]:
         """Advance to the next stage, or finish the run on the final stage."""
@@ -249,23 +369,22 @@ class VersusScene:
             self._result = "win"
             self._clear_popup = None
             return self._result
-        self._stage_no += 1
-        self._load_stage(self._stage_no)
+        self._load_stage(self._stage_no + 1, show_intro=True)
         return None
 
     @staticmethod
     def _popup_rect() -> pygame.Rect:
-        """Centered modal panel for the stage-clear overlay."""
+        """Centered modal panel for intro / clear overlays."""
         return pygame.Rect(
             (c.SCREEN_W - _POPUP_W) // 2,
-            (c.SCREEN_H - _POPUP_H) // 2,
+            (c.SCREEN_H - _POPUP_H) // 2 - 10,
             _POPUP_W,
             _POPUP_H,
         )
 
     @staticmethod
     def _continue_button_rect() -> pygame.Rect:
-        """Continue button inside the stage-clear popup."""
+        """Continue button inside a modal popup."""
         panel = VersusScene._popup_rect()
         return pygame.Rect(
             panel.centerx - _CONTINUE_BTN_W // 2,
@@ -274,10 +393,15 @@ class VersusScene:
             _CONTINUE_BTN_H,
         )
 
+    @property
+    def _modal_open(self) -> bool:
+        """True while an intro or clear popup freezes combat."""
+        return self._intro_popup is not None or self._clear_popup is not None
+
     # -- input --------------------------------------------------------------
     @staticmethod
     def _weapon_buttons() -> list[tuple[pygame.Rect, str]]:
-        """Return clickable rects paired with their weapon key."""
+        """Return clickable shop rects paired with their weapon key."""
         buttons: list[tuple[pygame.Rect, str]] = []
         for i, key in enumerate(c.THROW_WEAPON_ORDER):
             rect = pygame.Rect(
@@ -290,7 +414,19 @@ class VersusScene:
         return buttons
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Handle weapon selection and stage-clear popup dismissal."""
+        """Handle shop clicks and intro / clear popup dismissal."""
+        if self._intro_popup is not None:
+            if event.type == pygame.KEYDOWN and event.key in (
+                pygame.K_SPACE,
+                pygame.K_RETURN,
+                pygame.K_KP_ENTER,
+            ):
+                self._dismiss_intro_popup()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._continue_button_rect().collidepoint(event.pos):
+                    self._dismiss_intro_popup()
+            return
+
         if self._clear_popup is not None:
             if event.type == pygame.KEYDOWN and event.key in (
                 pygame.K_SPACE,
@@ -304,11 +440,11 @@ class VersusScene:
             return
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
-            self._player.cycle_weapon()
+            self._cycle_owned_weapon()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for rect, key in self._weapon_buttons():
                 if rect.collidepoint(event.pos):
-                    self._player.weapon_key = key
+                    self._try_buy_weapon(key)
                     break
 
     def _handle_player_input(self, dt: float) -> None:
@@ -347,8 +483,12 @@ class VersusScene:
         if self._result is not None:
             return self._result
 
-        # Freeze combat while the stage-clear score window is open.
-        if self._clear_popup is not None:
+        if self._need_more_banner > 0.0:
+            self._need_more_banner = max(0.0, self._need_more_banner - dt)
+        self._update_coin_popups(dt)
+
+        # Freeze combat while a modal window is open.
+        if self._modal_open:
             return None
 
         self._handle_player_input(dt)
@@ -366,11 +506,9 @@ class VersusScene:
             return self._result
 
         if self._enemy.dead and self._clear_popup is None:
-            self._open_stage_clear_popup()
+            self._on_enemy_defeated()
             return None
 
-        if self._banner_timer > 0.0:
-            self._banner_timer = max(0.0, self._banner_timer - dt)
         return None
 
     def _advance_projectiles(self, dt: float) -> None:
@@ -393,6 +531,12 @@ class VersusScene:
                 proj.stats.damage,
                 EmbeddedWeapon(proj.weapon_key, point[0], point[1], proj.angle),
             )
+            # Only player hits earn coins toward the stage goal / shop.
+            if proj.team == "player":
+                self._award_hit_coins(segment)
+                # Enemy slides on the pillar so follow-up aim is harder.
+                if not target.dead:
+                    target.apply_safe_knockback()
             proj.dead = True
         self._projectiles = [p for p in self._projectiles if not p.dead]
 
@@ -424,9 +568,12 @@ class VersusScene:
         self._enemy.draw(surf)
         for proj in self._projectiles:
             proj.draw(surf)
+        self._draw_coin_popups(surf)
 
         self._draw_hud(surf)
-        if self._clear_popup is not None:
+        if self._intro_popup is not None:
+            self._draw_stage_intro_popup(surf, self._intro_popup)
+        elif self._clear_popup is not None:
             self._draw_stage_clear_popup(surf, self._clear_popup)
 
     def _draw_background(self, surf: pygame.Surface) -> None:
@@ -452,15 +599,60 @@ class VersusScene:
             border_radius=4,
         )
 
+    def _draw_coin_popups(self, surf: pygame.Surface) -> None:
+        """Draw rising +N labels anchored above the enemy's head."""
+        for popup in self._coin_popups:
+            t = popup.age / popup.lifetime
+            # Pop in quickly, then fade out while rising.
+            if t < 0.15:
+                scale = 0.75 + (t / 0.15) * 0.45
+                alpha = 255
+            else:
+                scale = 1.2 - (t - 0.15) * 0.25
+                alpha = int(255 * (1.0 - (t - 0.15) / 0.85))
+            alpha = max(0, min(255, alpha))
+            label = self._font.render(f"+{popup.amount}", True, (255, 220, 50))
+            # Soft dark outline so the gold number reads on the green sky.
+            outline = self._font.render(f"+{popup.amount}", True, (40, 30, 10))
+            w = max(1, int(label.get_width() * scale))
+            h = max(1, int(label.get_height() * scale))
+            scaled = pygame.transform.smoothscale(label, (w, h))
+            scaled_outline = pygame.transform.smoothscale(outline, (w, h))
+            scaled.set_alpha(alpha)
+            scaled_outline.set_alpha(alpha)
+            rect = scaled.get_rect(center=(int(popup.x), int(popup.y)))
+            surf.blit(scaled_outline, rect.move(1, 1))
+            surf.blit(scaled, rect)
+
     def _draw_hud(self, surf: pygame.Surface) -> None:
+        goal = duel_stage(self._stage_no).coin_goal
+        shown_coins = int(self._display_coins)
+        shown_earned = int(self._display_earned)
         stage_txt = self._font.render(
             f"STAGE {self._stage_no}/{_TOTAL_STAGES}", True, (30, 40, 30)
         )
-        score_txt = self._font.render(f"COINS: {self._score}", True, (120, 80, 20))
-        surf.blit(stage_txt, (20, 18))
-        surf.blit(score_txt, (20, 46))
+        wallet_txt = self._font.render(f"COINS: {shown_coins}", True, (120, 80, 20))
+        progress = min(1.0, shown_earned / max(1, goal))
+        goal_txt = self._font.render(
+            f"GOAL: {shown_earned}/{goal}",
+            True,
+            (28, 110, 50) if shown_earned >= goal else (30, 40, 30),
+        )
+        surf.blit(stage_txt, (20, 14))
+        surf.blit(wallet_txt, (20, 40))
+        surf.blit(goal_txt, (20, 66))
 
-        self._draw_integrity(surf, 20, 78, "YOU", self._player)
+        # Stage coin-progress bar.
+        bar = pygame.Rect(20, 94, 220, 12)
+        pygame.draw.rect(surf, (40, 60, 40), bar, border_radius=4)
+        pygame.draw.rect(
+            surf,
+            (240, 180, 40),
+            pygame.Rect(20, 94, int(220 * progress), 12),
+            border_radius=4,
+        )
+
+        self._draw_integrity(surf, 20, 128, "YOU", self._player)
         self._draw_integrity(surf, c.SCREEN_W - 240, 78, "ENEMY", self._enemy)
 
         weapon_txt = self._small.render(
@@ -468,10 +660,10 @@ class VersusScene:
             True,
             (30, 40, 30),
         )
-        surf.blit(weapon_txt, (20, 108))
+        surf.blit(weapon_txt, (20, 158))
 
         # Power meter
-        meter = pygame.Rect(20, 134, 220, 16)
+        meter = pygame.Rect(20, 180, 220, 14)
         pygame.draw.rect(surf, (40, 60, 40), meter, border_radius=4)
         frac = (self._player.power - c.THROW_POWER_MIN) / (
             c.THROW_POWER_MAX - c.THROW_POWER_MIN
@@ -480,25 +672,63 @@ class VersusScene:
         pygame.draw.rect(
             surf,
             (240, 180, 40),
-            pygame.Rect(20, 134, int(220 * frac), 16),
+            pygame.Rect(20, 180, int(220 * frac), 14),
             border_radius=4,
         )
         power_label = self._small.render("POWER (hold Space)", True, (30, 40, 30))
-        surf.blit(power_label, (250, 133))
+        surf.blit(power_label, (250, 178))
 
         self._draw_weapon_panel(surf)
 
         controls = self._small.render(
-            "A/D dodge  |  W/S aim  |  Hold Space: throw  |  E or click panel: weapon"
+            "A/D dodge  |  W/S aim  |  Space throw  |  Click shop to buy/equip  |  E cycle owned"
             "  |  Don't fall off!",
             True,
             (32, 44, 32),
         )
         surf.blit(controls, (20, c.SCREEN_H - 28))
 
-        if self._banner_timer > 0.0 and self._clear_popup is None:
-            banner = self._font.render(f"STAGE {self._stage_no}", True, (20, 30, 20))
-            surf.blit(banner, banner.get_rect(center=(c.SCREEN_W // 2, 40)))
+        if self._need_more_banner > 0.0:
+            remaining = max(0, goal - self._stage_earned)
+            banner = self._font.render(
+                f"Need {remaining} more coins — new enemy!",
+                True,
+                (140, 40, 30),
+            )
+            surf.blit(banner, banner.get_rect(center=(c.SCREEN_W // 2, 42)))
+
+    def _draw_stage_intro_popup(self, surf: pygame.Surface, popup: StageIntroPopup) -> None:
+        """Show the coin requirement and how to earn / spend before combat."""
+        dim = pygame.Surface((c.SCREEN_W, c.SCREEN_H), pygame.SRCALPHA)
+        dim.fill((12, 18, 12, 160))
+        surf.blit(dim, (0, 0))
+
+        panel = self._popup_rect()
+        pygame.draw.rect(surf, (236, 244, 228), panel, border_radius=14)
+        pygame.draw.rect(surf, (42, 78, 46), panel, 3, border_radius=14)
+
+        title = self._title.render(f"STAGE {popup.stage}", True, (28, 92, 40))
+        surf.blit(title, title.get_rect(centerx=panel.centerx, y=panel.y + 22))
+
+        goal = self._font.render(
+            f"Earn {popup.coin_goal} coins to pass", True, (140, 90, 20)
+        )
+        surf.blit(goal, goal.get_rect(centerx=panel.centerx, y=panel.y + 72))
+
+        lines = (
+            f"Arms / legs  +{c.HIT_COINS_LIMB} coins",
+            f"Body (torso)  +{c.HIT_COINS_TORSO} coins  (2x)",
+            f"Head  +{c.HIT_COINS_HEAD} coins  (3x)",
+            "Buy stronger weapons in the left shop.",
+            "Pass = coin goal met + enemy defeated.",
+        )
+        y = panel.y + 112
+        for line in lines:
+            text = self._small.render(line, True, (40, 55, 40))
+            surf.blit(text, text.get_rect(centerx=panel.centerx, y=y))
+            y += 26
+
+        self._draw_continue_button(surf, "Start Stage")
 
     def _draw_stage_clear_popup(self, surf: pygame.Surface, popup: StageClearPopup) -> None:
         """Draw a modal window celebrating the stage win and showing scores."""
@@ -528,53 +758,79 @@ class VersusScene:
         surf.blit(title, title.get_rect(centerx=panel.centerx, y=panel.y + 28))
         surf.blit(subtitle, subtitle.get_rect(centerx=panel.centerx, y=panel.y + 78))
 
-        reward_txt = self._font.render(
-            f"+{popup.reward} coins this stage", True, (140, 90, 20)
+        earned_txt = self._font.render(
+            f"Earned {popup.stage_earned} / {popup.coin_goal} goal coins",
+            True,
+            (140, 90, 20),
         )
-        total_txt = self._font.render(
-            f"Total score: {popup.total_score}", True, (40, 55, 40)
+        wallet_txt = self._font.render(
+            f"Wallet: {popup.wallet} coins", True, (40, 55, 40)
         )
-        surf.blit(reward_txt, reward_txt.get_rect(centerx=panel.centerx, y=panel.y + 118))
-        surf.blit(total_txt, total_txt.get_rect(centerx=panel.centerx, y=panel.y + 150))
+        surf.blit(earned_txt, earned_txt.get_rect(centerx=panel.centerx, y=panel.y + 124))
+        surf.blit(wallet_txt, wallet_txt.get_rect(centerx=panel.centerx, y=panel.y + 158))
 
+        self._draw_continue_button(surf, button_label)
+
+    def _draw_continue_button(self, surf: pygame.Surface, label: str) -> None:
+        """Shared Continue / Start button for modal popups."""
         btn = self._continue_button_rect()
         hovered = btn.collidepoint(pygame.mouse.get_pos())
         fill = (92, 176, 110) if hovered else (64, 148, 86)
         pygame.draw.rect(surf, fill, btn, border_radius=8)
         pygame.draw.rect(surf, (28, 70, 40), btn, 2, border_radius=8)
-        label = self._font.render(button_label, True, (248, 252, 246))
-        surf.blit(label, label.get_rect(center=btn.center))
-
+        text = self._font.render(label, True, (248, 252, 246))
+        surf.blit(text, text.get_rect(center=btn.center))
         hint = self._small.render(
             "Press Space / Enter or click to continue", True, (70, 90, 70)
         )
+        panel = self._popup_rect()
         surf.blit(hint, hint.get_rect(centerx=panel.centerx, y=panel.bottom - 22))
 
     def _draw_weapon_panel(self, surf: pygame.Surface) -> None:
-        """Draw the clickable weapon selector on the left of the screen."""
-        title = self._small.render("WEAPONS", True, (28, 40, 28))
+        """Draw the left-side weapon shop (buy locked / equip owned)."""
+        title = self._small.render("WEAPON SHOP", True, (28, 40, 28))
         surf.blit(title, (_PANEL_X, _PANEL_Y - 22))
         mouse = pygame.mouse.get_pos()
         for rect, key in self._weapon_buttons():
             stats = c.THROW_WEAPONS[key]
+            owned = key in self._owned_weapons
             selected = key == self._player.weapon_key
             hovered = rect.collidepoint(mouse)
+            can_afford = self._coins >= stats.price
+
             if selected:
                 fill = (250, 214, 96)
-            elif hovered:
+            elif owned and hovered:
                 fill = (150, 196, 128)
-            else:
+            elif owned:
                 fill = (56, 96, 62)
+            elif can_afford and hovered:
+                fill = (120, 160, 90)
+            elif can_afford:
+                fill = (70, 100, 72)
+            else:
+                fill = (48, 58, 50)
+
             pygame.draw.rect(surf, fill, rect, border_radius=7)
             pygame.draw.rect(surf, (30, 46, 32), rect, 2, border_radius=7)
 
-            # Mini multi-part weapon icon instead of a flat color swatch.
             icon_center = (rect.x + 22, rect.centery)
             draw_panel_icon(surf, key, icon_center, size=24.0)
 
             text_color = (40, 34, 12) if selected else (238, 244, 236)
+            if not owned and not can_afford:
+                text_color = (170, 176, 168)
             name = self._small.render(stats.name, True, text_color)
-            surf.blit(name, (rect.x + 42, rect.centery - name.get_height() // 2))
+            surf.blit(name, (rect.x + 42, rect.y + 2))
+
+            if owned:
+                detail = "OWNED" if not selected else "EQUIPPED"
+                detail_color = (40, 34, 12) if selected else (200, 230, 200)
+            else:
+                detail = f"{stats.price}c  dmg {stats.damage:.2f}"
+                detail_color = (255, 230, 120) if can_afford else (160, 160, 150)
+            meta = self._tiny.render(detail, True, detail_color)
+            surf.blit(meta, (rect.x + 42, rect.y + 17))
 
     def _draw_integrity(
         self,
@@ -599,8 +855,13 @@ class VersusScene:
 
     @property
     def score(self) -> int:
-        """Coins earned so far in this duel run."""
-        return self._score
+        """Spendable coin wallet (also used as the run score)."""
+        return self._coins
+
+    @property
+    def stage_earned(self) -> int:
+        """Coins earned toward the current stage goal."""
+        return self._stage_earned
 
     @property
     def stage_count(self) -> int:
