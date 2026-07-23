@@ -71,7 +71,7 @@ class MenuScene:
 
         hints = (
             "Hit foes for coins: limbs +5 · body +10 · head +15",
-            "Buy weapons (left) and helmets/shields (right); stages 16–30 add a high pillar foe",
+            "Buy weapons (left); helmets/shields unlock from stage 6; stages 16–30 add a high foe",
             "A/D dodge  |  W/S aim  |  Hold Space to throw  |  Don't fall off the pillar",
         )
         for idx, line in enumerate(hints):

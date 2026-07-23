@@ -9,8 +9,9 @@ shop, and defense gear.
   - **Head:** +15 coins (3x)
 - Each stage opens with a popup showing the **coin goal** required to pass.
 - **Left shop:** weapons (Spear free → Bow → Javelin → Trident → Axe → Broadsword).
-- **Right shop:** helmets & shields (higher price = stronger damage reduction /
-  more durability). Helmets can block instant head-kills while intact.
+- **Right shop (from stage 6):** helmets & shields (higher price = stronger
+  damage reduction / more durability). Helmets can block instant head-kills
+  while intact.
 - Stages **16–30** add a **taller second pillar** with an extra enemy.
 - Late-stage foes may wear helmets/shields of their own.
 - Pass only when the **coin goal** is met and **all enemies** are defeated.

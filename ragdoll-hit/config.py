@@ -25,9 +25,9 @@ ENEMY_YELLOW: tuple[int, int, int] = (240, 212, 90)
 # ---------------------------------------------------------------------------
 # Versus projectile-duel mode
 # ---------------------------------------------------------------------------
-# Bright silhouette style referencing the throwing/archery stick-figure image.
-DUEL_BG_TOP: tuple[int, int, int] = (152, 228, 122)
-DUEL_BG_BOTTOM: tuple[int, int, int] = (112, 194, 94)
+# Soft apple-green backdrop — easier on the eyes than saturated lime.
+DUEL_BG_TOP: tuple[int, int, int] = (186, 220, 132)
+DUEL_BG_BOTTOM: tuple[int, int, int] = (148, 188, 98)
 DUEL_FIGHTER_BLACK: tuple[int, int, int] = (24, 26, 28)
 DUEL_PILLAR_COLOR: tuple[int, int, int] = (58, 64, 72)
 DUEL_PILLAR_TOP: tuple[int, int, int] = (86, 94, 104)
@@ -82,6 +82,7 @@ DUEL_STARTER_WEAPON: str = "spear"
 # Stage campaign length / dual-enemy breakpoint (latter half).
 DUEL_TOTAL_STAGES: int = 30
 DUEL_DUAL_ENEMY_FROM: int = 16  # stage 16+ adds a taller second pillar + foe
+DUEL_DEFENSE_SHOP_FROM: int = 6  # helmets/shields unlock after stage 5
 
 
 @dataclass(frozen=True, slots=True)

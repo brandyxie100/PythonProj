@@ -121,6 +121,15 @@ def test_buy_weapon_spends_coins_and_unlocks() -> None:
     assert not scene._try_buy_weapon("broadsword")
 
 
+def test_defense_shop_hidden_before_stage_six() -> None:
+    scene = VersusScene()
+    scene._dismiss_intro_popup()
+    assert scene._stage_no < c.DUEL_DEFENSE_SHOP_FROM
+    assert not scene._defense_shop_unlocked
+    scene._load_stage(c.DUEL_DEFENSE_SHOP_FROM, show_intro=False)
+    assert scene._defense_shop_unlocked
+
+
 def test_buy_helmet_reduces_head_lethality() -> None:
     scene = VersusScene()
     scene._dismiss_intro_popup()

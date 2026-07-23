@@ -32,18 +32,23 @@ _HIGH_ENEMY_X: float = float(c.SCREEN_W) - 380.0
 _PROJECTILE_FLOOR: float = float(c.SCREEN_H) + 30.0
 _TOTAL_STAGES: int = c.DUEL_TOTAL_STAGES
 
-# Left-side weapon-shop panel layout.
+# Left-side weapon-shop panel layout (starts below HUD meters).
 _PANEL_X: int = 18
-_PANEL_Y: int = 196
+_PANEL_Y: int = 214
 _PANEL_BTN_W: int = 176
 _PANEL_BTN_H: int = 34
 _PANEL_GAP: int = 8
 
-# Right-side defense-shop panel layout.
-_DEF_PANEL_X: int = c.SCREEN_W - 194
-_DEF_PANEL_Y: int = 196
-_DEF_BTN_W: int = 176
-_DEF_BTN_H: int = 34
+# Right-side defense-shop panel layout (kept high so it clears the stickman).
+_DEF_PANEL_X: int = c.SCREEN_W - 186
+_DEF_PANEL_Y: int = 88
+_DEF_BTN_W: int = 168
+_DEF_BTN_H: int = 28
+
+# Compact integrity (energy) bars.
+_INTEGRITY_BAR_W: int = 128
+_INTEGRITY_BAR_H: int = 10
+_HUD_LEFT_X: int = 20
 
 # Modal popup layout (stage intro + stage clear).
 _POPUP_W: int = 480
@@ -508,7 +513,7 @@ class VersusScene:
         for key in c.HELMET_ORDER:
             rect = pygame.Rect(
                 _DEF_PANEL_X,
-                _DEF_PANEL_Y + row * (_DEF_BTN_H + _PANEL_GAP),
+                _DEF_PANEL_Y + row * (_DEF_BTN_H + 4),
                 _DEF_BTN_W,
                 _DEF_BTN_H,
             )
@@ -518,13 +523,18 @@ class VersusScene:
         for key in c.SHIELD_ORDER:
             rect = pygame.Rect(
                 _DEF_PANEL_X,
-                _DEF_PANEL_Y + row * (_DEF_BTN_H + _PANEL_GAP),
+                _DEF_PANEL_Y + row * (_DEF_BTN_H + 4),
                 _DEF_BTN_W,
                 _DEF_BTN_H,
             )
             buttons.append((rect, "shield", key))
             row += 1
         return buttons
+
+    @property
+    def _defense_shop_unlocked(self) -> bool:
+        """True once the campaign reaches the defense-shop unlock stage."""
+        return self._stage_no >= c.DUEL_DEFENSE_SHOP_FROM
 
     def handle_event(self, event: pygame.event.Event) -> None:
         """Handle shop clicks and intro / clear popup dismissal."""
@@ -559,13 +569,14 @@ class VersusScene:
                 if rect.collidepoint(event.pos):
                     self._try_buy_weapon(key)
                     return
-            for rect, kind, key in self._defense_buttons():
-                if rect.collidepoint(event.pos):
-                    if kind == "helmet":
-                        self._try_buy_helmet(key)
-                    else:
-                        self._try_buy_shield(key)
-                    return
+            if self._defense_shop_unlocked:
+                for rect, kind, key in self._defense_buttons():
+                    if rect.collidepoint(event.pos):
+                        if kind == "helmet":
+                            self._try_buy_helmet(key)
+                        else:
+                            self._try_buy_shield(key)
+                        return
 
     def _handle_player_input(self, dt: float) -> None:
         keys = pygame.key.get_pressed()
@@ -780,9 +791,12 @@ class VersusScene:
             surf.blit(scaled, rect)
 
     def _draw_hud(self, surf: pygame.Surface) -> None:
+        """Draw left/right HUD with clear vertical spacing (no label clashes)."""
         goal = duel_stage(self._stage_no).coin_goal
         shown_coins = int(self._display_coins)
         shown_earned = int(self._display_earned)
+        x = _HUD_LEFT_X
+
         stage_txt = self._font.render(
             f"STAGE {self._stage_no}/{_TOTAL_STAGES}", True, (30, 40, 30)
         )
@@ -793,27 +807,29 @@ class VersusScene:
             True,
             (28, 110, 50) if shown_earned >= goal else (30, 40, 30),
         )
-        surf.blit(stage_txt, (20, 14))
-        surf.blit(wallet_txt, (20, 40))
-        surf.blit(goal_txt, (20, 66))
+        surf.blit(stage_txt, (x, 12))
+        surf.blit(wallet_txt, (x, 36))
+        surf.blit(goal_txt, (x, 60))
 
-        # Stage coin-progress bar.
-        bar = pygame.Rect(20, 94, 220, 12)
-        pygame.draw.rect(surf, (40, 60, 40), bar, border_radius=4)
+        # Goal progress (narrow bar under GOAL text).
+        goal_bar = pygame.Rect(x, 86, 200, 8)
+        pygame.draw.rect(surf, (40, 60, 40), goal_bar, border_radius=3)
         pygame.draw.rect(
             surf,
             (240, 180, 40),
-            pygame.Rect(20, 94, int(220 * progress), 12),
-            border_radius=4,
+            pygame.Rect(x, 86, int(200 * progress), 8),
+            border_radius=3,
         )
 
-        self._draw_integrity(surf, 20, 128, "YOU", self._player)
-        # Enemy bars stacked on the right for dual-foe stages.
-        ey = 78
+        # Player integrity block: label above bar.
+        self._draw_integrity(surf, x, 102, "YOU", self._player)
+
+        # Enemy bars top-right (compact stack).
+        ey = 14
         for idx, enemy in enumerate(self._enemies):
-            label = "ENEMY" if len(self._enemies) == 1 else f"ENEMY {idx + 1}"
-            self._draw_integrity(surf, c.SCREEN_W - 240, ey, label, enemy)
-            ey += 48
+            label = "ENEMY" if len(self._enemies) == 1 else f"E{idx + 1}"
+            self._draw_integrity(surf, c.SCREEN_W - 148, ey, label, enemy)
+            ey += 30
 
         gear_bits: list[str] = []
         if self._player.helmet_key:
@@ -826,11 +842,11 @@ class VersusScene:
             True,
             (30, 40, 30),
         )
-        surf.blit(weapon_txt, (20, 158))
+        surf.blit(weapon_txt, (x, 132))
 
-        # Power meter
-        meter = pygame.Rect(20, 180, 220, 14)
-        pygame.draw.rect(surf, (40, 60, 40), meter, border_radius=4)
+        # Power meter sits above the weapon shop with a clear gap.
+        meter = pygame.Rect(x, 156, 200, 12)
+        pygame.draw.rect(surf, (40, 60, 40), meter, border_radius=3)
         frac = (self._player.power - c.THROW_POWER_MIN) / (
             c.THROW_POWER_MAX - c.THROW_POWER_MIN
         )
@@ -838,22 +854,31 @@ class VersusScene:
         pygame.draw.rect(
             surf,
             (240, 180, 40),
-            pygame.Rect(20, 180, int(220 * frac), 14),
-            border_radius=4,
+            pygame.Rect(x, 156, int(200 * frac), 12),
+            border_radius=3,
         )
         power_label = self._small.render("POWER (hold Space)", True, (30, 40, 30))
-        surf.blit(power_label, (250, 178))
+        surf.blit(power_label, (x + 210, 154))
 
         self._draw_weapon_panel(surf)
-        self._draw_defense_panel(surf)
+        if self._defense_shop_unlocked:
+            self._draw_defense_panel(surf)
 
-        controls = self._small.render(
-            "A/D dodge  |  W/S aim  |  Space throw  |  Left: weapons  |  Right: helmets/shields"
-            "  |  Don't fall off!",
-            True,
-            (32, 44, 32),
-        )
-        surf.blit(controls, (20, c.SCREEN_H - 28))
+        if self._defense_shop_unlocked:
+            controls = self._small.render(
+                "A/D dodge  |  W/S aim  |  Space throw  |  Left: weapons  |  Right: helmets/shields"
+                "  |  Don't fall off!",
+                True,
+                (32, 44, 32),
+            )
+        else:
+            controls = self._small.render(
+                "A/D dodge  |  W/S aim  |  Space throw  |  Left: weapons"
+                f"  |  Defense shop unlocks at stage {c.DUEL_DEFENSE_SHOP_FROM}",
+                True,
+                (32, 44, 32),
+            )
+        surf.blit(controls, (x, c.SCREEN_H - 28))
 
         if self._need_more_banner > 0.0:
             remaining = max(0, goal - self._stage_earned)
@@ -884,10 +909,19 @@ class VersusScene:
 
         lines = [
             f"Arms / legs  +{c.HIT_COINS_LIMB}  |  Body +{c.HIT_COINS_TORSO}  |  Head +{c.HIT_COINS_HEAD}",
-            "Left shop: weapons   Right shop: helmets & shields",
-            "Helmets blunt headshots; shields blunt body hits.",
+            "Left shop: weapons",
             "Pass = coin goal met + all enemies defeated.",
         ]
+        if popup.stage >= c.DUEL_DEFENSE_SHOP_FROM:
+            lines.insert(
+                2,
+                "Right shop: helmets & shields (blunt head / body hits).",
+            )
+        else:
+            lines.insert(
+                2,
+                f"Helmets & shields unlock from stage {c.DUEL_DEFENSE_SHOP_FROM}.",
+            )
         if popup.dual_enemies:
             lines.insert(
                 0,
@@ -1058,7 +1092,7 @@ class VersusScene:
                 detail = f"{stats.price}c  x{stats.damage_factor:.2f} dmg"
                 detail_color = (255, 230, 120) if can_afford else (160, 160, 150)
             meta = self._tiny.render(detail, True, detail_color)
-            surf.blit(meta, (rect.x + 34, rect.y + 17))
+            surf.blit(meta, (rect.x + 34, rect.y + 14))
 
     def _draw_integrity(
         self,
@@ -1068,18 +1102,22 @@ class VersusScene:
         label: str,
         fighter: DuelFighter,
     ) -> None:
-        """Draw a body-integrity bar (inverse of accumulated redness)."""
+        """Draw a compact integrity block: label on top, bar directly beneath.
+
+        ``y`` is the top of the label so callers can stack blocks without overlap.
+        """
+        text = self._tiny.render(label, True, (30, 40, 30))
+        surf.blit(text, (x, y))
+        bar_y = y + 14
         ratio = max(0.0, 1.0 - fighter.body_red_ratio() / c.BODY_RED_DEATH_RATIO)
-        bar = pygame.Rect(x, y, 220, 18)
-        pygame.draw.rect(surf, (40, 60, 40), bar, border_radius=4)
+        bar = pygame.Rect(x, bar_y, _INTEGRITY_BAR_W, _INTEGRITY_BAR_H)
+        pygame.draw.rect(surf, (40, 60, 40), bar, border_radius=3)
         pygame.draw.rect(
             surf,
             (70, 200, 90),
-            pygame.Rect(x, y, int(220 * ratio), 18),
-            border_radius=4,
+            pygame.Rect(x, bar_y, int(_INTEGRITY_BAR_W * ratio), _INTEGRITY_BAR_H),
+            border_radius=3,
         )
-        text = self._small.render(f"{label} integrity", True, (30, 40, 30))
-        surf.blit(text, (x, y - 20))
 
     @property
     def score(self) -> int:
