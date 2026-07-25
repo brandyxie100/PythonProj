@@ -154,3 +154,34 @@ def test_cycle_weapon_triggers_swap_animation() -> None:
     fighter.cycle_weapon()
     assert fighter.weapon_key != "spear"
     assert fighter.weapon_swap_timer > 0.0
+
+
+def test_overflow_damage_spills_to_other_segments() -> None:
+    """Hits on an already-ruined limb must still hurt the rest of the body."""
+    fighter = _fighter()
+    # Exactly fill the front leg (1x mult) without spilling.
+    fighter.apply_hit("leg_front", 1.0, _embed(fighter))
+    assert fighter.segments["leg_front"].redness == pytest.approx(1.0)
+    before_torso = fighter.segments["torso"].redness
+    before_ratio = fighter.integrity_ratio()
+    fighter.apply_hit("leg_front", 0.25, _embed(fighter))
+    assert fighter.segments["torso"].redness > before_torso
+    assert fighter.integrity_ratio() < before_ratio
+
+
+def test_integrity_ratio_keeps_falling_after_segment_cap() -> None:
+    fighter = _fighter()
+    fighter.apply_hit("arm_throw", 1.0, _embed(fighter))
+    mid = fighter.integrity_ratio()
+    assert mid > 0.0
+    fighter.apply_hit("arm_throw", 0.2, _embed(fighter))
+    assert fighter.integrity_ratio() < mid
+    assert fighter.wound_accum == pytest.approx(1.2)
+
+
+def test_heavy_weapons_out_damage_spear() -> None:
+    import config as c
+
+    spear = c.THROW_WEAPONS["spear"].damage
+    for key in ("trident", "axe", "broadsword"):
+        assert c.THROW_WEAPONS[key].damage > spear

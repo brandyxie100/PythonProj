@@ -17,6 +17,7 @@ from typing import Optional
 import pygame
 
 import config as c
+from blood_fx import BloodBurstSystem
 from duel_fighter import DuelFighter, EmbeddedWeapon
 from projectiles import Projectile, spawn_projectile
 from weapon_draw import draw_panel_icon
@@ -55,6 +56,8 @@ _POPUP_W: int = 480
 _POPUP_H: int = 360
 _CONTINUE_BTN_W: int = 210
 _CONTINUE_BTN_H: int = 44
+_CLOSE_BTN_SIZE: int = 32
+_CLOSE_BTN_PAD: int = 12
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,9 +231,12 @@ class VersusScene:
         self._clear_popup: Optional[StageClearPopup] = None
         self._intro_popup: Optional[StageIntroPopup] = None
         self._coin_popups: list[FloatingCoinPopup] = []
+        self._blood = BloodBurstSystem()
         self._display_coins = 0.0  # smoothly counts up toward wallet
         self._display_earned = 0.0  # smoothly counts up toward stage goal progress
         self._need_more_banner = 0.0
+        self._lives = c.DUEL_PLAYER_LIVES
+        self._respawn_invuln = 0.0
 
         self._player = DuelFighter(
             team="player",
@@ -242,7 +248,14 @@ class VersusScene:
         self._projectiles: list[Projectile] = []
         self._enemies: list[DuelFighter] = []
         self._ais: list[DuelAI] = []
+        self._sync_encumbrance()
         self._load_stage(self._stage_no, show_intro=True)
+
+    def _sync_encumbrance(self) -> None:
+        """Apply arsenal weight so a large weapon stash slows pillar strafing."""
+        self._player.move_speed_factor = c.move_speed_factor_for_weapon_count(
+            len(self._owned_weapons)
+        )
 
     # -- stage lifecycle ----------------------------------------------------
     def _pick_enemy_weapon(self) -> str:
@@ -321,6 +334,7 @@ class VersusScene:
         self._stage_earned = 0
         self._display_earned = 0.0
         self._coin_popups.clear()
+        self._blood.clear()
         self._spawn_enemies()
         # Preserve equipped gear; refresh durability via reset_health.
         self._player.reset_health()
@@ -390,6 +404,7 @@ class VersusScene:
         self._owned_weapons.add(key)
         self._player.weapon_key = key
         self._player.weapon_swap_timer = c.DUEL_WEAPON_SWAP_TIME
+        self._sync_encumbrance()
         return True
 
     def _try_buy_helmet(self, key: str) -> bool:
@@ -485,10 +500,27 @@ class VersusScene:
             _CONTINUE_BTN_H,
         )
 
+    @staticmethod
+    def _close_button_rect() -> pygame.Rect:
+        """Top-right close (X) control on the modal popup."""
+        panel = VersusScene._popup_rect()
+        return pygame.Rect(
+            panel.right - _CLOSE_BTN_PAD - _CLOSE_BTN_SIZE,
+            panel.y + _CLOSE_BTN_PAD,
+            _CLOSE_BTN_SIZE,
+            _CLOSE_BTN_SIZE,
+        )
+
     @property
     def _modal_open(self) -> bool:
         """True while an intro or clear popup freezes combat."""
         return self._intro_popup is not None or self._clear_popup is not None
+
+    def _popup_dismiss_hit(self, pos: tuple[int, int]) -> bool:
+        """True if the click hit the close (X) or continue button."""
+        return self._close_button_rect().collidepoint(pos) or self._continue_button_rect().collidepoint(
+            pos
+        )
 
     # -- input --------------------------------------------------------------
     @staticmethod
@@ -539,26 +571,14 @@ class VersusScene:
     def handle_event(self, event: pygame.event.Event) -> None:
         """Handle shop clicks and intro / clear popup dismissal."""
         if self._intro_popup is not None:
-            if event.type == pygame.KEYDOWN and event.key in (
-                pygame.K_SPACE,
-                pygame.K_RETURN,
-                pygame.K_KP_ENTER,
-            ):
-                self._dismiss_intro_popup()
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self._continue_button_rect().collidepoint(event.pos):
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._popup_dismiss_hit(event.pos):
                     self._dismiss_intro_popup()
             return
 
         if self._clear_popup is not None:
-            if event.type == pygame.KEYDOWN and event.key in (
-                pygame.K_SPACE,
-                pygame.K_RETURN,
-                pygame.K_KP_ENTER,
-            ):
-                self._dismiss_stage_clear_popup()
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if self._continue_button_rect().collidepoint(event.pos):
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._popup_dismiss_hit(event.pos):
                     self._dismiss_stage_clear_popup()
             return
 
@@ -616,16 +636,18 @@ class VersusScene:
 
         if self._need_more_banner > 0.0:
             self._need_more_banner = max(0.0, self._need_more_banner - dt)
+        self._respawn_invuln = max(0.0, self._respawn_invuln - dt)
         self._update_coin_popups(dt)
+        self._blood.update(dt)
 
         # Freeze combat while a modal window is open.
         if self._modal_open:
             return None
 
         self._handle_player_input(dt)
-        self._player.update(dt)
+        self._update_fighter_with_death_fx(self._player, dt)
         for enemy, ai in zip(self._enemies, self._ais):
-            enemy.update(dt)
+            self._update_fighter_with_death_fx(enemy, dt)
             if enemy.dead:
                 continue
             shot = ai.update(enemy, self._player, dt)
@@ -635,14 +657,32 @@ class VersusScene:
         self._advance_projectiles(dt)
 
         if self._player.dead:
-            self._result = "lose"
-            return self._result
+            outcome = self._handle_player_death()
+            if outcome is not None:
+                return outcome
 
         if self._all_enemies_dead() and self._clear_popup is None:
             self._on_enemies_defeated()
             return None
 
         return None
+
+    def _handle_player_death(self) -> Optional[str]:
+        """Spend a life and respawn, or end the run when lives are gone."""
+        self._lives -= 1
+        if self._lives <= 0:
+            self._result = "lose"
+            return self._result
+        self._respawn_player()
+        return None
+
+    def _respawn_player(self) -> None:
+        """Restore the player on their pillar with brief invulnerability."""
+        kept_weapon = self._player.weapon_key
+        self._player.reset_health()
+        self._player.weapon_key = kept_weapon
+        self._projectiles = [p for p in self._projectiles if p.team == "player"]
+        self._respawn_invuln = c.DUEL_RESPAWN_INVULN
 
     def _advance_projectiles(self, dt: float) -> None:
         for proj in self._projectiles:
@@ -661,17 +701,38 @@ class VersusScene:
             if hit_target is None or hit is None:
                 continue
             segment, point = hit
+            # Grace period after spending a life — enemy shots pass through.
+            if hit_target is self._player and self._respawn_invuln > 0.0:
+                proj.dead = True
+                continue
+            was_dead = hit_target.dead
             hit_target.apply_hit(
                 segment,
                 proj.stats.damage,
                 EmbeddedWeapon(proj.weapon_key, point[0], point[1], proj.angle),
             )
+            # Impact-side bias so spray reads as coming from the wound.
+            outward = 1.0 if proj.vx >= 0.0 else -1.0
+            if not was_dead and hit_target.dead:
+                self._blood.spawn_death(point, outward=outward)
+            elif not hit_target.dead:
+                self._blood.spawn_hit(point, outward=outward)
             if proj.team == "player":
                 self._award_hit_coins(segment, hit_target)
                 if not hit_target.dead:
                     hit_target.apply_safe_knockback()
             proj.dead = True
         self._projectiles = [p for p in self._projectiles if not p.dead]
+
+    def _update_fighter_with_death_fx(self, fighter: DuelFighter, dt: float) -> None:
+        """Advance a fighter and erupt blood if they die mid-update (e.g. fall)."""
+        was_dead = fighter.dead
+        fighter.update(dt)
+        if not was_dead and fighter.dead:
+            self._blood.spawn_death(
+                fighter.head_center,
+                outward=float(-fighter.facing),
+            )
 
     def _first_enemy_hit(
         self,
@@ -734,6 +795,7 @@ class VersusScene:
             enemy.draw(surf)
         for proj in self._projectiles:
             proj.draw(surf)
+        self._blood.draw(surf)
         self._draw_coin_popups(surf)
 
         self._draw_hud(surf)
@@ -807,22 +869,27 @@ class VersusScene:
             True,
             (28, 110, 50) if shown_earned >= goal else (30, 40, 30),
         )
+        lives_txt = self._font.render(
+            f"LIVES: {max(0, self._lives)}", True, (30, 40, 30)
+        )
         surf.blit(stage_txt, (x, 12))
         surf.blit(wallet_txt, (x, 36))
         surf.blit(goal_txt, (x, 60))
+        surf.blit(lives_txt, (x, 84))
 
-        # Goal progress (narrow bar under GOAL text).
-        goal_bar = pygame.Rect(x, 86, 200, 8)
+        # Goal progress (narrow bar under LIVES text).
+        goal_bar = pygame.Rect(x, 110, 200, 8)
         pygame.draw.rect(surf, (40, 60, 40), goal_bar, border_radius=3)
         pygame.draw.rect(
             surf,
             (240, 180, 40),
-            pygame.Rect(x, 86, int(200 * progress), 8),
+            pygame.Rect(x, 110, int(200 * progress), 8),
             border_radius=3,
         )
 
         # Player integrity block: label above bar.
-        self._draw_integrity(surf, x, 102, "YOU", self._player)
+        you_label = "YOU" if self._respawn_invuln <= 0.0 else "YOU (SAFE)"
+        self._draw_integrity(surf, x, 126, you_label, self._player)
 
         # Enemy bars top-right (compact stack).
         ey = 14
@@ -837,15 +904,25 @@ class VersusScene:
         if self._player.shield_key:
             gear_bits.append(c.SHIELDS[self._player.shield_key].name)
         gear_label = " + ".join(gear_bits) if gear_bits else "none"
+        burden_pct = int(round(self._player.move_speed_factor * 100))
         weapon_txt = self._small.render(
             f"Weapon: {c.THROW_WEAPONS[self._player.weapon_key].name}  |  Gear: {gear_label}",
             True,
             (30, 40, 30),
         )
-        surf.blit(weapon_txt, (x, 132))
+        surf.blit(weapon_txt, (x, 152))
+        load_y = 172
+        if burden_pct < 100:
+            burden_txt = self._tiny.render(
+                f"Load: {len(self._owned_weapons)} weapons — dodge {burden_pct}%",
+                True,
+                (120, 70, 30),
+            )
+            surf.blit(burden_txt, (x, load_y))
+            load_y += 18
 
         # Power meter sits above the weapon shop with a clear gap.
-        meter = pygame.Rect(x, 156, 200, 12)
+        meter = pygame.Rect(x, load_y + 4, 200, 12)
         pygame.draw.rect(surf, (40, 60, 40), meter, border_radius=3)
         frac = (self._player.power - c.THROW_POWER_MIN) / (
             c.THROW_POWER_MAX - c.THROW_POWER_MIN
@@ -854,11 +931,11 @@ class VersusScene:
         pygame.draw.rect(
             surf,
             (240, 180, 40),
-            pygame.Rect(x, 156, int(200 * frac), 12),
+            pygame.Rect(x, load_y + 4, int(200 * frac), 12),
             border_radius=3,
         )
         power_label = self._small.render("POWER (hold Space)", True, (30, 40, 30))
-        surf.blit(power_label, (x + 210, 154))
+        surf.blit(power_label, (x + 210, load_y + 2))
 
         self._draw_weapon_panel(surf)
         if self._defense_shop_unlocked:
@@ -933,6 +1010,7 @@ class VersusScene:
             surf.blit(text, text.get_rect(centerx=panel.centerx, y=y))
             y += 28
 
+        self._draw_close_button(surf)
         self._draw_continue_button(surf, "Start Stage")
 
     def _draw_stage_clear_popup(self, surf: pygame.Surface, popup: StageClearPopup) -> None:
@@ -974,7 +1052,33 @@ class VersusScene:
         surf.blit(earned_txt, earned_txt.get_rect(centerx=panel.centerx, y=panel.y + 124))
         surf.blit(wallet_txt, wallet_txt.get_rect(centerx=panel.centerx, y=panel.y + 158))
 
+        self._draw_close_button(surf)
         self._draw_continue_button(surf, button_label)
+
+    def _draw_close_button(self, surf: pygame.Surface) -> None:
+        """Top-right X control used to dismiss modal popups."""
+        btn = self._close_button_rect()
+        hovered = btn.collidepoint(pygame.mouse.get_pos())
+        fill = (210, 90, 80) if hovered else (180, 70, 62)
+        pygame.draw.rect(surf, fill, btn, border_radius=6)
+        pygame.draw.rect(surf, (90, 30, 28), btn, 2, border_radius=6)
+        # Crisp X mark inset from the button edge.
+        pad = 8
+        color = (255, 245, 240)
+        pygame.draw.line(
+            surf,
+            color,
+            (btn.left + pad, btn.top + pad),
+            (btn.right - pad, btn.bottom - pad),
+            3,
+        )
+        pygame.draw.line(
+            surf,
+            color,
+            (btn.right - pad, btn.top + pad),
+            (btn.left + pad, btn.bottom - pad),
+            3,
+        )
 
     def _draw_continue_button(self, surf: pygame.Surface, label: str) -> None:
         """Shared Continue / Start button for modal popups."""
@@ -986,7 +1090,7 @@ class VersusScene:
         text = self._font.render(label, True, (248, 252, 246))
         surf.blit(text, text.get_rect(center=btn.center))
         hint = self._small.render(
-            "Press Space / Enter or click to continue", True, (70, 90, 70)
+            "Click X (top-right) or the button below to continue", True, (70, 90, 70)
         )
         panel = self._popup_rect()
         surf.blit(hint, hint.get_rect(centerx=panel.centerx, y=panel.bottom - 22))
@@ -1109,7 +1213,8 @@ class VersusScene:
         text = self._tiny.render(label, True, (30, 40, 30))
         surf.blit(text, (x, y))
         bar_y = y + 14
-        ratio = max(0.0, 1.0 - fighter.body_red_ratio() / c.BODY_RED_DEATH_RATIO)
+        # Wound accum keeps the bar honest when a limb is already maxed out.
+        ratio = fighter.integrity_ratio()
         bar = pygame.Rect(x, bar_y, _INTEGRITY_BAR_W, _INTEGRITY_BAR_H)
         pygame.draw.rect(surf, (40, 60, 40), bar, border_radius=3)
         pygame.draw.rect(

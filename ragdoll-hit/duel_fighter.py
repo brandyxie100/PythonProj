@@ -27,9 +27,20 @@ class BodySegment:
     damage_mult: float = 1.0  # scales incoming damage (head/torso hit harder)
     redness: float = 0.0  # 0..1, drives red glow and death calculation
 
-    def add_damage(self, amount: float) -> None:
-        """Increase redness by the multiplier-scaled amount, clamped to 1.0."""
-        self.redness = max(0.0, min(1.0, self.redness + amount * self.damage_mult))
+    def add_damage(self, amount: float) -> float:
+        """Increase redness by the multiplier-scaled amount, clamped to 1.0.
+
+        Returns unused raw damage that could not fit into this segment so the
+        caller can spill it onto other parts (keeps the integrity bar moving).
+        """
+        if amount <= 0.0 or self.damage_mult <= 0.0:
+            return max(0.0, amount)
+        room = (1.0 - self.redness) / self.damage_mult
+        if room <= 0.0:
+            return amount
+        applied = min(amount, room)
+        self.redness = min(1.0, self.redness + applied * self.damage_mult)
+        return amount - applied
 
 
 @dataclass(slots=True)
@@ -110,6 +121,11 @@ class DuelFighter:
             for name, weight, is_head, radius, damage_mult in _SEGMENT_LAYOUT
         }
         self.embedded: list[EmbeddedWeapon] = []
+        # Total post-armor wound points — drives the integrity bar without
+        # stalling when a single segment is already fully red.
+        self.wound_accum: float = 0.0
+        # Strafe multiplier from arsenal size (1.0 = only the starter weapon).
+        self.move_speed_factor: float = 1.0
 
     # -- pose geometry ------------------------------------------------------
     def _pose_offsets(self) -> tuple[float, float, float]:
@@ -281,14 +297,16 @@ class DuelFighter:
         """Strafe left/right on the pillar top to dodge projectiles.
 
         Moving past the pillar edge starts a fall that ends the match for that
-        fighter.
+        fighter. Speed is scaled by ``move_speed_factor`` so a heavy arsenal
+        makes dodging slower.
         """
         del dt  # velocity is set directly each frame from held input
         if self.dead or self.falling:
             self.vx = 0.0
             return
         axis = max(-1, min(1, int(axis)))
-        self.vx = axis * c.DUEL_MOVE_SPEED
+        speed = c.DUEL_MOVE_SPEED * max(0.0, self.move_speed_factor)
+        self.vx = axis * speed
 
     def rotate_aim(self, direction: int, dt: float) -> None:
         """Adjust aim elevation; positive direction aims higher."""
@@ -433,12 +451,40 @@ class DuelFighter:
                 self.shield_key = None
                 self.shield_hp = 0
 
-        segment.add_damage(final_damage)
+        # Always count full post-armor damage for the integrity meter.
+        self.wound_accum += final_damage
+        overflow = segment.add_damage(final_damage)
+        if overflow > 1e-6:
+            self._spill_damage(overflow, exclude=segment_name)
         self.embedded.append(embed)
         # Recoil away from the thrower (opposite facing = toward impact side).
         self.hit_flinch_timer = c.DUEL_HIT_FLINCH_TIME
         self.hit_flinch_dir = -float(self.facing)
         self._check_death(segment, blocked_lethal=blocked_lethal)
+
+    def _spill_damage(self, amount: float, *, exclude: str) -> None:
+        """Apply leftover damage to other segments with remaining capacity.
+
+        Prefer segments that still have the most weighted room so repeated hits
+        on an already-ruined limb continue to drain overall integrity / blood.
+        """
+        remaining = amount
+        while remaining > 1e-6:
+            candidates = [
+                seg
+                for name, seg in self.segments.items()
+                if name != exclude and seg.redness < 1.0 - 1e-6
+            ]
+            if not candidates:
+                break
+            candidates.sort(
+                key=lambda seg: (1.0 - seg.redness) * seg.weight,
+                reverse=True,
+            )
+            before = remaining
+            remaining = candidates[0].add_damage(remaining)
+            if remaining >= before - 1e-9:
+                break
 
     def apply_safe_knockback(self) -> None:
         """Slide a random distance along the pillar without ever falling off.
@@ -471,6 +517,18 @@ class DuelFighter:
         """Weighted fraction of the body that has turned red."""
         return sum(seg.redness * seg.weight for seg in self.segments.values())
 
+    def integrity_ratio(self) -> float:
+        """Remaining integrity in ``0..1`` for HUD blood / energy bars.
+
+        Uses accumulated wound points so the bar keeps falling even after a
+        struck limb is already fully red. Scaled so the bar empties near the
+        same point body-red death would trigger from spread damage.
+        """
+        # Budget ≈ damage needed to push weighted redness to the death ratio
+        # if hits land on average limb/torso mix (≈1.0 effective mult).
+        budget = max(0.05, c.BODY_RED_DEATH_RATIO * 1.35)
+        return max(0.0, 1.0 - self.wound_accum / budget)
+
     def _check_death(self, struck: BodySegment, *, blocked_lethal: bool = False) -> None:
         """Evaluate death conditions after a hit."""
         if (
@@ -491,6 +549,7 @@ class DuelFighter:
         """
         for segment in self.segments.values():
             segment.redness = 0.0
+        self.wound_accum = 0.0
         self.embedded.clear()
         self.dead = False
         self.throw_cooldown = 0.0

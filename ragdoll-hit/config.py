@@ -35,6 +35,24 @@ DAMAGE_RED: tuple[int, int, int] = (240, 38, 30)
 DAMAGE_GLOW: tuple[int, int, int] = (255, 60, 45)  # halo drawn behind wounds
 DAMAGE_COLOR_GAIN: float = 1.5  # how fast a segment saturates to red visually
 
+# Blood particle bursts (hit splash vs kill geyser)
+BLOOD_GRAVITY: float = 980.0
+BLOOD_HIT_COUNT: int = 12
+BLOOD_HIT_SPEED_MIN: float = 70.0
+BLOOD_HIT_SPEED_MAX: float = 240.0
+BLOOD_HIT_LIFE_MIN: float = 0.22
+BLOOD_HIT_LIFE_MAX: float = 0.55
+BLOOD_HIT_RADIUS_MIN: float = 1.4
+BLOOD_HIT_RADIUS_MAX: float = 3.6
+BLOOD_DEATH_COUNT: int = 56
+BLOOD_DEATH_SPEED_MIN: float = 140.0
+BLOOD_DEATH_SPEED_MAX: float = 480.0
+BLOOD_DEATH_LIFE_MIN: float = 0.55
+BLOOD_DEATH_LIFE_MAX: float = 1.45
+BLOOD_DEATH_RADIUS_MIN: float = 2.0
+BLOOD_DEATH_RADIUS_MAX: float = 7.5
+BLOOD_DEATH_MIST_COUNT: int = 28  # fine spray that hangs a bit longer
+
 # Projectile flight
 PROJECTILE_GRAVITY: float = 820.0
 THROW_POWER_MIN: float = 620.0
@@ -51,12 +69,28 @@ DUEL_WEAPON_SWAP_TIME: float = 0.2  # brief raise when cycling throw weapons
 
 # Pillar dodging
 DUEL_MOVE_SPEED: float = 210.0  # horizontal dodge speed on the pillar top
+# Each weapon beyond the free starter slows strafe (carrying a full arsenal is clumsy).
+DUEL_ENCUMBRANCE_PER_EXTRA_WEAPON: float = 0.11
+DUEL_MOVE_SPEED_MIN_FACTOR: float = 0.42  # floor so the player can still dodge a little
 DUEL_PILLAR_HALF_WIDTH: float = 48.0  # safe standing range from pillar center
 DUEL_FALL_GRAVITY: float = 1600.0  # gravity after stepping off the pillar
 # Random slide when an enemy is hit — always clamped inside the pillar.
 DUEL_HIT_KNOCKBACK_MIN: float = 14.0
 DUEL_HIT_KNOCKBACK_MAX: float = 32.0
 DUEL_HIT_KNOCKBACK_SAFE: float = 0.82  # max |x - anchor| as a fraction of half-width
+
+
+def move_speed_factor_for_weapon_count(owned_count: int) -> float:
+    """Return a 0..1 strafe multiplier from how many weapons are carried.
+
+    The starter weapon alone is unencumbered (1.0). Each extra owned weapon
+    stacks a penalty down to ``DUEL_MOVE_SPEED_MIN_FACTOR``.
+    """
+    extras = max(0, int(owned_count) - 1)
+    return max(
+        DUEL_MOVE_SPEED_MIN_FACTOR,
+        1.0 - extras * DUEL_ENCUMBRANCE_PER_EXTRA_WEAPON,
+    )
 
 # Aiming (elevation above horizontal, radians; positive points upward)
 AIM_MIN_ELEV: float = -0.1
@@ -78,6 +112,8 @@ HIT_COINS_LIMB: int = 5  # arms and legs
 HIT_COINS_TORSO: int = 10  # body — double limb
 HIT_COINS_HEAD: int = 15  # head — triple limb
 DUEL_STARTER_WEAPON: str = "spear"
+DUEL_PLAYER_LIVES: int = 3  # deaths allowed before game over (respawn on pillar)
+DUEL_RESPAWN_INVULN: float = 1.6  # seconds of safety after losing a life
 
 # Stage campaign length / dual-enemy breakpoint (latter half).
 DUEL_TOTAL_STAGES: int = 30
@@ -98,15 +134,16 @@ class ThrowWeaponStats:
     price: int  # coin cost to unlock (0 = starter / free)
 
 
-# Shop ladder: cheaper weapons hit softer; pricier weapons hit harder.
+# Shop ladder: each step hits harder than the last (and harder than the spear).
+# Heavy weapons keep solid speed_scale so raw damage is not undone by slow flights.
 THROW_WEAPONS: dict[str, ThrowWeaponStats] = {
     "spear": ThrowWeaponStats("Spear", 0.28, 60.0, 4, 1.12, (208, 214, 226), 0),
-    "bow": ThrowWeaponStats("Bow", 0.34, 48.0, 3, 1.34, (212, 180, 120), 18),
-    "javelin": ThrowWeaponStats("Javelin", 0.40, 66.0, 3, 1.28, (198, 204, 220), 32),
-    "trident": ThrowWeaponStats("Trident", 0.48, 54.0, 6, 1.0, (150, 210, 225), 50),
-    "axe": ThrowWeaponStats("Axe", 0.56, 46.0, 8, 0.88, (176, 182, 192), 72),
+    "bow": ThrowWeaponStats("Bow", 0.36, 48.0, 3, 1.30, (212, 180, 120), 18),
+    "javelin": ThrowWeaponStats("Javelin", 0.44, 66.0, 3, 1.24, (198, 204, 220), 32),
+    "trident": ThrowWeaponStats("Trident", 0.62, 54.0, 6, 1.08, (150, 210, 225), 50),
+    "axe": ThrowWeaponStats("Axe", 0.78, 46.0, 8, 1.00, (176, 182, 192), 72),
     "broadsword": ThrowWeaponStats(
-        "Broadsword", 0.68, 52.0, 7, 0.9, (228, 228, 238), 100
+        "Broadsword", 0.96, 52.0, 7, 0.96, (228, 228, 238), 100
     ),
 }
 THROW_WEAPON_ORDER: tuple[str, ...] = (

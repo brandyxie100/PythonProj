@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pygame
+import pytest
 
 import config as c
 from duel_fighter import DuelFighter, EmbeddedWeapon
@@ -66,6 +67,13 @@ def test_weapon_prices_rise_with_damage() -> None:
     for cheaper, pricier in zip(ordered, ordered[1:]):
         assert pricier.price > cheaper.price
         assert pricier.damage > cheaper.damage
+    # Heavy shop weapons must beat the starter on both raw damage and
+    # damage×speed so they do not feel weaker than the spear in flight.
+    spear = c.THROW_WEAPONS["spear"]
+    for key in ("trident", "axe", "broadsword"):
+        stats = c.THROW_WEAPONS[key]
+        assert stats.damage > spear.damage
+        assert stats.damage * stats.speed_scale > spear.damage * spear.speed_scale
 
 
 def test_defense_gear_prices_rise_with_protection() -> None:
@@ -215,8 +223,83 @@ def test_cycle_only_owned_weapons() -> None:
     assert scene._player.weapon_key == "spear"
 
 
-def test_intro_space_key_starts_stage() -> None:
+def test_extra_weapons_reduce_move_speed() -> None:
+    assert c.move_speed_factor_for_weapon_count(1) == pytest.approx(1.0)
+    assert c.move_speed_factor_for_weapon_count(2) < 1.0
+    assert c.move_speed_factor_for_weapon_count(8) == pytest.approx(
+        c.DUEL_MOVE_SPEED_MIN_FACTOR
+    )
+    light = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    heavy = DuelFighter("player", 320.0, 452.0, 1, "spear")
+    heavy.move_speed_factor = c.move_speed_factor_for_weapon_count(5)
+    light.apply_move_axis(1, 0.016)
+    heavy.apply_move_axis(1, 0.016)
+    assert heavy.vx < light.vx
+
+
+def test_buying_weapon_applies_encumbrance() -> None:
+    scene = VersusScene()
+    scene._dismiss_intro_popup()
+    scene._coins = 500
+    before = scene._player.move_speed_factor
+    assert scene._try_buy_weapon("bow")
+    assert scene._player.move_speed_factor < before
+
+
+def test_player_starts_with_three_lives() -> None:
+    scene = VersusScene()
+    assert scene._lives == c.DUEL_PLAYER_LIVES == 3
+
+
+def test_player_death_consumes_life_and_respawns() -> None:
+    scene = VersusScene()
+    scene._dismiss_intro_popup()
+    scene._player.dead = True
+    result = scene._handle_player_death()
+    assert result is None
+    assert scene._lives == 2
+    assert not scene._player.dead
+    assert scene._respawn_invuln > 0.0
+
+
+def test_player_loses_after_final_life() -> None:
+    scene = VersusScene()
+    scene._dismiss_intro_popup()
+    scene._lives = 1
+    scene._player.dead = True
+    assert scene._handle_player_death() == "lose"
+    assert scene._lives == 0
+
+
+def test_intro_space_key_does_not_dismiss_popup() -> None:
     scene = VersusScene()
     event = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_SPACE})
     scene.handle_event(event)
+    assert scene._intro_popup is not None
+
+
+def test_intro_close_button_starts_stage() -> None:
+    scene = VersusScene()
+    close = VersusScene._close_button_rect()
+    event = pygame.event.Event(
+        pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": close.center}
+    )
+    scene.handle_event(event)
     assert scene._intro_popup is None
+
+
+def test_clear_popup_close_button_advances() -> None:
+    scene = VersusScene()
+    scene._dismiss_intro_popup()
+    scene._stage_earned = duel_stage(1).coin_goal
+    for enemy in scene._enemies:
+        enemy.dead = True
+    scene._on_enemies_defeated()
+    assert scene._clear_popup is not None
+    close = VersusScene._close_button_rect()
+    event = pygame.event.Event(
+        pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": close.center}
+    )
+    scene.handle_event(event)
+    assert scene._clear_popup is None
+    assert scene._intro_popup is not None
