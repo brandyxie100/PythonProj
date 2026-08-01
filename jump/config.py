@@ -8,7 +8,14 @@ import math
 SCREEN_W: int = 960
 SCREEN_H: int = 540
 FPS: int = 60
-TITLE: str = "JUMP"
+TITLE: str = "JUMP — Stereo Madness"
+
+# Stereo Madness teal sky
+BG_TOP: tuple[int, int, int] = (40, 170, 175)
+BG_BOTTOM: tuple[int, int, int] = (25, 110, 130)
+GROUND: tuple[int, int, int] = (35, 55, 70)
+GROUND_LINE: tuple[int, int, int] = (180, 255, 240)
+CEILING_LINE: tuple[int, int, int] = (255, 160, 100)
 
 # World / camera
 GROUND_Y: float = 420.0
@@ -37,13 +44,6 @@ BALL_SPIN_SPEED: float = 720.0
 # UFO — click jumps 2 blocks even mid-air
 UFO_JUMP_VELOCITY: float = JUMP_VELOCITY
 
-# Colors
-BG_TOP: tuple[int, int, int] = (18, 22, 48)
-BG_BOTTOM: tuple[int, int, int] = (10, 12, 28)
-GROUND: tuple[int, int, int] = (40, 48, 88)
-GROUND_LINE: tuple[int, int, int] = (90, 220, 255)
-CEILING_LINE: tuple[int, int, int] = (255, 140, 90)
-
 CUBE: tuple[int, int, int] = (70, 78, 90)
 CUBE_EDGE: tuple[int, int, int] = (20, 22, 28)
 CUBE_CORE: tuple[int, int, int] = (140, 210, 255)
@@ -61,8 +61,8 @@ UFO_EDGE: tuple[int, int, int] = (25, 28, 34)
 UFO_DOME: tuple[int, int, int] = (235, 240, 250)
 
 SPIKE: tuple[int, int, int] = (255, 70, 110)
-BLOCK: tuple[int, int, int] = (70, 120, 255)
-BLOCK_EDGE: tuple[int, int, int] = (160, 200, 255)
+BLOCK: tuple[int, int, int] = (55, 95, 160)
+BLOCK_EDGE: tuple[int, int, int] = (140, 190, 230)
 
 # Portal colors from the reference chart
 PORTAL_CUBE: tuple[int, int, int] = (60, 220, 90)  # green
@@ -84,5 +84,17 @@ PROGRESS_FILL: tuple[int, int, int] = (90, 255, 170)
 STAR: tuple[int, int, int] = (255, 220, 90)
 MENU_BTN: tuple[int, int, int] = (50, 180, 140)
 MENU_BTN_HOVER: tuple[int, int, int] = (70, 220, 170)
+
+# Hitboxes — smaller than the drawn sprite (fairer GD feel)
+HITBOX_INSET: float = 11.0  # shrink player AABB from each side
+SPIKE_HIT_INSET: float = 8.0  # shrink spike collision toward the tip
+BLOCK_HIT_INSET: float = 2.0
+
+# Jump orbs (click while overlapping)
+ORB_RADIUS: float = 16.0
+ORB_CLICK_BUFFER: float = 0.14  # seconds of buffered click before touching
+ORB_YELLOW: tuple[int, int, int] = (255, 220, 50)
+ORB_PINK: tuple[int, int, int] = (255, 90, 200)
+ORB_BLUE: tuple[int, int, int] = (70, 160, 255)
 
 DEATH_FLASH_TIME: float = 0.55

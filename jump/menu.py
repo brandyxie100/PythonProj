@@ -65,32 +65,32 @@ class MainMenu:
             pygame.draw.line(surf, (28, 34, 70), (0, y), (c.SCREEN_W, y))
 
         title = self._title.render("JUMP", True, c.GROUND_LINE)
-        surf.blit(title, title.get_rect(center=(c.SCREEN_W // 2, 88)))
+        surf.blit(title, title.get_rect(center=(c.SCREEN_W // 2, 78)))
 
-        sub = self._sub.render("Cube · Ship · Ball · UFO", True, c.UI_DIM)
-        surf.blit(sub, sub.get_rect(center=(c.SCREEN_W // 2, 145)))
+        level = self._sub.render("STEREO MADNESS", True, c.UI)
+        surf.blit(level, level.get_rect(center=(c.SCREEN_W // 2, 138)))
+
+        sub = self._sub.render("Cube  →  Ship  →  Cube", True, c.UI_DIM)
+        surf.blit(sub, sub.get_rect(center=(c.SCREEN_W // 2, 172)))
 
         # Portal color legend
         legend = [
             ("CUBE", c.PORTAL_CUBE),
             ("SHIP", c.PORTAL_SHIP),
-            ("BALL", c.PORTAL_BALL),
-            ("UFO", c.PORTAL_UFO),
         ]
-        base_x = c.SCREEN_W // 2 - 210
+        base_x = c.SCREEN_W // 2 - 100
         for i, (name, color) in enumerate(legend):
-            x = base_x + i * 110
-            pygame.draw.circle(surf, color, (x + 20, 190), 12, 3)
+            x = base_x + i * 120
+            pygame.draw.circle(surf, color, (x + 20, 208), 12, 3)
             text = self._tiny.render(name, True, color)
-            surf.blit(text, (x + 38, 182))
+            surf.blit(text, (x + 38, 200))
 
-        # Ship tip callout
         tip = self._tiny.render(
-            "Purple portal = SHIP  ·  Hold Space to fly up, release to go down",
+            "Purple portal = SHIP  ·  Hold Space up, release down",
             True,
             c.PORTAL_SHIP,
         )
-        surf.blit(tip, tip.get_rect(center=(c.SCREEN_W // 2, 230)))
+        surf.blit(tip, tip.get_rect(center=(c.SCREEN_W // 2, 242)))
 
         mouse = pygame.mouse.get_pos()
         self._draw_button(
@@ -101,9 +101,9 @@ class MainMenu:
         )
 
         hints = [
-            "Green portal: Cube — jump 2 blocks",
-            "Purple portal: Ship — hold up / release down",
-            "Orange portal: Ball — invert gravity  ·  Yellow: UFO — mid-air jump",
+            "Inspired by Geometry Dash's first official level",
+            "Green portal returns you to the cube for the final stretch",
+            "Space / Enter to play  ·  Esc to quit",
         ]
         for i, line in enumerate(hints):
             text = self._tiny.render(line, True, c.UI_DIM)

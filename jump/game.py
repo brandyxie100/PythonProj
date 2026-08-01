@@ -5,7 +5,7 @@ from __future__ import annotations
 import pygame
 
 import config as c
-from level import Obstacle, build_level, draw_obstacle, draw_portal
+from level import Obstacle, build_level, draw_obstacle, draw_orb, draw_portal
 from player import Player
 
 
@@ -20,6 +20,7 @@ class Game:
         self.player = Player()
         self.obstacles: list[Obstacle] = []
         self.portals = []
+        self.orbs = []
         self.finish_x = 0.0
         self.camera_x = 0.0
         self.attempts = 1
@@ -32,8 +33,8 @@ class Game:
         self._reset_level()
 
     def _reset_level(self) -> None:
-        """Rebuild obstacles/portals and put the camera / icon at the start."""
-        self.obstacles, self.portals, self.finish_x = build_level()
+        """Rebuild obstacles/portals/orbs and put the camera / icon at the start."""
+        self.obstacles, self.portals, self.orbs, self.finish_x = build_level()
         self.camera_x = 0.0
         self.player.reset()
         self.state = "playing"
@@ -63,6 +64,7 @@ class Game:
         self._jump_held = True
         if self.state == "playing":
             self.player.jump()
+            self._try_orbs()
         elif self.state == "dead" and self.death_timer <= 0.0:
             self.attempts += 1
             self._reset_level()
@@ -104,6 +106,7 @@ class Game:
         self.player.update(
             dt, solid_tops, solid_bottoms, holding=self._jump_held
         )
+        self._try_orbs()
         # Cube hold-to-rebounce (ship uses continuous hold thrust instead).
         if (
             self.player.mode == "cube"
@@ -117,6 +120,19 @@ class Game:
         self.best_progress = max(self.best_progress, pct)
         if pct >= 1.0:
             self.state = "won"
+
+    def _try_orbs(self) -> None:
+        """Activate an overlapping orb when a click was buffered recently."""
+        if self.player.click_buffer <= 0.0:
+            return
+        hit = self.player.hitbox
+        for orb in self.orbs:
+            if orb.used:
+                continue
+            if hit.colliderect(orb.hit_rect(self.camera_x)):
+                orb.used = True
+                self.player.activate_orb(orb.kind)
+                return
 
     def _check_portals(self) -> None:
         """Switch gamemode when the icon crosses an unused portal."""
@@ -157,10 +173,10 @@ class Game:
                 return
 
         prect = self.player.rect
-        hit = prect.inflate(-6, -6)
+        hit = self.player.hitbox
 
         for obs in self.obstacles:
-            rect = obs.screen_rect(self.camera_x)
+            rect = obs.hit_rect(self.camera_x)
             if not hit.colliderect(rect):
                 continue
 
@@ -173,12 +189,13 @@ class Game:
                 return
 
             # Cube / ball: landing on the gravity-facing side is safe.
+            drawn = obs.screen_rect(self.camera_x)
             if mode == "ball" and self.player.gravity_dir < 0.0:
                 on_ceiling_side = (
                     self.player.vy <= 0.0
-                    and prect.top >= rect.bottom - 10
-                    and prect.right > rect.left + 4
-                    and prect.left < rect.right - 4
+                    and prect.top >= drawn.bottom - 10
+                    and prect.right > drawn.left + 4
+                    and prect.left < drawn.right - 4
                 )
                 if on_ceiling_side:
                     continue
@@ -188,9 +205,9 @@ class Game:
             foot = prect.bottom
             on_top = (
                 self.player.vy >= 0.0
-                and foot <= rect.top + 10
-                and prect.right > rect.left + 4
-                and prect.left < rect.right - 4
+                and foot <= drawn.top + 10
+                and prect.right > drawn.left + 4
+                and prect.left < drawn.right - 4
             )
             if on_top:
                 continue
@@ -213,6 +230,8 @@ class Game:
             self._draw_ceiling(surf)
         for portal in self.portals:
             draw_portal(surf, portal, self.camera_x, self._pulse)
+        for orb in self.orbs:
+            draw_orb(surf, orb, self.camera_x, self._pulse)
         for obs in self.obstacles:
             draw_obstacle(surf, obs, self.camera_x)
         self._draw_finish(surf)
@@ -328,7 +347,7 @@ class Game:
         surf.blit(mode_txt, (20, 94))
 
         hints = {
-            "cube": "HOLD SPACE = keep jumping",
+            "cube": "SPACE jump/orbs  ·  yellow=jump  pink=boost  blue=flip",
             "ship": "HOLD = fly up  ·  RELEASE = fly down",
             "ball": "SPACE = invert gravity",
             "ufo": "SPACE = jump anytime (2 blocks)",
@@ -336,7 +355,7 @@ class Game:
         hint = self._small.render(hints[mode], True, c.UI_DIM)
         surf.blit(hint, (c.SCREEN_W - hint.get_width() - 20, 50))
 
-        title = self._font.render("JUMP", True, c.GROUND_LINE)
+        title = self._font.render("STEREO MADNESS", True, c.GROUND_LINE)
         surf.blit(title, (20, 16))
 
     def _draw_center_banner(

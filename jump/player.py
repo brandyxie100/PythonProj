@@ -26,11 +26,18 @@ class Player:
         self.alive = True
         self.mode: Gamemode = "cube"
         self.gravity_dir: float = 1.0  # +1 normal, -1 inverted (ball)
+        self.click_buffer: float = 0.0  # orb click buffer timer
 
     @property
     def rect(self) -> pygame.Rect:
-        """Axis-aligned hitbox used for collisions."""
+        """Visual bounding box (full sprite size)."""
         return pygame.Rect(int(self.x), int(self.y), int(self.size), int(self.size))
+
+    @property
+    def hitbox(self) -> pygame.Rect:
+        """Smaller collision box used for spikes / blocks / orbs."""
+        inset = int(c.HITBOX_INSET)
+        return self.rect.inflate(-inset * 2, -inset * 2)
 
     def set_mode(self, mode: Gamemode) -> None:
         """Switch gamemode and set a safe starting pose."""
@@ -66,20 +73,38 @@ class Player:
         """Apply the click/tap action for the current gamemode."""
         if not self.alive:
             return
+        # Always arm the orb buffer so a slightly early click still works.
+        self.click_buffer = c.ORB_CLICK_BUFFER
         if self.mode == "cube":
             if self.on_ground:
                 self.vy = c.JUMP_VELOCITY
                 self.on_ground = False
         elif self.mode == "ball":
-            # Invert gravity — ball falls the other way.
             self.gravity_dir *= -1.0
             self.on_ground = False
             self.vy = 0.0
         elif self.mode == "ufo":
-            # Mid-air jump allowed (flappy / GD UFO).
             self.vy = c.UFO_JUMP_VELOCITY
             self.on_ground = False
         # Ship ignores taps — it is hold-controlled.
+
+    def activate_orb(self, kind: str) -> None:
+        """Fire a jump-orb effect (yellow / pink / blue)."""
+        if not self.alive:
+            return
+        self.on_ground = False
+        self.click_buffer = 0.0
+        if kind == "yellow":
+            self.vy = c.JUMP_VELOCITY
+        elif kind == "pink":
+            self.vy = c.JUMP_VELOCITY * 1.12
+        elif kind == "blue":
+            # Blue orb flips gravity and gives a small shove that way.
+            self.gravity_dir *= -1.0
+            self.vy = -220.0 * self.gravity_dir
+        if self.mode == "ship":
+            # Orbs give ships a vertical kick instead of a cube jump.
+            self.vy = c.JUMP_VELOCITY * 0.85 if kind != "blue" else self.vy
 
     def update(
         self,
@@ -92,6 +117,8 @@ class Player:
         """Integrate physics for the active gamemode."""
         if not self.alive:
             return
+        if self.click_buffer > 0.0:
+            self.click_buffer = max(0.0, self.click_buffer - dt)
         if self.mode == "ship":
             self._update_ship(dt, holding)
         elif self.mode == "ball":
@@ -215,6 +242,7 @@ class Player:
         self.alive = True
         self.mode = "cube"
         self.gravity_dir = 1.0
+        self.click_buffer = 0.0
 
     def draw(self, surf: pygame.Surface) -> None:
         """Draw the active icon."""

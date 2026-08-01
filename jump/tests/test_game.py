@@ -9,7 +9,7 @@ import pytest
 
 import config as c
 from game import Game
-from level import Obstacle, build_level
+from level import Obstacle, LEVEL_NAME, build_level
 from menu import MainMenu
 from player import Player
 
@@ -46,14 +46,41 @@ def test_jump_only_when_grounded() -> None:
     assert p.vy == pytest.approx(-100.0)
 
 
-def test_level_has_all_portals() -> None:
-    obstacles, portals, finish_x = build_level()
-    assert finish_x > 1000
-    modes = {p.mode for p in portals}
-    assert modes == {"cube", "ship", "ball", "ufo"}
-    ship = next(p for p in portals if p.mode == "ship")
-    assert c.PORTAL_COLORS[ship.mode] == c.PORTAL_SHIP
-    assert c.PORTAL_SHIP[0] > 150  # purple-ish (high red + blue)
+def test_level_name() -> None:
+    assert LEVEL_NAME == "Stereo Madness"
+
+
+def test_level_is_stereo_madness() -> None:
+    obstacles, portals, orbs, finish_x = build_level()
+    assert finish_x > 2000
+    assert any(o.kind == "spike" for o in obstacles)
+    assert any(o.kind == "yellow" for o in orbs)
+    modes = [p.mode for p in portals]
+    assert modes[0] == "ship"
+    assert modes[-1] == "cube"
+    assert "ship" in modes and "cube" in modes
+
+
+def test_yellow_orb_boosts_mid_air() -> None:
+    game = Game()
+    from level import Orb
+
+    game.orbs = [
+        Orb("yellow", c.PLAYER_SCREEN_X + 8, c.GROUND_Y - 80)
+    ]
+    game.player.on_ground = False
+    game.player.y = c.GROUND_Y - 100
+    game.player.vy = 100.0
+    game.player.jump()  # arms click buffer
+    game._try_orbs()
+    assert game.orbs[0].used
+    assert game.player.vy == pytest.approx(c.JUMP_VELOCITY)
+
+
+def test_player_hitbox_smaller_than_sprite() -> None:
+    p = Player()
+    assert p.hitbox.width < p.rect.width
+    assert p.hitbox.height < p.rect.height
 
 
 def test_ship_portal_is_purple() -> None:
@@ -62,8 +89,9 @@ def test_ship_portal_is_purple() -> None:
 
 def test_spike_collision_kills() -> None:
     game = Game()
+    # Place a wide spike centered on the player's shrunk hitbox.
     game.obstacles = [
-        Obstacle("spike", c.PLAYER_SCREEN_X, c.GROUND_Y - 28, 28, 28)
+        Obstacle("spike", c.PLAYER_SCREEN_X - 4, c.GROUND_Y - 28, 44, 28)
     ]
     game.camera_x = 0.0
     game._resolve_collisions()
