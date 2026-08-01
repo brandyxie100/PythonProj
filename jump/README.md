@@ -1,6 +1,6 @@
 # JUMP
 
-A small **Geometry Dash–style** auto-runner: your cube runs forward on its own — press **Space** to jump.
+A small **Geometry Dash–style** auto-runner with cube and ship gamemodes.
 
 ## Run
 
@@ -14,12 +14,14 @@ python main.py
 
 | Key | Action |
 |-----|--------|
-| `Space` / `W` / `↑` | Jump — hold to keep hopping on every landing |
-| `Space` | Retry after a crash / finish |
-| `Esc` | Quit |
+| `Space` / `Enter` | Menu: start |
+| `Space` / `W` / `↑` | Cube: jump (hold to keep hopping) · Ship: fly up |
+| `Esc` | Menu: quit · In-run: back to menu |
 
-## Goal
+## Gameplay
 
-Reach the checkered finish line without hitting spikes or the sides of blocks. Landing on top of blue blocks is safe.
-
-Progress is shown at the top. Each crash starts a new attempt from the beginning.
+- The cube jumps **exactly 2 blocks** high.
+- **Hold Space** as the cube to bounce again every landing.
+- Fly through a **SHIP** portal to switch to ship mode — hold Space to climb, release to dive. Touching the floor, ceiling, or any obstacle crashes you.
+- A later **CUBE** portal returns you to jumping for the finish.
+- Reach the checkered flag to clear the level.

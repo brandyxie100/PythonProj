@@ -5,7 +5,7 @@ from __future__ import annotations
 import pygame
 
 import config as c
-from level import Obstacle, build_level, draw_obstacle
+from level import Obstacle, Portal, build_level, draw_obstacle, draw_portal
 from player import Player
 
 
@@ -19,6 +19,7 @@ class Game:
         self._huge = pygame.font.SysFont("Arial", 54, bold=True)
         self.player = Player()
         self.obstacles: list[Obstacle] = []
+        self.portals: list[Portal] = []
         self.finish_x = 0.0
         self.camera_x = 0.0
         self.attempts = 1
@@ -27,26 +28,31 @@ class Game:
         self.death_timer = 0.0
         self._pulse = 0.0
         self._jump_held = False
+        self.request_menu = False
         self._reset_level()
 
     def _reset_level(self) -> None:
-        """Rebuild obstacles and put the camera / cube at the start."""
-        self.obstacles, self.finish_x = build_level()
+        """Rebuild obstacles/portals and put the camera / icon at the start."""
+        self.obstacles, self.portals, self.finish_x = build_level()
         self.camera_x = 0.0
         self.player.reset()
         self.state = "playing"
         self.death_timer = 0.0
+        self.request_menu = False
 
     def progress(self) -> float:
         """Return completion ratio in ``0..1`` based on camera position."""
         if self.finish_x <= 1.0:
             return 0.0
-        # Player world X ≈ camera + fixed screen X.
         world_x = self.camera_x + c.PLAYER_SCREEN_X
         return max(0.0, min(1.0, world_x / self.finish_x))
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Track jump hold; Space also restarts after death / win."""
+        """Track jump/fly hold; Space retries; Esc returns to the menu."""
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.request_menu = True
+            return
+
         jump_keys = (pygame.K_SPACE, pygame.K_UP, pygame.K_w)
         if event.type == pygame.KEYUP and event.key in jump_keys:
             self._jump_held = False
@@ -65,9 +71,8 @@ class Game:
             self._reset_level()
 
     def update(self, dt: float) -> None:
-        """Advance scroll, physics, and win/lose checks."""
+        """Advance scroll, physics, portals, and win/lose checks."""
         self._pulse += dt
-        # Keep hold state in sync even if KEYUP was missed (focus loss, etc.).
         keys = pygame.key.get_pressed()
         self._jump_held = bool(
             keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]
@@ -80,18 +85,20 @@ class Game:
             return
 
         self.camera_x += c.SCROLL_SPEED * dt
+        self._check_portals()
 
-        # Collect platform tops in screen space for landing.
         solid_tops: list[tuple[float, float, float]] = []
-        for obs in self.obstacles:
-            if obs.kind != "block":
-                continue
-            rect = obs.screen_rect(self.camera_x)
-            solid_tops.append((float(rect.left), float(rect.right), float(rect.top)))
+        if self.player.mode == "cube":
+            for obs in self.obstacles:
+                if obs.kind != "block":
+                    continue
+                rect = obs.screen_rect(self.camera_x)
+                solid_tops.append(
+                    (float(rect.left), float(rect.right), float(rect.top))
+                )
 
-        self.player.update(dt, solid_tops)
-        # Hold Space → bounce again the instant you touch ground (GD-style).
-        if self._jump_held and self.player.on_ground:
+        self.player.update(dt, solid_tops, holding=self._jump_held)
+        if self.player.mode == "cube" and self._jump_held and self.player.on_ground:
             self.player.jump()
         self._resolve_collisions()
 
@@ -100,10 +107,27 @@ class Game:
         if pct >= 1.0:
             self.state = "won"
 
+    def _check_portals(self) -> None:
+        """Switch gamemode when the icon crosses an unused portal."""
+        world_x = self.camera_x + c.PLAYER_SCREEN_X + self.player.size * 0.5
+        for portal in self.portals:
+            if portal.triggered:
+                continue
+            if world_x >= portal.x:
+                portal.triggered = True
+                self.player.set_mode(portal.mode)
+
     def _resolve_collisions(self) -> None:
-        """Kill the cube on spikes or unsafe block contact."""
+        """Kill on spikes, unsafe blocks, or ship floor/ceiling hits."""
+        if self.player.mode == "ship":
+            if self.player.y <= c.CEILING_Y:
+                self._die()
+                return
+            if self.player.y + self.player.size >= c.GROUND_Y:
+                self._die()
+                return
+
         prect = self.player.rect
-        # Slightly shrink hitbox so jumps feel fair (classic GD feel).
         hit = prect.inflate(-6, -6)
 
         for obs in self.obstacles:
@@ -115,7 +139,11 @@ class Game:
                 self._die()
                 return
 
-            # Block: safe if standing on top; otherwise lethal.
+            if self.player.mode == "ship":
+                # Ship: any solid contact is lethal.
+                self._die()
+                return
+
             foot = prect.bottom
             on_top = (
                 self.player.vy >= 0.0
@@ -137,9 +165,13 @@ class Game:
         self.death_timer = c.DEATH_FLASH_TIME
 
     def draw(self, surf: pygame.Surface) -> None:
-        """Render background, course, cube, and HUD."""
+        """Render background, course, icon, and HUD."""
         self._draw_background(surf)
         self._draw_ground(surf)
+        if self.player.mode == "ship":
+            self._draw_ceiling(surf)
+        for portal in self.portals:
+            draw_portal(surf, portal, self.camera_x, self._pulse)
         for obs in self.obstacles:
             draw_obstacle(surf, obs, self.camera_x)
         self._draw_finish(surf)
@@ -149,9 +181,13 @@ class Game:
             self._draw_death_burst(surf)
         self._draw_hud(surf)
         if self.state == "dead" and self.death_timer <= 0.0:
-            self._draw_center_banner(surf, "CRASHED", "Press SPACE to retry")
+            self._draw_center_banner(
+                surf, "CRASHED", "SPACE retry  ·  Esc menu"
+            )
         elif self.state == "won":
-            self._draw_center_banner(surf, "COMPLETE!", "Press SPACE to run again")
+            self._draw_center_banner(
+                surf, "COMPLETE!", "SPACE again  ·  Esc menu"
+            )
 
     def _draw_background(self, surf: pygame.Surface) -> None:
         for y in range(c.SCREEN_H):
@@ -161,7 +197,6 @@ class Game:
             )
             pygame.draw.line(surf, color, (0, y), (c.SCREEN_W, y))
 
-        # Parallax grid lines scrolling with the camera.
         spacing = 48
         offset = int(self.camera_x * 0.35) % spacing
         for x in range(-offset, c.SCREEN_W + spacing, spacing):
@@ -178,7 +213,6 @@ class Game:
         pygame.draw.line(
             surf, c.GROUND_LINE, (0, int(c.GROUND_Y)), (c.SCREEN_W, int(c.GROUND_Y)), 3
         )
-        # Moving ground ticks.
         tick = 40
         off = int(self.camera_x) % tick
         for x in range(-off, c.SCREEN_W + tick, tick):
@@ -190,13 +224,24 @@ class Game:
                 2,
             )
 
+    def _draw_ceiling(self, surf: pygame.Surface) -> None:
+        pygame.draw.rect(
+            surf, c.GROUND, pygame.Rect(0, 0, c.SCREEN_W, int(c.CEILING_Y))
+        )
+        pygame.draw.line(
+            surf,
+            c.CEILING_LINE,
+            (0, int(c.CEILING_Y)),
+            (c.SCREEN_W, int(c.CEILING_Y)),
+            3,
+        )
+
     def _draw_finish(self, surf: pygame.Surface) -> None:
         fx = int(self.finish_x - self.camera_x)
         if -20 < fx < c.SCREEN_W + 20:
             pygame.draw.line(
                 surf, c.STAR, (fx, int(c.GROUND_Y) - 120), (fx, int(c.GROUND_Y)), 4
             )
-            # Checkered flag stripes.
             for i in range(6):
                 color = c.STAR if i % 2 == 0 else (30, 30, 40)
                 pygame.draw.rect(
@@ -204,7 +249,7 @@ class Game:
                 )
 
     def _draw_death_burst(self, surf: pygame.Surface) -> None:
-        """Simple expanding ring where the cube died."""
+        """Simple expanding ring where the icon died."""
         cx = int(self.player.x + self.player.size / 2)
         cy = int(self.player.y + self.player.size / 2)
         t = 1.0 - (self.death_timer / c.DEATH_FLASH_TIME)
@@ -238,13 +283,23 @@ class Game:
         )
         surf.blit(best, (20, 72))
 
-        hint = self._small.render("HOLD SPACE = keep jumping", True, c.UI_DIM)
+        mode = self.player.mode.upper()
+        mode_color = c.SHIP if self.player.mode == "ship" else c.CUBE
+        mode_txt = self._small.render(f"MODE: {mode}", True, mode_color)
+        surf.blit(mode_txt, (20, 94))
+
+        if self.player.mode == "ship":
+            hint = self._small.render("HOLD SPACE = fly up", True, c.UI_DIM)
+        else:
+            hint = self._small.render("HOLD SPACE = keep jumping", True, c.UI_DIM)
         surf.blit(hint, (c.SCREEN_W - hint.get_width() - 20, 50))
 
         title = self._font.render("JUMP", True, c.GROUND_LINE)
         surf.blit(title, (20, 16))
 
-    def _draw_center_banner(self, surf: pygame.Surface, title: str, subtitle: str) -> None:
+    def _draw_center_banner(
+        self, surf: pygame.Surface, title: str, subtitle: str
+    ) -> None:
         overlay = pygame.Surface((c.SCREEN_W, c.SCREEN_H), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 120))
         surf.blit(overlay, (0, 0))

@@ -1,4 +1,4 @@
-"""Level obstacles and a handcrafted Geometry Dash–style course."""
+"""Level obstacles, portals, and a cube→ship course."""
 
 from __future__ import annotations
 
@@ -10,16 +10,12 @@ import pygame
 import config as c
 
 ObstacleKind = Literal["spike", "block"]
+Gamemode = Literal["cube", "ship"]
 
 
 @dataclass(slots=True)
 class Obstacle:
-    """A world-space hazard or platform.
-
-    Coordinates are relative to the level origin (x increases to the right).
-    Spikes kill on any contact. Blocks can be landed on from above; side or
-    underside contact kills.
-    """
+    """A world-space hazard or platform."""
 
     kind: ObstacleKind
     x: float
@@ -37,80 +33,114 @@ class Obstacle:
         )
 
 
-def build_level() -> tuple[list[Obstacle], float]:
-    """Build the main course and return ``(obstacles, finish_x)``."""
+@dataclass(slots=True)
+class Portal:
+    """World-space gamemode switch (cube ↔ ship)."""
+
+    x: float
+    mode: Gamemode
+    triggered: bool = False
+
+    def screen_x(self, camera_x: float) -> float:
+        """Portal center X in screen space."""
+        return self.x - camera_x
+
+
+def build_level() -> tuple[list[Obstacle], list[Portal], float]:
+    """Build the course: cube section, ship flight, finish."""
     objs: list[Obstacle] = []
+    portals: list[Portal] = []
     g = c.GROUND_Y
     s = c.CUBE_SIZE
 
-    def spike(wx: float, *, tall: float = 28.0) -> None:
-        objs.append(Obstacle("spike", wx, g - tall, 28.0, tall))
+    def spike(wx: float, *, tall: float = 28.0, top: float | None = None) -> None:
+        """Ground spike, or ceiling spike when ``top`` is set."""
+        if top is None:
+            objs.append(Obstacle("spike", wx, g - tall, 28.0, tall))
+        else:
+            # Point downward from the ceiling band.
+            objs.append(Obstacle("spike", wx, top, 28.0, tall))
 
     def block(wx: float, wy: float, w: float = s, h: float = s) -> None:
         objs.append(Obstacle("block", wx, wy, w, h))
 
-    # Intro runway — learn the jump.
+    def portal(wx: float, mode: Gamemode) -> None:
+        portals.append(Portal(wx, mode))
+
+    # ---- Cube section (2-block jumps) ----
     x = 520.0
     spike(x)
-    x += 220
+    x += 240
     spike(x)
-    x += 180
+    x += 200
     spike(x)
-    spike(x + 40)
+    spike(x + 42)
 
-    # Low hop onto a block, then off.
-    x += 280
+    # Two-block stair (matches new jump height).
+    x += 300
     block(x, g - s)
-    spike(x + s + 20)
-    x += 260
+    block(x + s + 10, g - s * 2)
+    spike(x + (s + 10) * 2 + 36)
+    x += 380
+
+    # Double-height gap hop onto a 2-block platform.
     spike(x)
-    spike(x + 36)
-    spike(x + 72)
+    block(x + 100, g - s * 2, w=s * 2)
+    spike(x + 220)
+    x += 400
 
-    # Stair climb.
-    x += 280
-    block(x, g - s)
-    block(x + s + 8, g - s * 2)
-    block(x + (s + 8) * 2, g - s * 3)
-    spike(x + (s + 8) * 3 + 30)
-    x += 420
+    for i in range(5):
+        spike(x + i * 75)
+    x += 5 * 75 + 220
 
-    # Gap with mid-air block landing.
-    spike(x)
-    block(x + 90, g - s * 2.2)
-    spike(x + 200)
-    x += 360
-
-    # Spike garden (tight timing).
-    for i in range(6):
-        spike(x + i * 70)
-    x += 6 * 70 + 200
-
-    # Double stack then drop.
+    # Stack you can clear with a 2-block jump.
     block(x, g - s)
     block(x, g - s * 2)
-    spike(x + s + 24)
-    spike(x + s + 60)
-    x += 320
+    spike(x + s + 30)
+    x += 340
 
-    # Floating island sequence.
-    block(x, g - s * 2.5, w=s * 2)
-    block(x + 160, g - s * 3.5, w=s * 2)
-    spike(x + 100, tall=22)
-    block(x + 340, g - s * 2.0, w=s * 3)
-    x += 520
+    # ---- Enter ship ----
+    portal(x + 40, "ship")
+    x += 200
 
-    # Fast spike run into finish.
-    for i in range(8):
-        gap = 55 if i % 2 == 0 else 95
-        spike(x)
-        x += gap
+    # Ship corridor — floating hazards between floor and ceiling.
+    for i in range(4):
+        block(x + i * 180, g - s * 3.2 - (i % 2) * 40, w=s * 1.4)
+    x += 4 * 180 + 40
+
+    # Mid-height spike pillars (as short blocks + spikes).
+    for i in range(5):
+        yy = c.CEILING_Y + 70 + (i % 3) * 55
+        block(x + i * 150, yy, w=26, h=26)
+    x += 5 * 150 + 80
+
+    # Wave of ground + ceiling spikes for ship weaving.
+    for i in range(6):
+        if i % 2 == 0:
+            spike(x + i * 110, tall=34)
+        else:
+            spike(x + i * 110, tall=34, top=c.CEILING_Y)
+    x += 6 * 110 + 160
+
+    # Floating platforms to weave through.
+    block(x, g - s * 4.5, w=s * 2)
+    block(x + 140, g - s * 2.2, w=s * 2)
+    block(x + 280, g - s * 3.8, w=s * 2)
+    x += 420
+
+    # ---- Back to cube for the finish ----
+    portal(x + 20, "cube")
     x += 180
+    spike(x)
+    spike(x + 50)
+    x += 240
+    for i in range(4):
+        spike(x + i * 70)
+    x += 4 * 70 + 200
 
-    # Victory pad.
     block(x, g - s, w=s * 4)
     finish_x = x + s * 4 + 80
-    return objs, finish_x
+    return objs, portals, finish_x
 
 
 def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:
@@ -120,9 +150,16 @@ def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:
         return
 
     if obs.kind == "spike":
-        tip = (rect.centerx, rect.top)
-        left = (rect.left, rect.bottom)
-        right = (rect.right, rect.bottom)
+        # Spikes near the ceiling point downward.
+        points_up = rect.bottom >= c.GROUND_Y - 2
+        if points_up:
+            tip = (rect.centerx, rect.top)
+            left = (rect.left, rect.bottom)
+            right = (rect.right, rect.bottom)
+        else:
+            tip = (rect.centerx, rect.bottom)
+            left = (rect.left, rect.top)
+            right = (rect.right, rect.top)
         pygame.draw.polygon(surf, c.SPIKE, [tip, left, right])
         pygame.draw.polygon(surf, (255, 160, 180), [tip, left, right], width=2)
     else:
@@ -144,3 +181,19 @@ def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:
                 (inset.centerx, inset.bottom),
                 1,
             )
+
+
+def draw_portal(surf: pygame.Surface, portal: Portal, camera_x: float, pulse: float) -> None:
+    """Draw a glowing mode portal ring."""
+    sx = int(portal.screen_x(camera_x))
+    if sx < -60 or sx > c.SCREEN_W + 60:
+        return
+    color = c.PORTAL_SHIP if portal.mode == "ship" else c.PORTAL_CUBE
+    cy = int((c.CEILING_Y + c.GROUND_Y) / 2)
+    radius = 34 + int(3 * abs((pulse * 4) % 2 - 1))
+    pygame.draw.circle(surf, color, (sx, cy), radius, width=5)
+    pygame.draw.circle(surf, (*color, ), (sx, cy), radius - 10, width=2)
+    label = "SHIP" if portal.mode == "ship" else "CUBE"
+    font = pygame.font.SysFont("Arial", 14, bold=True)
+    text = font.render(label, True, color)
+    surf.blit(text, text.get_rect(center=(sx, cy)))
