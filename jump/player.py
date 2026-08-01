@@ -27,6 +27,7 @@ class Player:
         self.mode: Gamemode = "cube"
         self.gravity_dir: float = 1.0  # +1 normal, -1 inverted (ball)
         self.click_buffer: float = 0.0  # orb click buffer timer
+        self.air_jumps_left: int = 0  # cube double-jump charges
 
     @property
     def rect(self) -> pygame.Rect:
@@ -46,6 +47,7 @@ class Player:
         self.mode = mode
         self.gravity_dir = 1.0
         self.on_ground = False
+        self.air_jumps_left = 0
         if mode == "ship":
             # Lift off so the ship does not instantly kiss the floor.
             self.y = min(self.y, c.GROUND_Y - self.size - 10.0)
@@ -79,6 +81,10 @@ class Player:
             if self.on_ground:
                 self.vy = c.JUMP_VELOCITY
                 self.on_ground = False
+                self.air_jumps_left = 1  # one extra mid-air jump
+            elif self.air_jumps_left > 0:
+                self.vy = c.DOUBLE_JUMP_VELOCITY
+                self.air_jumps_left -= 1
         elif self.mode == "ball":
             self.gravity_dir *= -1.0
             self.on_ground = False
@@ -141,6 +147,7 @@ class Player:
             self.y = c.GROUND_Y - self.size
             self.vy = 0.0
             self.on_ground = True
+            self.air_jumps_left = 0
             self.angle = round(self.angle / 90.0) * 90.0
 
         if self.vy >= 0.0:
@@ -152,6 +159,7 @@ class Player:
                     self.y = top - self.size
                     self.vy = 0.0
                     self.on_ground = True
+                    self.air_jumps_left = 0
                     self.angle = round(self.angle / 90.0) * 90.0
                     break
 
@@ -243,6 +251,7 @@ class Player:
         self.mode = "cube"
         self.gravity_dir = 1.0
         self.click_buffer = 0.0
+        self.air_jumps_left = 0
 
     def draw(self, surf: pygame.Surface) -> None:
         """Draw the active icon."""

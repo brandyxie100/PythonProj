@@ -30,6 +30,8 @@ GRAVITY: float = 3600.0
 FALL_GRAVITY: float = 5000.0
 JUMP_HEIGHT: float = CUBE_SIZE * JUMP_BLOCKS
 JUMP_VELOCITY: float = -math.sqrt(2.0 * GRAVITY * JUMP_HEIGHT) * 1.08
+# Second press in mid-air — slightly softer so chaining still reads clearly.
+DOUBLE_JUMP_VELOCITY: float = JUMP_VELOCITY * 0.92
 ROTATE_SPEED: float = 560.0
 
 # Ship — hold Space to fly up, release to fly down

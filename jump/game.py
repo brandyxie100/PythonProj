@@ -347,7 +347,7 @@ class Game:
         surf.blit(mode_txt, (20, 94))
 
         hints = {
-            "cube": "SPACE jump/orbs  ·  yellow=jump  pink=boost  blue=flip",
+            "cube": "SPACE jump · tap again mid-air for double jump",
             "ship": "HOLD = fly up  ·  RELEASE = fly down",
             "ball": "SPACE = invert gravity",
             "ufo": "SPACE = jump anytime (2 blocks)",

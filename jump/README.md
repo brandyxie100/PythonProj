@@ -16,7 +16,7 @@ python main.py
 | Key | Action |
 |-----|--------|
 | `Space` / `Enter` | Menu: start |
-| `Space` / `W` / `↑` | Cube: jump · Ship: hold = up, release = down |
+| `Space` / `W` / `↑` | Cube: jump, tap again mid-air to double jump · Ship: hold = up, release = down |
 | `Esc` | Menu: quit · In-run: back to menu |
 
 ## Orbs

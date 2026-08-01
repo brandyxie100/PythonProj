@@ -41,9 +41,21 @@ def test_jump_only_when_grounded() -> None:
     p.jump()
     assert not p.on_ground
     assert p.vy == pytest.approx(c.JUMP_VELOCITY)
-    p.vy = -100.0
+    assert p.air_jumps_left == 1
+
+
+def test_cube_double_jump_mid_air() -> None:
+    p = Player()
     p.jump()
-    assert p.vy == pytest.approx(-100.0)
+    assert p.air_jumps_left == 1
+    p.vy = 50.0  # falling
+    p.jump()
+    assert p.air_jumps_left == 0
+    assert p.vy == pytest.approx(c.DOUBLE_JUMP_VELOCITY)
+    # Third press does nothing to velocity.
+    p.vy = 80.0
+    p.jump()
+    assert p.vy == pytest.approx(80.0)
 
 
 def test_level_name() -> None:
