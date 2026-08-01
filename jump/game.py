@@ -5,7 +5,7 @@ from __future__ import annotations
 import pygame
 
 import config as c
-from level import Obstacle, Portal, build_level, draw_obstacle, draw_portal
+from level import Obstacle, build_level, draw_obstacle, draw_portal
 from player import Player
 
 
@@ -19,12 +19,12 @@ class Game:
         self._huge = pygame.font.SysFont("Arial", 54, bold=True)
         self.player = Player()
         self.obstacles: list[Obstacle] = []
-        self.portals: list[Portal] = []
+        self.portals = []
         self.finish_x = 0.0
         self.camera_x = 0.0
         self.attempts = 1
         self.best_progress = 0.0
-        self.state: str = "playing"  # playing | dead | won
+        self.state: str = "playing"
         self.death_timer = 0.0
         self._pulse = 0.0
         self._jump_held = False
@@ -48,7 +48,7 @@ class Game:
         return max(0.0, min(1.0, world_x / self.finish_x))
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Track jump/fly hold; Space retries; Esc returns to the menu."""
+        """Track hold for ship; Space activates mode action / retry; Esc → menu."""
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.request_menu = True
             return
@@ -88,7 +88,8 @@ class Game:
         self._check_portals()
 
         solid_tops: list[tuple[float, float, float]] = []
-        if self.player.mode == "cube":
+        solid_bottoms: list[tuple[float, float, float]] = []
+        if self.player.mode in ("cube", "ball"):
             for obs in self.obstacles:
                 if obs.kind != "block":
                     continue
@@ -96,9 +97,19 @@ class Game:
                 solid_tops.append(
                     (float(rect.left), float(rect.right), float(rect.top))
                 )
+                solid_bottoms.append(
+                    (float(rect.left), float(rect.right), float(rect.bottom))
+                )
 
-        self.player.update(dt, solid_tops, holding=self._jump_held)
-        if self.player.mode == "cube" and self._jump_held and self.player.on_ground:
+        self.player.update(
+            dt, solid_tops, solid_bottoms, holding=self._jump_held
+        )
+        # Cube hold-to-rebounce (ship uses continuous hold thrust instead).
+        if (
+            self.player.mode == "cube"
+            and self._jump_held
+            and self.player.on_ground
+        ):
             self.player.jump()
         self._resolve_collisions()
 
@@ -117,13 +128,31 @@ class Game:
                 portal.triggered = True
                 self.player.set_mode(portal.mode)
 
+    def _needs_ceiling(self) -> bool:
+        """Ceiling is active for ship, inverted ball, and UFO flight."""
+        return self.player.mode in ("ship", "ball", "ufo")
+
     def _resolve_collisions(self) -> None:
-        """Kill on spikes, unsafe blocks, or ship floor/ceiling hits."""
-        if self.player.mode == "ship":
+        """Kill on spikes, unsafe blocks, or bound hits for flight modes."""
+        mode = self.player.mode
+
+        if mode == "ship":
             if self.player.y <= c.CEILING_Y:
                 self._die()
                 return
             if self.player.y + self.player.size >= c.GROUND_Y:
+                self._die()
+                return
+        elif mode == "ufo":
+            if self.player.y <= c.CEILING_Y:
+                self._die()
+                return
+        elif mode == "ball":
+            # Ball may rest on floor or ceiling; crushing past bounds still kills.
+            if self.player.y + self.player.size > c.GROUND_Y + 2:
+                self._die()
+                return
+            if self.player.y < c.CEILING_Y - 2:
                 self._die()
                 return
 
@@ -139,8 +168,20 @@ class Game:
                 self._die()
                 return
 
-            if self.player.mode == "ship":
-                # Ship: any solid contact is lethal.
+            if mode in ("ship", "ufo"):
+                self._die()
+                return
+
+            # Cube / ball: landing on the gravity-facing side is safe.
+            if mode == "ball" and self.player.gravity_dir < 0.0:
+                on_ceiling_side = (
+                    self.player.vy <= 0.0
+                    and prect.top >= rect.bottom - 10
+                    and prect.right > rect.left + 4
+                    and prect.left < rect.right - 4
+                )
+                if on_ceiling_side:
+                    continue
                 self._die()
                 return
 
@@ -168,7 +209,7 @@ class Game:
         """Render background, course, icon, and HUD."""
         self._draw_background(surf)
         self._draw_ground(surf)
-        if self.player.mode == "ship":
+        if self._needs_ceiling():
             self._draw_ceiling(surf)
         for portal in self.portals:
             draw_portal(surf, portal, self.camera_x, self._pulse)
@@ -196,7 +237,6 @@ class Game:
                 int(c.BG_TOP[i] + (c.BG_BOTTOM[i] - c.BG_TOP[i]) * t) for i in range(3)
             )
             pygame.draw.line(surf, color, (0, y), (c.SCREEN_W, y))
-
         spacing = 48
         offset = int(self.camera_x * 0.35) % spacing
         for x in range(-offset, c.SCREEN_W + spacing, spacing):
@@ -249,7 +289,6 @@ class Game:
                 )
 
     def _draw_death_burst(self, surf: pygame.Surface) -> None:
-        """Simple expanding ring where the icon died."""
         cx = int(self.player.x + self.player.size / 2)
         cy = int(self.player.y + self.player.size / 2)
         t = 1.0 - (self.death_timer / c.DEATH_FLASH_TIME)
@@ -283,15 +322,18 @@ class Game:
         )
         surf.blit(best, (20, 72))
 
-        mode = self.player.mode.upper()
-        mode_color = c.SHIP if self.player.mode == "ship" else c.CUBE
-        mode_txt = self._small.render(f"MODE: {mode}", True, mode_color)
+        mode = self.player.mode
+        mode_color = c.PORTAL_COLORS[mode]
+        mode_txt = self._small.render(f"MODE: {mode.upper()}", True, mode_color)
         surf.blit(mode_txt, (20, 94))
 
-        if self.player.mode == "ship":
-            hint = self._small.render("HOLD SPACE = fly up", True, c.UI_DIM)
-        else:
-            hint = self._small.render("HOLD SPACE = keep jumping", True, c.UI_DIM)
+        hints = {
+            "cube": "HOLD SPACE = keep jumping",
+            "ship": "HOLD = fly up  ·  RELEASE = fly down",
+            "ball": "SPACE = invert gravity",
+            "ufo": "SPACE = jump anytime (2 blocks)",
+        }
+        hint = self._small.render(hints[mode], True, c.UI_DIM)
         surf.blit(hint, (c.SCREEN_W - hint.get_width() - 20, 50))
 
         title = self._font.render("JUMP", True, c.GROUND_LINE)

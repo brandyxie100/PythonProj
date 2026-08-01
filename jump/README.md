@@ -1,6 +1,6 @@
 # JUMP
 
-A small **Geometry Dash–style** auto-runner with cube and ship gamemodes.
+A small **Geometry Dash–style** auto-runner with cube, ship, ball, and UFO modes.
 
 ## Run
 
@@ -15,13 +15,16 @@ python main.py
 | Key | Action |
 |-----|--------|
 | `Space` / `Enter` | Menu: start |
-| `Space` / `W` / `↑` | Cube: jump (hold to keep hopping) · Ship: fly up |
+| `Space` / `W` / `↑` | Mode action (see below) |
 | `Esc` | Menu: quit · In-run: back to menu |
 
-## Gameplay
+## Gamemodes & portals
 
-- The cube jumps **exactly 2 blocks** high.
-- **Hold Space** as the cube to bounce again every landing.
-- Fly through a **SHIP** portal to switch to ship mode — hold Space to climb, release to dive. Touching the floor, ceiling, or any obstacle crashes you.
-- A later **CUBE** portal returns you to jumping for the finish.
-- Reach the checkered flag to clear the level.
+| Portal | Mode | Control |
+|--------|------|---------|
+| **Green** | Cube | Jump 2 blocks (hold to keep hopping) |
+| **Purple** | Ship | **Hold** = fly up · **Release** = fly down |
+| **Orange** | Ball | Click to invert gravity |
+| **Yellow** | UFO | Click to jump 2 blocks anytime (mid-air OK) |
+
+Ship floor / ceiling contact crashes you. Reach the checkered flag to clear the level.

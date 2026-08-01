@@ -17,9 +17,9 @@ class MainMenu:
         self._title = pygame.font.SysFont("Arial", 72, bold=True)
         self._sub = pygame.font.SysFont("Arial", 22)
         self._btn = pygame.font.SysFont("Arial", 28, bold=True)
-        self._tiny = pygame.font.SysFont("Arial", 16)
-        self.play_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 250, 280, 58)
-        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 330, 280, 58)
+        self._tiny = pygame.font.SysFont("Arial", 15)
+        self.play_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 268, 280, 58)
+        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 342, 280, 58)
         self._choice: Optional[str] = None
         self._pulse = 0.0
 
@@ -59,22 +59,38 @@ class MainMenu:
             )
             pygame.draw.line(surf, color, (0, y), (c.SCREEN_W, y))
 
-        # Soft grid
         for x in range(0, c.SCREEN_W, 48):
             pygame.draw.line(surf, (28, 34, 70), (x, 0), (x, c.SCREEN_H))
         for y in range(0, c.SCREEN_H, 48):
             pygame.draw.line(surf, (28, 34, 70), (0, y), (c.SCREEN_W, y))
 
         title = self._title.render("JUMP", True, c.GROUND_LINE)
-        surf.blit(title, title.get_rect(center=(c.SCREEN_W // 2, 120)))
+        surf.blit(title, title.get_rect(center=(c.SCREEN_W // 2, 88)))
 
-        bob = int(6 * abs((self._pulse * 2) % 2 - 1))
-        sub = self._sub.render("Geometry Dash–style auto-runner", True, c.UI_DIM)
-        surf.blit(sub, sub.get_rect(center=(c.SCREEN_W // 2, 175 + bob // 2)))
+        sub = self._sub.render("Cube · Ship · Ball · UFO", True, c.UI_DIM)
+        surf.blit(sub, sub.get_rect(center=(c.SCREEN_W // 2, 145)))
 
-        # Mini cube + ship icons
-        self._draw_preview_cube(surf, c.SCREEN_W // 2 - 70, 205 + bob)
-        self._draw_preview_ship(surf, c.SCREEN_W // 2 + 40, 205)
+        # Portal color legend
+        legend = [
+            ("CUBE", c.PORTAL_CUBE),
+            ("SHIP", c.PORTAL_SHIP),
+            ("BALL", c.PORTAL_BALL),
+            ("UFO", c.PORTAL_UFO),
+        ]
+        base_x = c.SCREEN_W // 2 - 210
+        for i, (name, color) in enumerate(legend):
+            x = base_x + i * 110
+            pygame.draw.circle(surf, color, (x + 20, 190), 12, 3)
+            text = self._tiny.render(name, True, color)
+            surf.blit(text, (x + 38, 182))
+
+        # Ship tip callout
+        tip = self._tiny.render(
+            "Purple portal = SHIP  ·  Hold Space to fly up, release to go down",
+            True,
+            c.PORTAL_SHIP,
+        )
+        surf.blit(tip, tip.get_rect(center=(c.SCREEN_W // 2, 230)))
 
         mouse = pygame.mouse.get_pos()
         self._draw_button(
@@ -85,13 +101,13 @@ class MainMenu:
         )
 
         hints = [
-            "Cube: hold SPACE to keep jumping (2 blocks high)",
-            "Ship: hold SPACE to fly up — release to dive",
-            "Portals switch gamemode mid-level  ·  Esc returns here",
+            "Green portal: Cube — jump 2 blocks",
+            "Purple portal: Ship — hold up / release down",
+            "Orange portal: Ball — invert gravity  ·  Yellow: UFO — mid-air jump",
         ]
         for i, line in enumerate(hints):
             text = self._tiny.render(line, True, c.UI_DIM)
-            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 430 + i * 22)))
+            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 430 + i * 20)))
 
     def _draw_button(
         self, surf: pygame.Surface, rect: pygame.Rect, label: str, hover: bool
@@ -101,21 +117,3 @@ class MainMenu:
         pygame.draw.rect(surf, c.UI, rect, width=2, border_radius=10)
         text = self._btn.render(label, True, c.UI)
         surf.blit(text, text.get_rect(center=rect.center))
-
-    def _draw_preview_cube(self, surf: pygame.Surface, x: int, y: int) -> None:
-        r = pygame.Rect(x, y, 28, 28)
-        pygame.draw.rect(surf, c.CUBE, r, border_radius=4)
-        pygame.draw.rect(surf, c.CUBE_EDGE, r, width=2, border_radius=4)
-
-    def _draw_preview_ship(self, surf: pygame.Surface, x: int, y: int) -> None:
-        pygame.draw.polygon(
-            surf,
-            c.SHIP,
-            [(x, y + 14), (x + 34, y + 2), (x + 34, y + 26)],
-        )
-        pygame.draw.polygon(
-            surf,
-            c.SHIP_EDGE,
-            [(x, y + 14), (x + 34, y + 2), (x + 34, y + 26)],
-            width=2,
-        )
