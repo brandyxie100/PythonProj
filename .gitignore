@@ -10,3 +10,4 @@
 /GamePlantsVsZombies
 /.gamevenv
 /stickman_battle/__pycache__
+*.pyc
