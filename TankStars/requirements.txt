@@ -1,0 +1,4 @@
+# Tank Stars — artillery duels
+# Python 3.11+
+pygame>=2.6.0
+pytest>=7.0.0
