@@ -16,6 +16,32 @@ Gamemode = Literal["cube", "ship", "ball", "ufo"]
 OrbKind = Literal["yellow", "pink", "blue"]
 
 LEVEL_NAME: str = "Stereo Madness"
+LEVEL_DURATION_SECONDS: float = 180.0
+LEVEL_TARGET_FINISH_X: float = LEVEL_DURATION_SECONDS * c.SCROLL_SPEED
+
+
+def fill_to_target(
+    objs: list[Obstacle],
+    orbs: list[Orb],
+    x: float,
+    target_x: float,
+    *,
+    g: float,
+    s: float,
+) -> float:
+    """Extend the level with repeating hazards/orbs until it reaches the target length."""
+    while x < target_x:
+        if int(x // 220) % 2 == 0:
+            objs.append(Obstacle("block", x, g - s, s * 2.2, s))
+            if x + 90 < target_x:
+                objs.append(Obstacle("block", x + 70, g - s * 2.2, s * 1.8, s))
+        else:
+            objs.append(Obstacle("spike", x, g - 28.0, 28.0, 28.0))
+            objs.append(Obstacle("spike", x + 40.0, c.CEILING_Y, 28.0, 28.0))
+        if int(x // 260) % 2 == 0:
+            orbs.append(Orb("yellow", x + 26.0, g - s * 2.7))
+        x += 180.0
+    return x
 
 
 @dataclass
@@ -289,7 +315,7 @@ def build_stereo_madness() -> tuple[list[Obstacle], list[Portal], list[Orb], flo
     pad(200)
 
     block(x, g - s, w=s * 5)
-    finish_x = x + s * 5 + 100
+    finish_x = fill_to_target(objs, orbs, x + 100.0, LEVEL_TARGET_FINISH_X, g=g, s=s)
     return objs, portals, orbs, finish_x
 
 
@@ -397,7 +423,7 @@ def build_neon_twist() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     orb(x + 20, g - s * 2.8, "pink")
     pad(180)
     block(x, g - s, w=s * 6)
-    finish_x = x + s * 6 + 100
+    finish_x = fill_to_target(objs, orbs, x + 100.0, LEVEL_TARGET_FINISH_X, g=g, s=s)
     return objs, portals, orbs, finish_x
 
 
@@ -499,7 +525,7 @@ def build_ufo_night() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
             orb(x + 20, g - s * 2.2, "yellow")
             pad(140)
 
-    finish_x = x + 120
+    finish_x = fill_to_target(objs, orbs, x + 120.0, LEVEL_TARGET_FINISH_X, g=g, s=s)
     return objs, portals, orbs, finish_x
 
 

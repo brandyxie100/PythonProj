@@ -64,7 +64,7 @@ def test_level_name() -> None:
 
 def test_level_is_stereo_madness() -> None:
     obstacles, portals, orbs, finish_x = build_level()
-    assert finish_x > 2000
+    assert finish_x >= 120 * c.SCROLL_SPEED
     assert any(o.kind == "spike" for o in obstacles)
     assert any(o.kind == "yellow" for o in orbs)
     modes = [p.mode for p in portals]
