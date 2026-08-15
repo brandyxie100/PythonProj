@@ -5,10 +5,27 @@ A Geometry Dash–style auto-runner featuring a **Stereo Madness** course
 
 ## Run
 
+On macOS, use `python3` and `pip3` if `python` or `pip` are not available.
+
 ```bash
 cd jump
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
+python3 main.py
+```
+
+Or use the provided setup helper:
+
+```bash
+cd jump
+sh setup_env.sh
+source .venv/bin/activate
 python main.py
+```
+
+If macOS prompts for developer tools, run:
+
+```bash
+xcode-select --install
 ```
 
 ## Controls

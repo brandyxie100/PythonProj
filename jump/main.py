@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+from typing import Optional
+
 import pygame
 
 import config as c
@@ -19,7 +21,7 @@ def main() -> int:
     clock = pygame.time.Clock()
 
     menu = MainMenu()
-    game: Game | None = None
+    game: Optional[Game] = None
     scene = "menu"
 
     running = True
@@ -39,7 +41,7 @@ def main() -> int:
         if scene == "menu":
             menu.update(dt)
             if menu.choice == "play":
-                game = Game()
+                game = Game(menu.selected_level_index, menu.selected_mode)
                 scene = "game"
                 menu.reset()
             elif menu.choice == "quit":

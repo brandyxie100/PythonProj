@@ -11,3 +11,4 @@
 /.gamevenv
 /stickman_battle/__pycache__
 *.pyc
+/jump/.venv

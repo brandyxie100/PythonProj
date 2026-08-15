@@ -46,6 +46,9 @@ BALL_SPIN_SPEED: float = 720.0
 # UFO — click jumps 2 blocks even mid-air
 UFO_JUMP_VELOCITY: float = JUMP_VELOCITY
 
+# Wave — tap to invert vertical direction
+WAVE_SPEED: float = 420.0
+
 CUBE: tuple[int, int, int] = (70, 78, 90)
 CUBE_EDGE: tuple[int, int, int] = (20, 22, 28)
 CUBE_CORE: tuple[int, int, int] = (140, 210, 255)
@@ -71,12 +74,14 @@ PORTAL_CUBE: tuple[int, int, int] = (60, 220, 90)  # green
 PORTAL_SHIP: tuple[int, int, int] = (210, 70, 220)  # purple
 PORTAL_BALL: tuple[int, int, int] = (255, 110, 50)  # orange-red
 PORTAL_UFO: tuple[int, int, int] = (255, 190, 50)  # yellow
+PORTAL_WAVE: tuple[int, int, int] = (55, 160, 255)  # bright cyan
 
 PORTAL_COLORS: dict[str, tuple[int, int, int]] = {
     "cube": PORTAL_CUBE,
     "ship": PORTAL_SHIP,
     "ball": PORTAL_BALL,
     "ufo": PORTAL_UFO,
+    "wave": PORTAL_WAVE,
 }
 
 UI: tuple[int, int, int] = (230, 240, 255)

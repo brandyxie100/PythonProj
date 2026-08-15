@@ -12,7 +12,7 @@ from player import Player
 class Game:
     """One continuous auto-scrolling run with restart-on-death."""
 
-    def __init__(self) -> None:
+    def __init__(self, level_index: Optional[int] = None, start_mode: str = "cube") -> None:
         """Load the course and reset run stats."""
         self._font = pygame.font.SysFont("Arial", 28, bold=True)
         self._small = pygame.font.SysFont("Arial", 18)
@@ -22,6 +22,7 @@ class Game:
         self.portals = []
         self.orbs = []
         self.finish_x = 0.0
+        self.current_level_name = ""
         self.camera_x = 0.0
         self.attempts = 1
         self.best_progress = 0.0
@@ -30,13 +31,19 @@ class Game:
         self._pulse = 0.0
         self._jump_held = False
         self.request_menu = False
+        self._selected_level_index = level_index
+        self._start_mode = start_mode
         self._reset_level()
 
     def _reset_level(self) -> None:
         """Rebuild obstacles/portals/orbs and put the camera / icon at the start."""
-        self.obstacles, self.portals, self.orbs, self.finish_x = build_level()
+        self.obstacles, self.portals, self.orbs, self.finish_x, self.current_level_name = build_level(
+            self._selected_level_index
+        )
         self.camera_x = 0.0
         self.player.reset()
+        if self._start_mode != "cube":
+            self.player.set_mode(self._start_mode)
         self.state = "playing"
         self.death_timer = 0.0
         self.request_menu = False
@@ -89,22 +96,41 @@ class Game:
         self.camera_x += c.SCROLL_SPEED * dt
         self._check_portals()
 
-        solid_tops: list[tuple[float, float, float]] = []
-        solid_bottoms: list[tuple[float, float, float]] = []
-        if self.player.mode in ("cube", "ball"):
+        solid_tops: list[tuple[float, float, float]] = [
+            (0.0, float(c.SCREEN_W), float(c.GROUND_Y))
+        ]
+        solid_bottoms: list[tuple[float, float, float]] = [
+            (0.0, float(c.SCREEN_W), float(c.CEILING_Y))
+        ]
+        slope_surfaces: list[tuple[float, float, float, float, str]] = []
+        if self.player.mode in ("cube", "ball", "ship", "ufo", "wave"):
             for obs in self.obstacles:
-                if obs.kind != "block":
-                    continue
-                rect = obs.screen_rect(self.camera_x)
-                solid_tops.append(
-                    (float(rect.left), float(rect.right), float(rect.top))
-                )
-                solid_bottoms.append(
-                    (float(rect.left), float(rect.right), float(rect.bottom))
-                )
+                if obs.kind == "block":
+                    rect = obs.screen_rect(self.camera_x)
+                    solid_tops.append(
+                        (float(rect.left), float(rect.right), float(rect.top))
+                    )
+                    solid_bottoms.append(
+                        (float(rect.left), float(rect.right), float(rect.bottom))
+                    )
+                elif obs.kind == "slope":
+                    rect = obs.screen_rect(self.camera_x)
+                    slope_surfaces.append(
+                        (
+                            float(rect.left),
+                            float(rect.right),
+                            float(rect.top),
+                            float(rect.bottom),
+                            obs.slope_dir,
+                        )
+                    )
 
         self.player.update(
-            dt, solid_tops, solid_bottoms, holding=self._jump_held
+            dt,
+            solid_tops,
+            solid_bottoms,
+            slope_surfaces,
+            holding=self._jump_held,
         )
         self._try_orbs()
         # Cube hold-to-rebounce (ship uses continuous hold thrust instead).
@@ -144,27 +170,37 @@ class Game:
                 portal.triggered = True
                 self.player.set_mode(portal.mode)
 
+    def _safe_on_slope(self, obs: Obstacle, prect: pygame.Rect) -> bool:
+        if self.player.mode in ("ship", "ufo"):
+            return False
+        if self.player.mode == "ball" and self.player.gravity_dir < 0.0:
+            return False
+
+        slope_y = obs.slope_y_at(self.camera_x, prect.centerx)
+        if slope_y is None:
+            return False
+
+        drawn = obs.screen_rect(self.camera_x)
+        if (
+            self.player.vy >= 0.0
+            and prect.bottom >= slope_y - 2
+            and prect.bottom <= slope_y + 12
+            and prect.right > drawn.left + 4
+            and prect.left < drawn.right - 4
+        ):
+            return True
+        return False
+
     def _needs_ceiling(self) -> bool:
-        """Ceiling is active for ship, inverted ball, and UFO flight."""
-        return self.player.mode in ("ship", "ball", "ufo")
+        """Ceiling is active for ship, inverted ball, UFO, and wave flight."""
+        return self.player.mode in ("ship", "ball", "ufo", "wave")
 
     def _resolve_collisions(self) -> None:
         """Kill on spikes, unsafe blocks, or bound hits for flight modes."""
         mode = self.player.mode
 
-        if mode == "ship":
-            if self.player.y <= c.CEILING_Y:
-                self._die()
-                return
-            if self.player.y + self.player.size >= c.GROUND_Y:
-                self._die()
-                return
-        elif mode == "ufo":
-            if self.player.y <= c.CEILING_Y:
-                self._die()
-                return
-        elif mode == "ball":
-            # Ball may rest on floor or ceiling; crushing past bounds still kills.
+        if mode == "ball" or mode == "wave":
+            # Ball and wave may travel up and down; crushing past bounds kills.
             if self.player.y + self.player.size > c.GROUND_Y + 2:
                 self._die()
                 return
@@ -184,11 +220,9 @@ class Game:
                 self._die()
                 return
 
-            if mode in ("ship", "ufo"):
-                self._die()
-                return
+            if obs.kind == "slope":
+                continue
 
-            # Cube / ball: landing on the gravity-facing side is safe.
             drawn = obs.screen_rect(self.camera_x)
             if mode == "ball" and self.player.gravity_dir < 0.0:
                 on_ceiling_side = (
@@ -210,6 +244,8 @@ class Game:
                 and prect.left < drawn.right - 4
             )
             if on_top:
+                continue
+            if mode in ("ship", "ufo"):
                 continue
             self._die()
             return
@@ -351,11 +387,12 @@ class Game:
             "ship": "HOLD = fly up  ·  RELEASE = fly down",
             "ball": "SPACE = invert gravity",
             "ufo": "SPACE = jump anytime (2 blocks)",
+            "wave": "SPACE to reverse vertical direction",
         }
         hint = self._small.render(hints[mode], True, c.UI_DIM)
         surf.blit(hint, (c.SCREEN_W - hint.get_width() - 20, 50))
 
-        title = self._font.render("STEREO MADNESS", True, c.GROUND_LINE)
+        title = self._font.render(self.current_level_name or "UNKNOWN LEVEL", True, c.GROUND_LINE)
         surf.blit(title, (20, 16))
 
     def _draw_center_banner(

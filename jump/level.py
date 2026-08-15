@@ -2,29 +2,32 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal, Optional
 
 import pygame
 
 import config as c
 
-ObstacleKind = Literal["spike", "block"]
+ObstacleKind = Literal["spike", "block", "slope"]
+SlopeDir = Literal["up", "down"]
 Gamemode = Literal["cube", "ship", "ball", "ufo"]
 OrbKind = Literal["yellow", "pink", "blue"]
 
 LEVEL_NAME: str = "Stereo Madness"
 
 
-@dataclass(slots=True)
+@dataclass
 class Obstacle:
-    """A world-space hazard or platform."""
+    """A world-space hazard, platform, or slope."""
 
     kind: ObstacleKind
     x: float
     y: float
     w: float
     h: float
+    slope_dir: SlopeDir = "up"
 
     def screen_rect(self, camera_x: float) -> pygame.Rect:
         """Return the drawn rect in screen space."""
@@ -58,8 +61,20 @@ class Obstacle:
         inset = int(c.BLOCK_HIT_INSET)
         return rect.inflate(-inset * 2, -inset * 2)
 
+    def slope_y_at(self, camera_x: float, screen_x: float) -> float | None:
+        """Return the slope surface Y coordinate at a screen X position."""
+        if self.kind != "slope":
+            return None
+        rect = self.screen_rect(camera_x)
+        if screen_x < rect.left or screen_x > rect.right or rect.w <= 0:
+            return None
+        t = (screen_x - rect.left) / rect.w
+        if self.slope_dir == "up":
+            return rect.bottom + (rect.top - rect.bottom) * t
+        return rect.top + (rect.bottom - rect.top) * t
 
-@dataclass(slots=True)
+
+@dataclass
 class Portal:
     """World-space gamemode switch."""
 
@@ -72,7 +87,7 @@ class Portal:
         return self.x - camera_x
 
 
-@dataclass(slots=True)
+@dataclass
 class Orb:
     """Clickable jump orb (yellow / pink / blue)."""
 
@@ -92,7 +107,7 @@ class Orb:
         return pygame.Rect(int(cx - r), int(cy - r), int(r * 2), int(r * 2))
 
 
-def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
+def build_stereo_madness() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     """Build Stereo Madness with orbs: cube → ship → cube."""
     objs: list[Obstacle] = []
     portals: list[Portal] = []
@@ -100,7 +115,7 @@ def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     g = c.GROUND_Y
     s = c.CUBE_SIZE
 
-    def spike(wx: float, *, tall: float = 28.0, top: float | None = None) -> None:
+    def spike(wx: float, *, tall: float = 28.0, top: Optional[float] = None) -> None:
         if top is None:
             objs.append(Obstacle("spike", wx, g - tall, 28.0, tall))
         else:
@@ -108,6 +123,9 @@ def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
 
     def block(wx: float, wy: float, w: float = s, h: float = s) -> None:
         objs.append(Obstacle("block", wx, wy, w, h))
+
+    def slope(wx: float, wy: float, w: float = s, h: float = s, dir: SlopeDir = "up") -> None:
+        objs.append(Obstacle("slope", wx, wy, w, h, dir))
 
     def portal(wx: float, mode: Gamemode) -> None:
         portals.append(Portal(wx, mode))
@@ -151,14 +169,14 @@ def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     pad(220)
 
     block(x, g - s)
-    block(x + s + 8, g - s * 2)
+    slope(x + s + 8, g - s, w=s * 2, dir="down")
     pad(200)
     spike(x)
     pad(200)
 
     spike(x)
     block(x + 70, g - s * 2, w=s * 2.5)
-    spike(x + 70 + s * 2.5 + 24)
+    slope(x + 70 + s * 2.5 + 24, g - s, w=s * 2, dir="up")
     pad(280)
 
     for gap in (175, 175, 165, 185, 175):
@@ -275,6 +293,231 @@ def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     return objs, portals, orbs, finish_x
 
 
+def build_neon_twist() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
+    """Build Neon Twist with a different cube/ship/ball order."""
+    objs: list[Obstacle] = []
+    portals: list[Portal] = []
+    orbs: list[Orb] = []
+    g = c.GROUND_Y
+    s = c.CUBE_SIZE
+
+    def spike(wx: float, *, tall: float = 28.0, top: Optional[float] = None) -> None:
+        if top is None:
+            objs.append(Obstacle("spike", wx, g - tall, 28.0, tall))
+        else:
+            objs.append(Obstacle("spike", wx, top, 28.0, tall))
+
+    def block(wx: float, wy: float, w: float = s, h: float = s) -> None:
+        objs.append(Obstacle("block", wx, wy, w, h))
+
+    def slope(wx: float, wy: float, w: float = s, h: float = s, dir: SlopeDir = "up") -> None:
+        objs.append(Obstacle("slope", wx, wy, w, h, dir))
+
+    def portal(wx: float, mode: Gamemode) -> None:
+        portals.append(Portal(wx, mode))
+
+    def orb(wx: float, wy: float, kind: OrbKind = "yellow") -> None:
+        orbs.append(Orb(kind, wx, wy))
+
+    def pad(amount: float) -> None:
+        nonlocal x
+        x += amount
+
+    x = 480.0
+    block(x, g - s)
+    pad(180)
+    spike(x)
+    pad(190)
+    slope(x, g - s, w=s * 2.5, dir="up")
+    pad(180)
+    orb(x + 30, g - s * 1.6, "yellow")
+    pad(220)
+    portal(x + 30, "ship")
+    pad(240)
+
+    for i in range(3):
+        spike(x, tall=34 if i % 2 == 0 else 30, top=c.CEILING_Y if i % 2 else None)
+        pad(110)
+    pad(40)
+
+    orb(x + 20, (c.CEILING_Y + g) / 2, "pink")
+    pad(180)
+    block(x, g - s * 2, w=s * 1.5)
+    pad(130)
+    slope(x, g - s * 2.2, w=s * 3, h=s * 0.8, dir="down")
+    pad(260)
+
+    portal(x + 20, "ball")
+    pad(180)
+    spike(x)
+    pad(160)
+    block(x, g - s * 1.5, w=s * 2)
+    pad(170)
+    orb(x + 15, g - s * 2.4, "blue")
+    pad(200)
+
+    portal(x + 20, "cube")
+    pad(200)
+    spike(x)
+    spike(x + 38)
+    pad(220)
+    block(x, g - s, w=s * 2)
+    pad(220)
+    slope(x, g - s * 1.2, w=s * 2.5, dir="down")
+    pad(200)
+    orb(x + 20, g - s * 1.8, "yellow")
+    pad(160)
+
+    spike(x)
+    pad(170)
+    spike(x + 38)
+    pad(180)
+    orb(x + 30, g - s * 2.6, "pink")
+    pad(180)
+    block(x, g - s, w=s * 5)
+    pad(240)
+
+    # Wave section with vertical corridor and alternating spikes.
+    portal(x + 20, "wave")
+    pad(200)
+    spike(x)
+    pad(140)
+    spike(x + 38, top=c.CEILING_Y)
+    pad(160)
+    block(x, g - s * 2, w=s * 4)
+    pad(220)
+    orb(x + 30, g - s * 2.2, "yellow")
+    pad(200)
+    block(x, g - s, w=s * 5)
+    pad(220)
+
+    spike(x)
+    spike(x + 38)
+    pad(150)
+    orb(x + 20, g - s * 2.8, "pink")
+    pad(180)
+    block(x, g - s, w=s * 6)
+    finish_x = x + s * 6 + 100
+    return objs, portals, orbs, finish_x
+
+
+def build_ufo_night() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
+    """Build UFO Night with a very hard ufo section and a 2-minute finish."""
+    objs: list[Obstacle] = []
+    portals: list[Portal] = []
+    orbs: list[Orb] = []
+    g = c.GROUND_Y
+    s = c.CUBE_SIZE
+
+    def spike(wx: float, *, tall: float = 28.0, top: Optional[float] = None) -> None:
+        if top is None:
+            objs.append(Obstacle("spike", wx, g - tall, 28.0, tall))
+        else:
+            objs.append(Obstacle("spike", wx, top, 28.0, tall))
+
+    def block(wx: float, wy: float, w: float = s, h: float = s) -> None:
+        objs.append(Obstacle("block", wx, wy, w, h))
+
+    def slope(wx: float, wy: float, w: float = s, h: float = s, dir: SlopeDir = "up") -> None:
+        objs.append(Obstacle("slope", wx, wy, w, h, dir))
+
+    def portal(wx: float, mode: Gamemode) -> None:
+        portals.append(Portal(wx, mode))
+
+    def orb(wx: float, wy: float, kind: OrbKind = "yellow") -> None:
+        orbs.append(Orb(kind, wx, wy))
+
+    def pad(amount: float) -> None:
+        nonlocal x
+        x += amount
+
+    x = 480.0
+
+    # Intro to UFO flight
+    block(x, g - s)
+    pad(220)
+    spike(x)
+    pad(240)
+    spike(x, top=c.CEILING_Y)
+    pad(260)
+    portal(x + 30, "ufo")
+    pad(220)
+    orb(x + 20, g - s * 2.4, "pink")
+    pad(200)
+    spike(x)
+    pad(220)
+    spike(x + 38, top=c.CEILING_Y)
+    pad(260)
+
+    # Very hard UFO rhythm section
+    for i in range(22):
+        if i % 4 == 0:
+            block(x, g - s * 1.5, w=s * 1.5)
+            spike(x + s * 2.2, top=c.CEILING_Y)
+        elif i % 4 == 1:
+            block(x, c.CEILING_Y + s * 1.2, w=s * 1.5)
+            spike(x + s * 2.2)
+        elif i % 4 == 2:
+            spike(x)
+            spike(x + 38, top=c.CEILING_Y)
+        else:
+            block(x, g - s * 2.2, w=s * 2)
+            block(x, c.CEILING_Y + s * 0.8, w=s * 2)
+        pad(260)
+        if i % 3 == 0:
+            orb(x + 20, g - s * 2.4, "yellow")
+            pad(120)
+
+    # Tight UFO funnel to cube
+    portal(x + 20, "cube")
+    pad(260)
+    spike(x)
+    pad(140)
+    spike(x + 38, top=c.CEILING_Y)
+    pad(160)
+    block(x, g - s, w=s * 2)
+    pad(220)
+    spike(x)
+    pad(160)
+    spike(x + 38)
+    pad(180)
+    orb(x + 20, g - s * 2.6, "blue")
+    pad(180)
+
+    # Brutal finish stretch
+    for i in range(16):
+        if i % 2 == 0:
+            spike(x)
+            pad(220)
+            spike(x + 38, top=c.CEILING_Y)
+            pad(220)
+        else:
+            block(x, g - s, w=s * 2)
+            block(x, c.CEILING_Y + s, w=s * 2)
+            pad(260)
+        if i % 5 == 0:
+            orb(x + 20, g - s * 2.2, "yellow")
+            pad(140)
+
+    finish_x = x + 120
+    return objs, portals, orbs, finish_x
+
+
+LEVELS: list[tuple[str, Callable[[], tuple[list[Obstacle], list[Portal], list[Orb], float]]]] = [
+    ("Stereo Madness", build_stereo_madness),
+    ("Neon Twist", build_neon_twist),
+    ("UFO Night", build_ufo_night),
+]
+
+
+def build_level(level_index: Optional[int] = None) -> tuple[list[Obstacle], list[Portal], list[Orb], float, str]:
+    if level_index is None:
+        level_index = random.randrange(len(LEVELS))
+    name, builder = LEVELS[level_index]
+    objs, portals, orbs, finish_x = builder()
+    return objs, portals, orbs, finish_x, name
+
+
 def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:
     """Render a spike or block in screen space."""
     rect = obs.screen_rect(camera_x)
@@ -293,6 +536,21 @@ def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:
             right = (rect.right, rect.top)
         pygame.draw.polygon(surf, c.SPIKE, [tip, left, right])
         pygame.draw.polygon(surf, (255, 160, 180), [tip, left, right], width=2)
+    elif obs.kind == "slope":
+        if obs.slope_dir == "up":
+            points = [
+                (rect.left, rect.bottom),
+                (rect.right, rect.top),
+                (rect.right, rect.bottom),
+            ]
+        else:
+            points = [
+                (rect.left, rect.top),
+                (rect.left, rect.bottom),
+                (rect.right, rect.bottom),
+            ]
+        pygame.draw.polygon(surf, c.BLOCK, points)
+        pygame.draw.polygon(surf, c.BLOCK_EDGE, points, width=2)
     else:
         pygame.draw.rect(surf, c.BLOCK, rect, border_radius=3)
         pygame.draw.rect(surf, c.BLOCK_EDGE, rect, width=2, border_radius=3)
