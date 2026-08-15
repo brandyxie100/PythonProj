@@ -245,8 +245,6 @@ class Game:
             )
             if on_top:
                 continue
-            if mode in ("ship", "ufo"):
-                continue
             self._die()
             return
 

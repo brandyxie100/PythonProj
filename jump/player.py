@@ -39,7 +39,18 @@ class Player:
     def hitbox(self) -> pygame.Rect:
         """Smaller collision box used for spikes / blocks / orbs."""
         inset = int(c.HITBOX_INSET)
-        return self.rect.inflate(-inset * 2, -inset * 2)
+        rect = self.rect
+
+        if self.mode == "ship":
+            return rect.inflate(10, -6)
+        if self.mode == "ball":
+            return rect.inflate(6, 6)
+        if self.mode == "ufo":
+            return rect.inflate(8, -2)
+        if self.mode == "wave":
+            return rect.inflate(-4, -2)
+
+        return rect.inflate(-inset * 2, -inset * 2)
 
     def set_mode(self, mode: Gamemode) -> None:
         """Switch gamemode and set a safe starting pose."""

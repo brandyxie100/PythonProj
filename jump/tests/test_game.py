@@ -95,6 +95,17 @@ def test_player_hitbox_smaller_than_sprite() -> None:
     assert p.hitbox.height < p.rect.height
 
 
+def test_other_modes_use_mode_scaled_hitboxes() -> None:
+    p = Player()
+    for mode in ("ship", "ball", "ufo", "wave"):
+        p.set_mode(mode)
+        hit = p.hitbox
+        assert hit.width > 0
+        assert hit.height > 0
+        assert hit.width <= p.rect.width + 20
+        assert hit.height <= p.rect.height + 20
+
+
 def test_ship_portal_is_purple() -> None:
     assert c.PORTAL_SHIP == (210, 70, 220)
 
@@ -108,6 +119,19 @@ def test_spike_collision_kills() -> None:
     game.camera_x = 0.0
     game._resolve_collisions()
     assert game.state == "dead"
+
+
+def test_block_collision_kills_for_flight_modes() -> None:
+    for mode in ("ship", "ufo"):
+        game = Game()
+        game.player.set_mode(mode)
+        game.player.y = c.GROUND_Y - game.player.size - 18
+        game.obstacles = [
+            Obstacle("block", c.PLAYER_SCREEN_X + 2, c.GROUND_Y - 52, 36, 52)
+        ]
+        game.camera_x = 0.0
+        game._resolve_collisions()
+        assert game.state == "dead"
 
 
 def test_progress_increases_with_camera() -> None:
