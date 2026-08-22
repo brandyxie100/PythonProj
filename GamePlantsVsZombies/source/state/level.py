@@ -308,6 +308,8 @@ class Level(tool.State):
 
     def setupMouseImage(self, plant_name, select_plant):
         frame_list = tool.GFX[plant_name]
+        if not isinstance(frame_list, list) or not frame_list:
+            return
         if plant_name in tool.PLANT_RECT:
             data = tool.PLANT_RECT[plant_name]
             x, y, width, height = data['x'], data['y'], data['width'], data['height']
@@ -368,7 +370,14 @@ class Level(tool.State):
                     elif plant.name == c.REDWALLNUTBOWLING:
                         if plant.state == c.IDLE:
                             plant.setAttack()
-                    elif plant.name != c.SPIKEWEED:
+                    elif plant.name == c.SPIKEWEED:
+                        pass
+                    elif plant.name == c.POTATOMINE:
+                        # Armed mines are stepped on (boom via checkPlant), not eaten.
+                        # Unarmed mines can still be chewed like other plants.
+                        if plant.is_init:
+                            zombie.setAttack(plant)
+                    else:
                         zombie.setAttack(plant)
 
             for hypno_zombie in self.hypno_zombie_groups[i]:

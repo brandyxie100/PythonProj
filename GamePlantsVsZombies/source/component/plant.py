@@ -502,7 +502,8 @@ class PotatoMine(Plant):
         self.init_timer = 0
         self.bomb_timer = 0
         self.explode_y_range = 0
-        self.explode_x_range = c.GRID_X_SIZE//3 * 2
+        # Cover most of a tile so walking zombies trigger reliably.
+        self.explode_x_range = c.GRID_X_SIZE
 
     def loadImages(self, name, scale):
         self.init_frames = []
@@ -530,10 +531,13 @@ class PotatoMine(Plant):
                 self.is_init = False
 
     def canAttack(self, zombie):
-        if (not self.is_init and zombie.rect.right >= self.rect.x and
-            (zombie.rect.x - self.rect.x) <= self.explode_x_range):
-            return True
-        return False
+        """Armed mine detonates when a living zombie overlaps its tile."""
+        if self.is_init or zombie.state == c.DIE:
+            return False
+        # Inflate slightly: zombie sprites are wide and foot contact is near
+        # rect.bottom, so a raw rect overlap is too strict.
+        trigger = self.rect.inflate(self.explode_x_range // 2, 24)
+        return zombie.rect.colliderect(trigger)
 
     def attacking(self):
         if self.bomb_timer == 0:

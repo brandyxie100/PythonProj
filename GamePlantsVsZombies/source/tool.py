@@ -215,7 +215,11 @@ def get_image(
 
     Prefers per-pixel alpha when the source already has an alpha channel
     (PNG frames). Falls back to colorkey transparency for opaque sheets.
-    Colorkey is re-applied after scaling because transform.scale can drop it.
+
+    Some plant sheets (PotatoMine, Squash, etc.) are RGBA but still use an
+    *opaque* white matte. For those, pass ``colorkey=WHITE`` so white pixels
+    are punched out even on SRCALPHA surfaces. Black colorkey is never
+    applied to alpha sources (would erase outlines/eyes).
 
     Args:
         sheet: Source sprite sheet surface.
@@ -223,7 +227,7 @@ def get_image(
         y: Top of source rect.
         width: Width of source rect.
         height: Height of source rect.
-        colorkey: Color to treat as transparent (ignored for alpha sources).
+        colorkey: Color to treat as transparent.
         scale: Scale factor (1.0 = no scaling).
 
     Returns:
@@ -238,6 +242,9 @@ def get_image(
     if use_alpha:
         image = pg.Surface((width, height), pg.SRCALPHA)
         image.blit(sheet, (0, 0), (x, y, width, height))
+        # Opaque white mattes in RGBA assets (PotatoMine, etc.)
+        if colorkey == c.WHITE:
+            image = _punch_colorkey_alpha(image, colorkey)
     else:
         image = pg.Surface((width, height)).convert()
         if colorkey is not None:
@@ -249,9 +256,31 @@ def get_image(
     if scale != 1.0:
         new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
         image = pg.transform.scale(image, new_size)
-        if not use_alpha and colorkey is not None:
+        if use_alpha and colorkey == c.WHITE:
+            image = _punch_colorkey_alpha(image, colorkey)
+        elif not use_alpha and colorkey is not None:
             image.set_colorkey(colorkey)
 
+    return image
+
+
+def _punch_colorkey_alpha(
+    image: pg.Surface, colorkey: tuple[int, int, int]
+) -> pg.Surface:
+    """Set alpha=0 on near-colorkey RGB pixels (keeps SRCALPHA)."""
+    # Tolerance covers near-white PNG matte noise without eating plant colors.
+    threshold = 12
+    key_r, key_g, key_b = colorkey
+    rgb = pg.surfarray.pixels3d(image)
+    alpha = pg.surfarray.pixels_alpha(image)
+    mask = (
+        (abs(rgb[:, :, 0].astype(int) - key_r) <= threshold)
+        & (abs(rgb[:, :, 1].astype(int) - key_g) <= threshold)
+        & (abs(rgb[:, :, 2].astype(int) - key_b) <= threshold)
+    )
+    alpha[mask] = 0
+    del rgb
+    del alpha
     return image
 
 
@@ -274,23 +303,26 @@ def load_image_frames(
     """
     frame_list: list[pg.Surface] = []
     tmp: dict[int, pg.Surface] = {}
-    index_start = len(image_name) + 1  # Skip "Peashooter_" to get index
-    frame_num = 0
-
+    prefix = image_name + "_"
     for pic in os.listdir(directory):
+        if pic.startswith("."):
+            continue
         name, ext = os.path.splitext(pic)
-        if ext.lower() in accept:
-            index = int(name[index_start:])
-            img = pg.image.load(os.path.join(directory, pic))
-            if img.get_alpha():
-                img = img.convert_alpha()
-            else:
-                img = img.convert()
-                img.set_colorkey(colorkey)
-            tmp[index] = img
-            frame_num += 1
+        if ext.lower() not in accept or not name.startswith(prefix):
+            continue
+        try:
+            index = int(name[len(prefix) :])
+        except ValueError:
+            continue
+        img = pg.image.load(os.path.join(directory, pic))
+        if img.get_alpha():
+            img = img.convert_alpha()
+        else:
+            img = img.convert()
+            img.set_colorkey(colorkey)
+        tmp[index] = img
 
-    for i in range(frame_num):
+    for i in sorted(tmp):
         frame_list.append(tmp[i])
     return frame_list
 
@@ -315,13 +347,20 @@ def load_all_gfx(
     """
     graphics: dict[str, pg.Surface | list[pg.Surface]] = {}
     for name1 in os.listdir(directory):
+        if name1.startswith("."):
+            continue
         dir1 = os.path.join(directory, name1)
         if os.path.isdir(dir1):
             for name2 in os.listdir(dir1):
+                if name2.startswith("."):
+                    continue
                 dir2 = os.path.join(dir1, name2)
                 if os.path.isdir(dir2):
                     # e.g. Zombies/ConeheadZombie/
+                    loaded_flat = False
                     for name3 in os.listdir(dir2):
+                        if name3.startswith("."):
+                            continue
                         dir3 = os.path.join(dir2, name3)
                         if os.path.isdir(dir3):
                             # e.g. ConeheadZombieAttack/
@@ -329,13 +368,16 @@ def load_all_gfx(
                             graphics[image_name] = load_image_frames(
                                 dir3, image_name, colorkey, accept
                             )
-                        else:
+                        elif not loaded_flat:
                             # Pics directly under e.g. Plants/Peashooter/
+                            _, ext = os.path.splitext(name3)
+                            if ext.lower() not in accept:
+                                continue
                             image_name, _ = os.path.splitext(name2)
                             graphics[image_name] = load_image_frames(
                                 dir2, image_name, colorkey, accept
                             )
-                            break
+                            loaded_flat = True
                 else:
                     # Single image under e.g. Screen/
                     name, ext = os.path.splitext(name2)
