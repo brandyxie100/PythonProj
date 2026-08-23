@@ -23,29 +23,41 @@ class Level(tool.State):
         self.game_info = persist
         self.persist = self.game_info
         self.game_info[c.CURRENT_TIME] = current_time
+        self.game_mode = self.game_info.get(c.GAME_MODE, c.MODE_ADVENTURE)
         self.map_y_len = c.GRID_Y_LEN
         self.map = map.Map(c.GRID_X_LEN, self.map_y_len)
-        
+        self.toast = ""
+        self.toast_timer = 0
+        self.star_font = pg.font.SysFont(None, 22)
+        self.hint_font = pg.font.SysFont(None, 24)
+
         self.loadMap()
         self.setupBackground()
         self.initState()
 
     def loadMap(self):
-        """Load level JSON; clamp invalid level numbers to a valid map."""
+        """Load Adventure level_N.json or Cross cross_N.json."""
         level_num = int(self.game_info.get(c.LEVEL_NUM, c.START_LEVEL_NUM))
-        if level_num < c.START_LEVEL_NUM or level_num > c.MAX_LEVEL:
+        mode = self.game_info.get(c.GAME_MODE, c.MODE_ADVENTURE)
+        max_level = c.MAX_CROSS_LEVEL if mode == c.MODE_CROSS else c.MAX_LEVEL
+        if level_num < c.START_LEVEL_NUM or level_num > max_level:
             level_num = c.START_LEVEL_NUM
             self.game_info[c.LEVEL_NUM] = level_num
 
-        map_file = f"level_{level_num}.json"
+        if mode == c.MODE_CROSS:
+            map_file = f"cross_{level_num}.json"
+            range_msg = f"{c.START_LEVEL_NUM}–{c.MAX_CROSS_LEVEL}"
+        else:
+            map_file = f"level_{level_num}.json"
+            range_msg = f"{c.START_LEVEL_NUM}–{c.MAX_LEVEL}"
+
         file_path = tool.res_data_path("map", map_file)
         try:
             with open(file_path, encoding="utf-8") as f:
                 self.map_data = json.load(f)
         except FileNotFoundError as exc:
             raise RuntimeError(
-                f"Missing level map '{map_file}'. "
-                f"Valid levels are {c.START_LEVEL_NUM}–{c.MAX_LEVEL}."
+                f"Missing map '{map_file}'. Valid maps are {range_msg}."
             ) from exc
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Invalid JSON in level map: {file_path}") from exc
@@ -121,7 +133,11 @@ class Level(tool.State):
 
     def initChoose(self):
         self.state = c.CHOOSE
-        self.panel = menubar.Panel(menubar.all_card_list, self.map_data[c.INIT_SUN_NAME])
+        if c.CARD_POOL in self.map_data:
+            card_list = menubar.getCardPool(self.map_data[c.CARD_POOL])
+        else:
+            card_list = menubar.all_card_list
+        self.panel = menubar.Panel(card_list, self.map_data[c.INIT_SUN_NAME])
 
     def choose(self, mouse_pos, mouse_click):
         if mouse_pos and mouse_click[0]:
@@ -219,12 +235,35 @@ class Level(tool.State):
             self.zombie_groups[map_y].add(zombie.FlagZombie(c.ZOMBIE_START_X, y, self.head_group))
         elif name == c.NEWSPAPER_ZOMBIE:
             self.zombie_groups[map_y].add(zombie.NewspaperZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.CONE_BUCKET_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.ConeBucketZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.FLAG_PAPER_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.FlagPaperZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.EMBER_CONE_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.EmberConeZombie(c.ZOMBIE_START_X, y, self.head_group))
 
     def canSeedPlant(self):
         x, y = pg.mouse.get_pos()
+        if self.game_mode == c.MODE_CROSS:
+            return self.map.showPlantOrMerge(x, y)
         return self.map.showPlant(x, y)
-        
+
+    def _toast(self, msg: str, ms: int = 1800) -> None:
+        self.toast = msg
+        self.toast_timer = self.current_time + ms
+
+    def getPlantAt(self, map_x, map_y):
+        """Return the plant sprite on this grid cell, if any."""
+        for p in self.plant_groups[map_y]:
+            px, py = p.getPosition()
+            mx, my = self.map.getMapIndex(px, py)
+            if mx == map_x and my == map_y:
+                return p
+        return None
+
     def addPlant(self):
+        from ..component.hybrids import fuse_plant_names
+
         pos = self.canSeedPlant()
         if pos is None:
             return
@@ -233,58 +272,65 @@ class Level(tool.State):
             self.setupHintImage()
         x, y = self.hint_rect.centerx, self.hint_rect.bottom
         map_x, map_y = self.map.getMapIndex(x, y)
-        if self.plant_name == c.SUNFLOWER:
-            new_plant = plant.SunFlower(x, y, self.sun_group)
-        elif self.plant_name == c.PEASHOOTER:
-            new_plant = plant.PeaShooter(x, y, self.bullet_groups[map_y])
-        elif self.plant_name == c.SNOWPEASHOOTER:
-            new_plant = plant.SnowPeaShooter(x, y, self.bullet_groups[map_y])
-        elif self.plant_name == c.WALLNUT:
-            new_plant = plant.WallNut(x, y)
-        elif self.plant_name == c.CHERRYBOMB:
-            new_plant = plant.CherryBomb(x, y)
-        elif self.plant_name == c.THREEPEASHOOTER:
-            new_plant = plant.ThreePeaShooter(x, y, self.bullet_groups, map_y)
-        elif self.plant_name == c.REPEATERPEA:
-            new_plant = plant.RepeaterPea(x, y, self.bullet_groups[map_y])
-        elif self.plant_name == c.CHOMPER:
-            new_plant = plant.Chomper(x, y)
-        elif self.plant_name == c.PUFFSHROOM:
-            new_plant = plant.PuffShroom(x, y, self.bullet_groups[map_y])
-        elif self.plant_name == c.POTATOMINE:
-            new_plant = plant.PotatoMine(x, y)
-        elif self.plant_name == c.SQUASH:
-            new_plant = plant.Squash(x, y)
-        elif self.plant_name == c.SPIKEWEED:
-            new_plant = plant.Spikeweed(x, y)
-        elif self.plant_name == c.JALAPENO:
-            new_plant = plant.Jalapeno(x, y)
-        elif self.plant_name == c.SCAREDYSHROOM:
-            new_plant = plant.ScaredyShroom(x, y, self.bullet_groups[map_y])
-        elif self.plant_name == c.SUNSHROOM:
-            new_plant = plant.SunShroom(x, y, self.sun_group)
-        elif self.plant_name == c.ICESHROOM:
-            new_plant = plant.IceShroom(x, y)
-        elif self.plant_name == c.HYPNOSHROOM:
-            new_plant = plant.HypnoShroom(x, y)
-        elif self.plant_name == c.WALLNUTBOWLING:
-            new_plant = plant.WallNutBowling(x, y, map_y, self)
-        elif self.plant_name == c.REDWALLNUTBOWLING:
-            new_plant = plant.RedWallNutBowling(x, y)
+        occupied = self.map.isOccupied(map_x, map_y)
 
+        ctx = {
+            "bullet_group": self.bullet_groups[map_y],
+            "bullet_groups": self.bullet_groups,
+            "sun_group": self.sun_group,
+            "map_y": map_y,
+            "zombie_group": self.zombie_groups[map_y],
+            "level": self,
+        }
+
+        if occupied and self.game_mode == c.MODE_CROSS:
+            existing = self.getPlantAt(map_x, map_y)
+            if existing is None:
+                return
+            # Same-type star merge: more than double attack + variance
+            if (
+                existing.name == self.plant_name
+                and getattr(existing, "star", 1) < c.MAX_PLANT_STAR
+            ):
+                existing.apply_star(existing.star + 1)
+                self._consumeCard()
+                self._toast(
+                    f"Evolved x{existing.star}  (power ×{existing.power_mult:.2f})"
+                )
+                self.removeMouseImage()
+                return
+            # Any two different plants fuse into a new creature that keeps both traits
+            from ..component.hybrids import fuse_plant_names
+
+            cfg = fuse_plant_names(self.plant_name, existing.name, None, existing)
+            existing.kill()
+            new_plant = plant.spawn_plant(cfg.name, x, y, ctx, config=cfg)
+            if new_plant.can_sleep and self.background_type == c.BACKGROUND_DAY:
+                new_plant.setSleep()
+            self.plant_groups[map_y].add(new_plant)
+            self._consumeCard()
+            self._toast(f"{cfg.display_name}!")
+            self.removeMouseImage()
+            return
+
+        if occupied:
+            return
+
+        new_plant = plant.spawn_plant(self.plant_name, x, y, ctx)
         if new_plant.can_sleep and self.background_type == c.BACKGROUND_DAY:
             new_plant.setSleep()
         self.plant_groups[map_y].add(new_plant)
+        self._consumeCard()
+        if self.bar_type != c.CHOOSEBAR_BOWLING:
+            self.map.setMapGridType(map_x, map_y, c.MAP_EXIST)
+        self.removeMouseImage()
+
+    def _consumeCard(self) -> None:
         if self.bar_type == c.CHOOSEBAR_STATIC:
             self.menubar.decreaseSunValue(self.select_plant.sun_cost)
             self.menubar.setCardFrozenTime(self.plant_name)
         else:
             self.menubar.deleteCard(self.select_plant)
-
-        if self.bar_type != c.CHOOSEBAR_BOWLING:
-            self.map.setMapGridType(map_x, map_y, c.MAP_EXIST)
-        self.removeMouseImage()
-        #print('addPlant map[%d,%d], grid pos[%d, %d] pos[%d, %d]' % (map_x, map_y, x, y, pos[0], pos[1]))
 
     def setupHintImage(self):
         """Build a translucent placement ghost without a solid dark box."""
@@ -343,12 +389,29 @@ class Level(tool.State):
     def checkBulletCollisions(self):
         collided_func = pg.sprite.collide_circle_ratio(0.7)
         for i in range(self.map_y_len):
+            torch_plants = [
+                p for p in self.plant_groups[i]
+                if getattr(p, "is_torch", False) and p.health > 0
+            ]
             for bullet in self.bullet_groups[i]:
-                if bullet.state == c.FLY:
-                    zombie = pg.sprite.spritecollideany(bullet, self.zombie_groups[i], collided_func)
-                    if zombie and zombie.state != c.DIE:
-                        zombie.setDamage(bullet.damage, bullet.ice)
-                        bullet.setExplode()
+                if bullet.state != c.FLY:
+                    continue
+                # Torch-Nut: peas that pass a torch become fire (2x)
+                if not getattr(bullet, "fire", False) and not bullet.ice:
+                    for torch in torch_plants:
+                        if bullet.rect.centerx >= torch.rect.centerx:
+                            bullet.fire = True
+                            bullet.damage = max(1, int(bullet.damage) * 2)
+                            tinted = bullet.image.copy()
+                            tinted.fill((255, 140, 40, 255), special_flags=pg.BLEND_RGBA_MULT)
+                            bullet.image = tinted
+                            break
+                zombie = pg.sprite.spritecollideany(
+                    bullet, self.zombie_groups[i], collided_func
+                )
+                if zombie and zombie.state != c.DIE:
+                    zombie.setDamage(bullet.damage, bullet.ice)
+                    bullet.setExplode()
     
     def checkZombieCollisions(self):
         if self.bar_type == c.CHOOSEBAR_BOWLING:
@@ -377,9 +440,13 @@ class Level(tool.State):
                         # Unarmed mines can still be chewed like other plants.
                         if plant.is_init:
                             zombie.setAttack(plant)
+                    elif plant.name == c.SPIKE_MINE:
+                        if getattr(plant, "is_init", True):
+                            zombie.setAttack(plant)
+                    elif plant.name == c.TORCH_NUT:
+                        zombie.setAttack(plant)
                     else:
                         zombie.setAttack(plant)
-
             for hypno_zombie in self.hypno_zombie_groups[i]:
                 if hypno_zombie.health <= 0:
                     continue
@@ -426,11 +493,17 @@ class Level(tool.State):
         map_x, map_y = self.map.getMapIndex(x, y)
         if self.bar_type != c.CHOOSEBAR_BOWLING:
             self.map.setMapGridType(map_x, map_y, c.MAP_EMPTY)
+        boom_hybrid = bool(
+            getattr(getattr(plant, "config", None), "explode", False)
+        )
         if (plant.name == c.CHERRYBOMB or plant.name == c.JALAPENO or
             (plant.name == c.POTATOMINE and not plant.is_init) or
+            (plant.name == c.SPIKE_MINE and not getattr(plant, "is_init", True)) or
+            boom_hybrid or
             plant.name == c.REDWALLNUTBOWLING):
-            self.boomZombies(plant.rect.centerx, map_y, plant.explode_y_range,
-                            plant.explode_x_range)
+            y_range = getattr(plant, "explode_y_range", 0)
+            x_range = getattr(plant, "explode_x_range", c.GRID_X_SIZE)
+            self.boomZombies(plant.rect.centerx, map_y, y_range, x_range)
         elif plant.name == c.ICESHROOM and plant.state != c.SLEEP:
             self.freezeZombies(plant)
         elif plant.name == c.HYPNOSHROOM and plant.state != c.SLEEP:
@@ -473,6 +546,11 @@ class Level(tool.State):
             for zombie in self.zombie_groups[i]:
                 if plant.canAttack(zombie):
                     plant.setAttack()
+                    break
+        elif plant.name == c.SPIKE_MINE:
+            for zombie in self.zombie_groups[i]:
+                if plant.canAttack(zombie):
+                    plant.setAttack(self.zombie_groups[i])
                     break
         elif plant.name == c.SQUASH:
             for zombie in self.zombie_groups[i]:
@@ -545,9 +623,8 @@ class Level(tool.State):
         return False
 
     def checkGameState(self):
-        """Advance to victory/lose screens; cap progression at MAX_LEVEL."""
+        """Advance to victory/lose screens; cap progression by active mode."""
         if self.checkVictory():
-            # Advance toward the next map; victory screen routes after the last level.
             next_level = int(self.game_info[c.LEVEL_NUM]) + 1
             self.game_info[c.LEVEL_NUM] = next_level
             self.next = c.GAME_VICTORY
@@ -568,6 +645,22 @@ class Level(tool.State):
         for zombie in self.zombie_groups[i]:
             zombie.drawFreezeTrap(surface)
 
+    def drawPlantStars(self, surface):
+        badge = tool.GFX.get(c.DNA_BADGE)
+        for i in range(self.map_y_len):
+            for p in self.plant_groups[i]:
+                star = getattr(p, "star", 1)
+                is_cross = getattr(p, "config", None) is not None
+                if star <= 1 and not is_cross:
+                    continue
+                x = p.rect.centerx - 14
+                y = p.rect.top - 16
+                if isinstance(badge, pg.Surface):
+                    surface.blit(badge, (x, y))
+                label = "*" * max(1, star) if star > 1 else "+"
+                txt = self.star_font.render(label, True, c.GOLD)
+                surface.blit(txt, (x + 30, y + 2))
+
     def draw(self, surface):
         self.level.blit(self.background, self.viewport, self.viewport)
         surface.blit(self.level, (0,0), self.viewport)
@@ -581,6 +674,7 @@ class Level(tool.State):
                 self.hypno_zombie_groups[i].draw(surface)
                 self.bullet_groups[i].draw(surface)
                 self.drawZombieFreezeTrap(i, surface)
+            self.drawPlantStars(surface)
             for car in self.cars:
                 car.draw(surface)
             self.head_group.draw(surface)
@@ -588,3 +682,29 @@ class Level(tool.State):
 
             if self.drag_plant:
                 self.drawMouseShow(surface)
+
+            if self.game_mode == c.MODE_CROSS:
+                banner = tool.GFX.get(c.CROSS_BANNER)
+                if isinstance(banner, pg.Surface):
+                    br = banner.get_rect(midbottom=(c.SCREEN_WIDTH // 2 + 40, c.SCREEN_HEIGHT - 6))
+                    surface.blit(banner, br)
+                else:
+                    hint = self.hint_font.render(
+                        "Drop on any plant to fuse traits or evolve (power > 2x)",
+                        True,
+                        c.LIGHTYELLOW,
+                    )
+                    surface.blit(hint, (160, c.SCREEN_HEIGHT - 28))
+
+            if self.toast and self.current_time < self.toast_timer:
+                toast = self.star_font.render(self.toast, True, c.GOLD)
+                glow = tool.GFX.get(c.FUSION_GLOW)
+                bg = pg.Surface((toast.get_width() + 28, toast.get_height() + 14), pg.SRCALPHA)
+                bg.fill((12, 40, 20, 200))
+                rect = bg.get_rect(center=(c.SCREEN_WIDTH // 2, 90))
+                surface.blit(bg, rect)
+                if isinstance(glow, pg.Surface):
+                    surface.blit(glow, glow.get_rect(midright=(rect.left + 8, rect.centery)))
+                surface.blit(toast, toast.get_rect(center=rect.center))
+            else:
+                self.toast = ""

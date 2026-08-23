@@ -125,6 +125,7 @@ class Control:
         self.game_info: dict[str, Any] = {
             c.CURRENT_TIME: 0.0,
             c.LEVEL_NUM: c.START_LEVEL_NUM,
+            c.GAME_MODE: c.MODE_ADVENTURE,
         }
 
     def setup_states(

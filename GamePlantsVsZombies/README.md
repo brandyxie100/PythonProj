@@ -38,11 +38,38 @@ Asset paths resolve from `__file__`, so either launch path works.
 ## How to Play
 
 - **Mouse:** Collect sun, select plant cards, place plants on the grid
-- **Start level:** Edit `START_LEVEL_NUM` in `source/constants.py` (must be within `1`–`MAX_LEVEL`)
+- **Main menu:**
+  - **Adventure** — classic campaign (`level_1` … `level_5`)
+  - **Cross Mode** — hybrid fusion campaign (`cross_1` … `cross_3`)
+- **Adventure start level:** Edit `START_LEVEL_NUM` in `source/constants.py` (must be within `1`–`MAX_LEVEL`)
   - Level 1–2: Day
   - Level 3: Night
   - Level 4: Moving card select
   - Level 5: Wall-nut bowling (final shipped level; victory returns to the main menu)
+
+### Cross Mode (hybrid plants + merge)
+
+Inspired by hybrid / cross-breed PvZ styles (original tinted sprites only — no third-party Hybrid mod assets).
+
+1. Pick **Cross Mode** on the title screen.
+2. Place plants as usual. **Drop a plant onto another plant** to:
+   - **Star-merge** the same type (★ → ★★ → ★★★): attack is **more than double** (then ~3.5×), with a small random variance each merge
+   - **Fuse any two different plants** into a new creature that **keeps both parents’ traits** and has **higher stats** than either original
+3. Showcase recipes still get special names (Pea-Sunflower, Torch-Nut, …). Any other pair becomes e.g. `Peashooter × Wall-Nut`.
+4. Hybrid zombies (tinted skins) appear in Cross maps.
+
+| Hybrid | Recipe | Role |
+|--------|--------|------|
+| Pea-Sunflower | Peashooter + Sunflower | Shoots peas **and** makes sun |
+| Pea Gatling | Peashooter + Repeater | Triple-shot volley |
+| Sun Cannon | Sunflower + Repeater | Heavy peas + sun |
+| Torch-Nut | Wall-Nut + Cherry Bomb (or Jalapeno) | Tank; peas that pass it become fire (2×) |
+| Frost Repeater | Snow Pea + Repeater | Double ice peas |
+| Spike-Mine | Spikeweed + Potato Mine | Lane spikes + armed explode |
+
+```bash
+python -m pytest tests/ -q
+```
 
 ---
 
@@ -67,7 +94,7 @@ GamePlantsVsZombies/
     ├── constants.py        # Screen, grid, states, plant/zombie names, MAX_LEVEL
     ├── data/
     │   ├── entity/         # plant.json, zombie.json (sprite rects)
-    │   └── map/            # level_1.json … level_5.json
+    │   └── map/            # level_1..5.json, cross_1..3.json
     ├── state/
     │   ├── mainmenu.py
     │   ├── screen.py       # Victory / lose screens
@@ -75,6 +102,7 @@ GamePlantsVsZombies/
     └── component/
         ├── map.py
         ├── plant.py
+        ├── hybrids.py      # Cross fusion recipes + HybridConfig
         ├── zombie.py
         └── menubar.py
 ```
@@ -87,12 +115,12 @@ GamePlantsVsZombies/
 
 | State          | Module      | Next transition                                      |
 |----------------|-------------|------------------------------------------------------|
-| `MAIN_MENU`    | mainmenu.py | Adventure → `LEVEL`                                  |
+| `MAIN_MENU`    | mainmenu.py | Adventure → Adventure levels; Cross → Cross maps |
 | `LEVEL`        | level.py    | Win → `GAME_VICTORY`; lose → `GAME_LOSE`             |
-| `GAME_VICTORY` | screen.py   | Next map if `LEVEL_NUM ≤ MAX_LEVEL`, else `MAIN_MENU`|
+| `GAME_VICTORY` | screen.py   | Next map if within mode max (`MAX_LEVEL` / `MAX_CROSS_LEVEL`), else `MAIN_MENU`|
 | `GAME_LOSE`    | screen.py   | → `MAIN_MENU`                                        |
 
-Shared progress lives in `Control.game_info` / state `persist` (`LEVEL_NUM`, `CURRENT_TIME`).
+Shared progress lives in `Control.game_info` / state `persist` (`LEVEL_NUM`, `CURRENT_TIME`, `GAME_MODE`).
 
 ### Data flow
 
@@ -133,8 +161,10 @@ Shared progress lives in `Control.game_info` / state `persist` (`LEVEL_NUM`, `CU
 ## Implemented Content
 
 - **Plants:** Sunflower, Peashooter, SnowPea, WallNut, CherryBomb, Threepeater, RepeaterPea, Chomper, PuffShroom, PotatoMine, Squash, Spikeweed, Jalapeno, ScaredyShroom, SunShroom, IceShroom, HypnoShroom, bowling nuts
+- **Cross hybrids:** Pea-Sunflower, Pea Gatling, Sun Cannon, Torch-Nut, Frost Repeater, Spike-Mine
 - **Zombies:** Normal, Flag, Conehead, Buckethead, Newspaper
-- **Level types:** Day, night, moving card select, wall-nut bowling
+- **Cross hybrid zombies:** Cone-Bucket, Flag-Paper, Ember Cone (tinted skins)
+- **Level types:** Day, night, moving card select, wall-nut bowling, Cross fusion campaign
 
 ---
 

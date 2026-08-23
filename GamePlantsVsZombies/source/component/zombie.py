@@ -46,6 +46,7 @@ class Zombie(pg.sprite.Sprite):
         self.speed = 1
         self.freeze_timer = 0
         self.is_hypno = False # the zombie is hypo and attack other zombies when it ate a HypnoShroom
+        self.skin_tint: tuple[int, int, int] | None = None
     
     def loadFrames(self, frames, name, image_x, colorkey=c.BLACK):
         frame_list = tool.GFX[name]
@@ -165,6 +166,9 @@ class Zombie(pg.sprite.Sprite):
         frame = self.frames[self.frame_index]
         if self.is_hypno:
             frame = pg.transform.flip(frame, True, False)
+        if self.skin_tint is not None:
+            frame = frame.copy()
+            frame.fill(self.skin_tint + (255,), special_flags=pg.BLEND_RGBA_MULT)
         if (self.current_time - self.hit_timer) < 200:
             self.image = frame.copy()
             self.image.set_alpha(192)
@@ -425,3 +429,33 @@ class NewspaperZombie(Zombie):
             self.loadFrames(frame_list[i], name, tool.ZOMBIE_RECT[name]['x'], color)
 
         self.frames = self.helmet_walk_frames
+
+class ConeBucketZombie(BucketHeadZombie):
+    """Hybrid: cone + bucket armor (extra HP, purple tint)."""
+
+    def __init__(self, x, y, head_group):
+        BucketHeadZombie.__init__(self, x, y, head_group)
+        self.name = c.CONE_BUCKET_ZOMBIE
+        self.health = c.CONE_BUCKET_HEALTH
+        self.skin_tint = (180, 120, 255)
+
+
+class FlagPaperZombie(NewspaperZombie):
+    """Hybrid: flag + newspaper (blue tint, solid HP)."""
+
+    def __init__(self, x, y, head_group):
+        NewspaperZombie.__init__(self, x, y, head_group)
+        self.name = c.FLAG_PAPER_ZOMBIE
+        self.health = c.FLAG_PAPER_HEALTH
+        self.skin_tint = (120, 180, 255)
+
+
+class EmberConeZombie(ConeHeadZombie):
+    """Hybrid: ember cone — faster walker with orange tint."""
+
+    def __init__(self, x, y, head_group):
+        ConeHeadZombie.__init__(self, x, y, head_group)
+        self.name = c.EMBER_CONE_ZOMBIE
+        self.health = c.EMBER_CONE_HEALTH
+        self.speed = 2
+        self.skin_tint = (255, 140, 60)

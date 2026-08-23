@@ -62,6 +62,7 @@ class Bullet(pg.sprite.Sprite):
         self.x_vel = 4
         self.damage = damage
         self.ice = ice
+        self.fire = False  # Torch-Nut upgraded pea
         self.state = c.FLY
         self.current_time = 0
 
@@ -131,12 +132,34 @@ class Plant(pg.sprite.Sprite):
         
         self.name = name
         self.health = health
+        self._base_health = health
         self.state = c.IDLE
         self.bullet_group = bullet_group
         self.can_sleep = False
         self.animate_timer = 0
         self.animate_interval = 100
         self.hit_timer = 0
+        # Cross-mode star merge (1–3); Adventure stays at 1
+        self.star = 1
+        self.power_mult = 1
+        self.shoot_interval = 2000
+        self._base_shoot_interval = 2000
+        self.sun_interval = c.FLOWER_SUN_INTERVAL
+        self._base_sun_interval = c.FLOWER_SUN_INTERVAL
+        self.bullet_damage = c.BULLET_DAMAGE_NORMAL
+        self._base_bullet_damage = c.BULLET_DAMAGE_NORMAL
+        self.is_torch = False
+
+    def apply_star(self, star: int, rng=None) -> None:
+        """Set merge star (1–3). Star 2+ attack is more than double, with variance."""
+        from .hybrids import star_power_mult
+
+        self.star = max(1, min(c.MAX_PLANT_STAR, int(star)))
+        self.power_mult = star_power_mult(self.star, rng)
+        self.health = max(1, int(round(self._base_health * self.power_mult)))
+        self.shoot_interval = max(350, int(self._base_shoot_interval / self.power_mult))
+        self.sun_interval = max(3500, int(self._base_sun_interval / self.power_mult))
+        self.bullet_damage = max(1, int(round(self._base_bullet_damage * self.power_mult)))
 
     def loadFrames(self, frames, name, scale, color=c.BLACK):
         frame_list = tool.GFX[name]
@@ -276,8 +299,8 @@ class SunFlower(Plant):
     
     def idling(self):
         if self.sun_timer == 0:
-            self.sun_timer = self.current_time - (c.FLOWER_SUN_INTERVAL - 6000)
-        elif (self.current_time - self.sun_timer) > c.FLOWER_SUN_INTERVAL:
+            self.sun_timer = self.current_time - (self.sun_interval - 6000)
+        elif (self.current_time - self.sun_timer) > self.sun_interval:
             self.sun_group.add(Sun(self.rect.centerx, self.rect.bottom, self.rect.right, self.rect.bottom + self.rect.h // 2))
             self.sun_timer = self.current_time
 
@@ -287,9 +310,9 @@ class PeaShooter(Plant):
         self.shoot_timer = 0
         
     def attacking(self):
-        if (self.current_time - self.shoot_timer) > 2000:
+        if (self.current_time - self.shoot_timer) > self.shoot_interval:
             self.bullet_group.add(Bullet(self.rect.right, self.rect.y, self.rect.y,
-                                    c.BULLET_PEA, c.BULLET_DAMAGE_NORMAL, False))
+                                    c.BULLET_PEA, self.bullet_damage, False))
             self.shoot_timer = self.current_time
 
 class RepeaterPea(Plant):
@@ -298,11 +321,11 @@ class RepeaterPea(Plant):
         self.shoot_timer = 0
 
     def attacking(self):
-        if (self.current_time - self.shoot_timer) > 2000:
+        if (self.current_time - self.shoot_timer) > self.shoot_interval:
             self.bullet_group.add(Bullet(self.rect.right, self.rect.y, self.rect.y,
-                                    c.BULLET_PEA, c.BULLET_DAMAGE_NORMAL, False))
+                                    c.BULLET_PEA, self.bullet_damage, False))
             self.bullet_group.add(Bullet(self.rect.right + 40, self.rect.y, self.rect.y,
-                                    c.BULLET_PEA, c.BULLET_DAMAGE_NORMAL, False))
+                                    c.BULLET_PEA, self.bullet_damage, False))
             self.shoot_timer = self.current_time
 
 class ThreePeaShooter(Plant):
@@ -313,7 +336,7 @@ class ThreePeaShooter(Plant):
         self.bullet_groups = bullet_groups
 
     def attacking(self):
-        if (self.current_time - self.shoot_timer) > 2000:
+        if (self.current_time - self.shoot_timer) > self.shoot_interval:
             offset_y = 9 # modify bullet in the same y position with bullets of other plants
             for i in range(3):
                 tmp_y = self.map_y + (i - 1)
@@ -321,7 +344,7 @@ class ThreePeaShooter(Plant):
                     continue
                 dest_y = self.rect.y + (i - 1) * c.GRID_Y_SIZE + offset_y
                 self.bullet_groups[tmp_y].add(Bullet(self.rect.right, self.rect.y, dest_y,
-                                        c.BULLET_PEA, c.BULLET_DAMAGE_NORMAL, False))
+                                        c.BULLET_PEA, self.bullet_damage, False))
             self.shoot_timer = self.current_time
 
 class SnowPeaShooter(Plant):
@@ -330,9 +353,9 @@ class SnowPeaShooter(Plant):
         self.shoot_timer = 0
 
     def attacking(self):
-        if (self.current_time - self.shoot_timer) > 2000:
+        if (self.current_time - self.shoot_timer) > self.shoot_interval:
             self.bullet_group.add(Bullet(self.rect.right, self.rect.y, self.rect.y,
-                                    c.BULLET_PEA_ICE, c.BULLET_DAMAGE_NORMAL, True))
+                                    c.BULLET_PEA_ICE, self.bullet_damage, True))
             self.shoot_timer = self.current_time
 
 class WallNut(Plant):
@@ -626,11 +649,11 @@ class Spikeweed(Plant):
         self.state = c.ATTACK
 
     def attacking(self):
-        if (self.current_time - self.attack_timer) > 2000:
+        if (self.current_time - self.attack_timer) > max(500, self.shoot_interval):
             self.attack_timer = self.current_time
             for zombie in self.zombie_group:
                 if self.canAttack(zombie):
-                    zombie.setDamage(1, False)
+                    zombie.setDamage(max(1, self.bullet_damage), False)
 
 class Jalapeno(Plant):
     def __init__(self, x, y):
@@ -986,3 +1009,220 @@ class RedWallNutBowling(Plant):
 
     def getPosition(self):
         return (self.rect.centerx, self.orig_y)
+
+class HybridPlant(Plant):
+    """Data-driven Cross-mode hybrid built from HybridConfig."""
+
+    def __init__(self, x, y, config, bullet_group=None, sun_group=None, zombie_group=None):
+        from .hybrids import HybridConfig
+
+        self.config: HybridConfig = config
+        self.sun_group = sun_group
+        self.zombie_group = zombie_group
+        self.shoot_timer = 0
+        self.sun_timer = 0
+        self.spike_timer = 0
+        self.is_init = bool(config.mine)
+        self.init_timer = 0
+        self.bomb_timer = 0
+        self.explode_y_range = config.explode_y_range
+        self.explode_x_range = config.explode_x_range
+        self.overlay_sprite = config.overlay_sprite
+        color = c.WHITE if config.colorkey_white else c.BLACK
+        # Load primary sprite under hybrid name for Plant API, then retarget GFX
+        Plant.__init__(self, x, y, config.primary_sprite, config.health, bullet_group)
+        self.name = config.name
+        self._base_health = config.health
+        self._base_shoot_interval = config.shoot_interval
+        self._base_sun_interval = config.sun_interval
+        self._base_bullet_damage = config.bullet_damage
+        self.shoot_interval = config.shoot_interval
+        self.sun_interval = config.sun_interval
+        self.bullet_damage = config.bullet_damage
+        self.is_torch = config.torch
+        self.tint = config.tint
+        self._apply_tint_to_frames()
+
+    def loadImages(self, name, scale):
+        # name is primary_sprite during Plant.__init__
+        color = c.WHITE if getattr(self, "config", None) and self.config.colorkey_white else c.BLACK
+        if hasattr(self, "config") and self.config.colorkey_white:
+            self.loadFrames(self.frames, name, scale, c.WHITE)
+        else:
+            self.loadFrames(self.frames, name, scale, color)
+
+    def _apply_tint_to_frames(self) -> None:
+        overlay = None
+        overlay_name = self.config.overlay_sprite
+        if overlay_name and overlay_name in tool.GFX:
+            color = c.WHITE if self.config.colorkey_white else c.BLACK
+            src = tool.GFX[overlay_name]
+            if isinstance(src, list) and src:
+                overlay = tool.get_image(
+                    src[0], 0, 0, src[0].get_width(), src[0].get_height(), color, 0.45
+                )
+        tinted = []
+        for frame in self.frames:
+            img = frame.copy()
+            img.fill(self.tint + (255,), special_flags=pg.BLEND_RGBA_MULT)
+            if overlay is not None:
+                ox = max(0, img.get_width() - overlay.get_width() - 2)
+                oy = max(0, img.get_height() - overlay.get_height() - 2)
+                img.blit(overlay, (ox, oy))
+            tinted.append(img)
+        self.frames = tinted
+        self.frame_num = len(self.frames)
+        self.image = self.frames[self.frame_index]
+
+    def handleState(self):
+        self._tick_passive()
+        Plant.handleState(self)
+
+    def _tick_passive(self) -> None:
+        """Sun + mine arming continue while shooting."""
+        cfg = self.config
+        if cfg.mine and self.is_init:
+            if self.init_timer == 0:
+                self.init_timer = self.current_time
+            elif (self.current_time - self.init_timer) > cfg.mine_arm_ms:
+                self.is_init = False
+        if cfg.makes_sun and self.sun_group is not None:
+            if self.sun_timer == 0:
+                self.sun_timer = self.current_time - (self.sun_interval - 6000)
+            elif (self.current_time - self.sun_timer) > self.sun_interval:
+                self.sun_group.add(
+                    Sun(
+                        self.rect.centerx,
+                        self.rect.bottom,
+                        self.rect.right,
+                        self.rect.bottom + self.rect.h // 2,
+                    )
+                )
+                self.sun_timer = self.current_time
+
+    def idling(self):
+        pass
+
+    def canAttack(self, zombie):
+        if zombie.state == c.DIE:
+            return False
+        cfg = self.config
+        if cfg.mine and not self.is_init:
+            trigger = self.rect.inflate(self.explode_x_range // 2, 24)
+            return zombie.rect.colliderect(trigger)
+        if cfg.spikes:
+            return self.rect.x <= zombie.rect.right and self.rect.right >= zombie.rect.x
+        if cfg.shoots:
+            return self.rect.x <= zombie.rect.right
+        return False
+
+    def setAttack(self, zombie_group=None):
+        if zombie_group is not None:
+            self.zombie_group = zombie_group
+        self.state = c.ATTACK
+
+    def attacking(self):
+        cfg = self.config
+        if cfg.mine and not self.is_init:
+            if self.bomb_timer == 0:
+                self.bomb_timer = self.current_time
+            elif (self.current_time - self.bomb_timer) > 300:
+                self.health = 0
+            return
+        if cfg.spikes and self.zombie_group is not None:
+            interval = max(400, self.shoot_interval)
+            if (self.current_time - self.spike_timer) > interval:
+                self.spike_timer = self.current_time
+                dmg = max(1, int(round(cfg.spike_damage * self.power_mult)))
+                for zombie in self.zombie_group:
+                    if self.canAttack(zombie):
+                        zombie.setDamage(dmg, False)
+        if cfg.shoots and self.bullet_group is not None:
+            if (self.current_time - self.shoot_timer) > self.shoot_interval:
+                bullet_name = c.BULLET_PEA_ICE if cfg.ice else c.BULLET_PEA
+                for i in range(cfg.burst):
+                    self.bullet_group.add(
+                        Bullet(
+                            self.rect.right + i * 28,
+                            self.rect.y,
+                            self.rect.y,
+                            bullet_name,
+                            self.bullet_damage,
+                            cfg.ice,
+                        )
+                    )
+                self.shoot_timer = self.current_time
+
+
+def spawn_plant(name, x, y, ctx, config=None):
+    """
+    Factory for Adventure + Cross plants.
+
+    ctx keys: bullet_group, bullet_groups, sun_group, map_y, level (optional)
+    Pass config to spawn a dynamic Cross fusion.
+    """
+    from .hybrids import HYBRID_CONFIGS, is_hybrid
+
+    bullet_group = ctx.get("bullet_group")
+    sun_group = ctx.get("sun_group")
+    map_y = ctx.get("map_y", 0)
+    bullet_groups = ctx.get("bullet_groups")
+    zombie_group = ctx.get("zombie_group")
+
+    if config is not None:
+        return HybridPlant(
+            x,
+            y,
+            config,
+            bullet_group=bullet_group,
+            sun_group=sun_group,
+            zombie_group=zombie_group,
+        )
+    if is_hybrid(name):
+        return HybridPlant(
+            x,
+            y,
+            HYBRID_CONFIGS[name],
+            bullet_group=bullet_group,
+            sun_group=sun_group,
+            zombie_group=zombie_group,
+        )
+    if name == c.SUNFLOWER:
+        return SunFlower(x, y, sun_group)
+    if name == c.PEASHOOTER:
+        return PeaShooter(x, y, bullet_group)
+    if name == c.SNOWPEASHOOTER:
+        return SnowPeaShooter(x, y, bullet_group)
+    if name == c.WALLNUT:
+        return WallNut(x, y)
+    if name == c.CHERRYBOMB:
+        return CherryBomb(x, y)
+    if name == c.THREEPEASHOOTER:
+        return ThreePeaShooter(x, y, bullet_groups, map_y)
+    if name == c.REPEATERPEA:
+        return RepeaterPea(x, y, bullet_group)
+    if name == c.CHOMPER:
+        return Chomper(x, y)
+    if name == c.PUFFSHROOM:
+        return PuffShroom(x, y, bullet_group)
+    if name == c.POTATOMINE:
+        return PotatoMine(x, y)
+    if name == c.SQUASH:
+        return Squash(x, y)
+    if name == c.SPIKEWEED:
+        return Spikeweed(x, y)
+    if name == c.JALAPENO:
+        return Jalapeno(x, y)
+    if name == c.SCAREDYSHROOM:
+        return ScaredyShroom(x, y, bullet_group)
+    if name == c.SUNSHROOM:
+        return SunShroom(x, y, sun_group)
+    if name == c.ICESHROOM:
+        return IceShroom(x, y)
+    if name == c.HYPNOSHROOM:
+        return HypnoShroom(x, y)
+    if name == c.WALLNUTBOWLING:
+        return WallNutBowling(x, y, map_y, ctx.get("level"))
+    if name == c.REDWALLNUTBOWLING:
+        return RedWallNutBowling(x, y)
+    raise ValueError(f"Unknown plant: {name}")

@@ -7,11 +7,17 @@ plant/zombie types, and timing values.
 
 __author__ = "marble_xu"
 
-# Level (maps live in source/data/map/level_N.json)
+# Level (maps live in source/data/map/level_N.json or cross_N.json)
 START_LEVEL_NUM = 1
-MAX_LEVEL = 5  # Highest shipped level; beating it returns to the main menu
+MAX_LEVEL = 5  # Highest Adventure level; beating it returns to the main menu
+MAX_CROSS_LEVEL = 3  # Highest Cross (hybrid) campaign map
 
 ORIGINAL_CAPTION = 'Plant VS Zombies Game'
+
+# Game modes (persist key GAME_MODE)
+GAME_MODE = 'game_mode'
+MODE_ADVENTURE = 'adventure'
+MODE_CROSS = 'cross'
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
@@ -48,6 +54,10 @@ LEVEL = 'level'
 
 MAIN_MENU_IMAGE = 'MainMenu'
 OPTION_ADVENTURE = 'Adventure'
+CROSS_BUTTON = 'CrossButton'
+CROSS_BANNER = 'CrossBanner'
+DNA_BADGE = 'DnaBadge'
+FUSION_GLOW = 'FusionGlow'
 # Asset basename under resources/graphics/Screen/ (filename is GameLoose.png)
 GAME_LOSE_IMAGE = 'GameLoose'
 GAME_VICTORY_IMAGE = 'GameVictory'
@@ -104,7 +114,16 @@ HYPNOSHROOM = 'HypnoShroom'
 WALLNUTBOWLING = 'WallNutBowling'
 REDWALLNUTBOWLING = 'RedWallNutBowling'
 
+# Cross-mode hybrid plants (visuals reuse base plant frames + tint)
+PEA_SUNFLOWER = 'PeaSunflower'
+PEA_GATLING = 'PeaGatling'
+SUN_CANNON = 'SunCannon'
+TORCH_NUT = 'TorchNut'
+FROST_REPEATER = 'FrostRepeater'
+SPIKE_MINE = 'SpikeMine'
+
 PLANT_HEALTH = 5
+MAX_PLANT_STAR = 3
 WALLNUT_HEALTH = 30
 WALLNUT_CRACKED1_HEALTH = 20
 WALLNUT_CRACKED2_HEALTH = 10
@@ -156,12 +175,20 @@ FLAG_ZOMBIE = 'FlagZombie'
 NEWSPAPER_ZOMBIE = 'NewspaperZombie'
 BOOMDIE = 'BoomDie'
 
+# Cross-mode hybrid zombies (tinted skins of existing types)
+CONE_BUCKET_ZOMBIE = 'ConeBucketZombie'
+FLAG_PAPER_ZOMBIE = 'FlagPaperZombie'
+EMBER_CONE_ZOMBIE = 'EmberConeZombie'
+
 LOSTHEAD_HEALTH = 5
 NORMAL_HEALTH = 10
 FLAG_HEALTH = 15
 CONEHEAD_HEALTH = 20
 BUCKETHEAD_HEALTH = 30
 NEWSPAPER_HEALTH = 15
+CONE_BUCKET_HEALTH = 40
+FLAG_PAPER_HEALTH = 28
+EMBER_CONE_HEALTH = 24
 
 ATTACK_INTERVAL = 1000
 ZOMBIE_WALK_INTERVAL = 70

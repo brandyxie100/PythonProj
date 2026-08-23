@@ -3,7 +3,7 @@ Plants vs Zombies - Victory/Lose Screen States
 ===============================================
 Full-screen result images.
 
-Victory continues to the next level while LEVEL_NUM <= MAX_LEVEL;
+Victory continues to the next level while within the active mode's max;
 after the final map it resets progress and returns to the main menu.
 Lose always returns to the main menu.
 """
@@ -18,6 +18,7 @@ from .. import tool
 
 class Screen(tool.State):
     """Base class for victory/lose screens; shows image for end_time ms."""
+
     def __init__(self):
         tool.State.__init__(self)
         self.end_time = 3000
@@ -30,7 +31,7 @@ class Screen(tool.State):
         name = self.getImageName()
         self.setupImage(name)
         self.next = self.set_next_state()
-    
+
     def getImageName(self):
         pass
 
@@ -45,33 +46,41 @@ class Screen(tool.State):
         self.rect.y = 0
 
     def update(self, surface, current_time, mouse_pos, mouse_click):
-        if(current_time - self.start_time) < self.end_time:
+        if (current_time - self.start_time) < self.end_time:
             surface.fill(c.WHITE)
             surface.blit(self.image, self.rect)
         else:
             self.done = True
 
+
 class GameVictoryScreen(Screen):
     def __init__(self):
         Screen.__init__(self)
-    
+
     def getImageName(self):
         return c.GAME_VICTORY_IMAGE
-    
+
     def set_next_state(self):
-        """Continue to the next level, or return to menu after the final map."""
+        """Continue to the next map, or menu after the final map of this mode."""
+        mode = self.game_info.get(c.GAME_MODE, c.MODE_ADVENTURE)
+        max_level = (
+            c.MAX_CROSS_LEVEL if mode == c.MODE_CROSS else c.MAX_LEVEL
+        )
         level_num = int(self.game_info.get(c.LEVEL_NUM, c.START_LEVEL_NUM))
-        if level_num > c.MAX_LEVEL:
+        if level_num > max_level:
             self.game_info[c.LEVEL_NUM] = c.START_LEVEL_NUM
+            self.game_info[c.GAME_MODE] = c.MODE_ADVENTURE
             return c.MAIN_MENU
         return c.LEVEL
+
 
 class GameLoseScreen(Screen):
     def __init__(self):
         Screen.__init__(self)
-    
+
     def getImageName(self):
         return c.GAME_LOSE_IMAGE
-    
+
     def set_next_state(self):
+        self.game_info[c.LEVEL_NUM] = c.START_LEVEL_NUM
         return c.MAIN_MENU

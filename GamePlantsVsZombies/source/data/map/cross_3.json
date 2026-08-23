@@ -1,0 +1,33 @@
+{
+    "background_type": 0,
+    "init_sun_value": 200,
+    "card_pool": [
+        {"name": "SunFlower"},
+        {"name": "Peashooter"},
+        {"name": "SnowPea"},
+        {"name": "WallNut"},
+        {"name": "RepeaterPea"},
+        {"name": "CherryBomb"},
+        {"name": "Jalapeno"},
+        {"name": "Spikeweed"},
+        {"name": "PotatoMine"}
+    ],
+    "zombie_list": [
+        {"time": 10000, "map_y": 1, "name": "EmberConeZombie"},
+        {"time": 18000, "map_y": 3, "name": "FlagPaperZombie"},
+        {"time": 26000, "map_y": 0, "name": "ConeBucketZombie"},
+        {"time": 34000, "map_y": 4, "name": "ConeBucketZombie"},
+        {"time": 42000, "map_y": 2, "name": "EmberConeZombie"},
+        {"time": 50000, "map_y": 1, "name": "BucketheadZombie"},
+        {"time": 58000, "map_y": 3, "name": "FlagPaperZombie"},
+        {"time": 66000, "map_y": 0, "name": "ConeBucketZombie"},
+        {"time": 74000, "map_y": 4, "name": "EmberConeZombie"},
+        {"time": 82000, "map_y": 2, "name": "ConeBucketZombie"},
+        {"time": 88000, "map_y": 1, "name": "FlagPaperZombie"},
+        {"time": 90000, "map_y": 3, "name": "BucketheadZombie"},
+        {"time": 92000, "map_y": 0, "name": "EmberConeZombie"},
+        {"time": 94000, "map_y": 4, "name": "ConeBucketZombie"},
+        {"time": 96000, "map_y": 2, "name": "FlagPaperZombie"},
+        {"time": 98000, "map_y": 1, "name": "ConeBucketZombie"}
+    ]
+}

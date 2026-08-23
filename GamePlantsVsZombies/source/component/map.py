@@ -53,3 +53,15 @@ class Map:
         if self.isValid(map_x, map_y) and self.isMovable(map_x, map_y):
             pos = self.getMapGridPos(map_x, map_y)
         return pos
+
+    def showPlantOrMerge(self, x, y):
+        """Like showPlant, but also returns a grid pos for occupied cells (Cross fuse)."""
+        map_x, map_y = self.getMapIndex(x, y)
+        if not self.isValid(map_x, map_y):
+            return None
+        return self.getMapGridPos(map_x, map_y)
+
+    def isOccupied(self, map_x, map_y):
+        if not self.isValid(map_x, map_y):
+            return False
+        return self.map[map_y][map_x] == c.MAP_EXIST
