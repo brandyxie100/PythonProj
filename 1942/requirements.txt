@@ -1,3 +1,0 @@
-# 1942 — Midway Atoll aerial combat
-# Python 3.11+
-pygame>=2.6.0

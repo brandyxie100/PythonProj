@@ -1,0 +1,146 @@
+<Solution>
+  <PropertyGroup Name="SnakeGame" Version="3.10.0.0" Type="CocosStudio" />
+  <SolutionFolder>
+    <Group ctype="ResourceGroup">
+      <RootFolder Name=".">
+        <Folder Name="all_stage">
+          <Folder Name="../all_Stage/allStageView">
+            <Image Name="mapBkg_1.jpg" />
+            <Image Name="mapBkg_2.jpg" />
+            <Image Name="mapBkg_3.jpg" />
+            <Image Name="mapBkg_4.jpg" />
+            <Image Name="mapBkg_5.jpg" />
+            <Image Name="mapBkg_6.jpg" />
+            <Image Name="mapBkg_7.jpg" />
+            <Image Name="star_road.png" />
+            <Image Name="topPanel.png" />
+          </Folder>
+          <Folder Name="../all_Stage/stageDetailView">
+            <Image Name="bkg.png" />
+            <Image Name="btn_adventure_n.png" />
+            <Image Name="btn_adventure_p.png" />
+            <Image Name="btn_send.png" />
+            <Image Name="friend_head.png" />
+            <Image Name="friend_level.png" />
+            <Image Name="friend_list.png" />
+            <Image Name="level.png" />
+            <Image Name="mission_1.png" />
+            <Image Name="mission_2.png" />
+            <Image Name="mission_3.png" />
+            <Image Name="no_star_left.png" />
+            <Image Name="no_star_middle.png" />
+            <Image Name="no_star_right.png" />
+            <Image Name="opponent.png" />
+            <Image Name="player_head.png" />
+            <Image Name="star_left.png" />
+            <Image Name="star_middle.png" />
+            <Image Name="star_right.png" />
+            <Image Name="titile.png" />
+          </Folder>
+        </Folder>
+        <Folder Name="all_Stage">
+          <Folder Name="allStageView">
+            <Image Name="btn_mail.png" />
+            <Image Name="btn_map.png" />
+            <Image Name="btn_setting.png" />
+            <Image Name="mapBkg_1.jpg" />
+            <Image Name="pass_cloud_1.png" />
+            <Image Name="pass_cloud_2.png" />
+            <Image Name="pass_star_big.png" />
+            <Image Name="pass_star_small.png" />
+            <Image Name="star_road.png" />
+            <Image Name="topPanel.png" />
+          </Folder>
+        </Folder>
+        <Folder Name="snake">
+          <Image Name="0.png" />
+          <Image Name="1.png" />
+          <Image Name="2.png" />
+          <Image Name="3.png" />
+          <Image Name="30m.png" />
+          <Image Name="4.png" />
+          <Image Name="5.png" />
+          <Image Name="6.png" />
+          <Image Name="7.png" />
+          <Image Name="8.png" />
+          <Image Name="9.png" />
+          <Image Name="aa.png" />
+          <Image Name="acc.png" />
+          <Image Name="accPressed.png" />
+          <Image Name="add_0.png" />
+          <Image Name="add_1.png" />
+          <Image Name="add_2.png" />
+          <Image Name="add_3.png" />
+          <Image Name="add_4.png" />
+          <Image Name="add_5.png" />
+          <Image Name="add_6.png" />
+          <Image Name="add_7.png" />
+          <Image Name="add_8.png" />
+          <Image Name="add_9.png" />
+          <Image Name="add_plus.png" />
+          <Image Name="btn_control_N.png" />
+          <Image Name="btn_control_S.png" />
+          <Image Name="canAcc.png" />
+          <Image Name="canNotAcc.png" />
+          <Image Name="control.png" />
+          <Image Name="controlBkg.png" />
+          <Image Name="count_time.png" />
+          <Image Name="cy_bg.png" />
+          <Image Name="cy_bg_blue.png" />
+          <Image Name="exceed.png" />
+          <Image Name="eye.png" />
+          <Image Name="Face_1.png" />
+          <Image Name="Face_10.png" />
+          <Image Name="Face_100.png" />
+          <Image Name="Face_101.png" />
+          <Image Name="Face_102.png" />
+          <Image Name="Face_2.png" />
+          <Image Name="Face_3.png" />
+          <Image Name="Face_9.png" />
+          <Image Name="font_beyond.png" />
+          <Image Name="game_over.png" />
+          <Image Name="head_1.png" />
+          <Image Name="head_2.png" />
+          <Image Name="head_3.png" />
+          <Image Name="head_4.png" />
+          <Image Name="icon_radar.png" />
+          <Image Name="mul_kill.png" />
+          <Image Name="name_bg.png" />
+          <Image Name="new_alpha_ball.png" />
+          <Image Name="new_finger.png" />
+          <Image Name="new_paopao_1.png" />
+          <Image Name="new_paopao_2.png" />
+          <Image Name="new_paopao_3.png" />
+          <Image Name="new_paopao_4.png" />
+          <Image Name="skin_r_1.png" />
+          <Image Name="skin_r_10.png" />
+          <Image Name="skin_r_2.png" />
+          <Image Name="skin_r_3.png" />
+          <Image Name="skin_r_4.png" />
+          <Image Name="skin_r_5.png" />
+          <Image Name="skin_r_6.png" />
+          <Image Name="skin_r_7.png" />
+          <Image Name="skin_r_8.png" />
+          <Image Name="skin_r_9.png" />
+          <Image Name="skin_t_1.png" />
+          <Image Name="skin_t_10.png" />
+          <Image Name="skin_t_2.png" />
+          <Image Name="skin_t_3.png" />
+          <Image Name="skin_t_4.png" />
+          <Image Name="skin_t_5.png" />
+          <Image Name="skin_t_6.png" />
+          <Image Name="skin_t_7.png" />
+          <Image Name="skin_t_8.png" />
+          <Image Name="skin_t_9.png" />
+          <Image Name="tail_10.png" />
+          <Image Name="tail_9.png" />
+          <Image Name="taotaobottom.png" />
+          <Image Name="taotaotop.png" />
+        </Folder>
+        <Project Name="AllStage.csd" Type="Layer" />
+        <Project Name="MainUILayer.csd" Type="Layer" />
+        <PlistInfo Name="snake.csi" Type="Plist" />
+      </RootFolder>
+    </Group>
+  </SolutionFolder>
+</Solution>

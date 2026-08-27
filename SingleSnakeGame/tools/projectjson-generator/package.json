@@ -1,0 +1,11 @@
+{
+  "name": "projectjson-generator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "app.js"
+  },
+  "dependencies": {
+    "jsonfile": "^2.2.1"
+  }
+}

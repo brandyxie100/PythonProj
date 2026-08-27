@@ -1,0 +1,6 @@
+<PlistInfoProjectFile>
+  <PropertyGroup Name="Notice" Type="Plist" ID="78751044-c119-440b-9b34-2626e0f81bbc" Version="3.10.0.0" />
+  <Content ExportType="Png" SortAlgorithm="MaxRects" PicturePadding="1" AllowRotation="True" AllowAnySize="False" AllowTrim="False" ctype="PlistInfoData">
+    <MaxSize Width="512" Height="512" />
+  </Content>
+</PlistInfoProjectFile>
