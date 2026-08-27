@@ -6,10 +6,12 @@
 /.gamevenv
 /.shots
 
-# Keep the Cloud Agent environment config tracked, ignore local caches.
+# Keep the Cloud Agent environment config + skills tracked, ignore local caches.
 /.cursor/*
 !/.cursor/environment.json
 !/.cursor/install.sh
+!/.cursor/skills/
+!/.cursor/skills/**
 
 /FlyCode/flappybird/__pycache__
 /FlyCode/ship/__pycache__
