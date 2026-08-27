@@ -5,6 +5,14 @@
     {
       "name": "xvfb",
       "command": "Xvfb :99 -screen 0 1600x1000x24 -ac +extension GLX +render -noreset"
+    },
+    {
+      "name": "singlesnake",
+      "command": "cd SingleSnakeGame && python3 -m http.server 8090"
+    },
+    {
+      "name": "pocket-zoo",
+      "command": "cd pocket_zoo && python3 serve.py"
     }
   ],
   "ports": [8080, 8090]

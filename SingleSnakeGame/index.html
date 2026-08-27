@@ -63,6 +63,11 @@
 <body style="padding:0; margin: 0; background: #000;">
 <canvas id="gameCanvas" width="1334" height="750"></canvas>
 <script>
+    // Host H5 SDK stubs for standalone / local play. Real hosts may replace these.
+    window.closeOutSound = window.closeOutSound || function () {};
+    window.playGame = window.playGame || function (length, timeUse) {
+        console.log("playGame stub: length=" + length + ", timeUse=" + timeUse);
+    };
     (function () {
         var nav = window.navigator;
         var ua = nav.userAgent.toLowerCase();
