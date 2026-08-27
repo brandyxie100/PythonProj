@@ -118,8 +118,10 @@ var DataManager = cc.Class.extend({
                     gameConfigStage = gameConfig.stage_1;
                     gCurrStage = 1;
 
-                    //upload data to page
-                    window.playGame(curLength, timeUse);
+                    //upload data to page (host H5 SDK). No-op when running standalone.
+                    if (typeof window.playGame === "function") {
+                        window.playGame(curLength, timeUse);
+                    }
                 }, 1200);
 
             }.bind(this), 1);

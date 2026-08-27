@@ -98,7 +98,10 @@ cc.game.onStart = function () {
 
     //set property
     cc.view.resizeWithBrowserSize(true);
-    cc.view.setOrientation(cc.ORIENTATION_LANDSCAPE_LEFT);
+    // setOrientation is a native (JSB) API; not present in cocos2d-html5 web builds.
+    if (typeof cc.view.setOrientation === "function") {
+        cc.view.setOrientation(cc.ORIENTATION_LANDSCAPE_LEFT);
+    }
     cc.view.setDesignResolutionSize(1334, 750, cc.ResolutionPolicy.FIXED_HEIGHT);
     cc.view.adjustViewPort(true);
     //var bOpenRetina = (cc.sys.os == cc.sys.OS_IOS || cc.sys.os == cc.sys.OS_OSX) ? true : false;
@@ -138,8 +141,10 @@ cc.game.onStart = function () {
 
         NetProxy.pauseServer();
 
-        //close other music
-        window.closeOutSound();
+        // closeOutSound is provided by the host H5 SDK when embedded; skip locally.
+        if (typeof window.closeOutSound === "function") {
+            window.closeOutSound();
+        }
     });
 
     //恢复显示

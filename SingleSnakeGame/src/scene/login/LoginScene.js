@@ -94,41 +94,20 @@ var LoginScene = cc.Scene.extend({
         this._super();
         console.log("LoginScene: onEnter");
 
-        //only for test
-        //setTimeout(function () {
-        //    var rankList = [
-        //        {
-        //            "openid": "HJEHFJPOFOIEJF",
-        //            "nickName": "jowzhang\uff08ZJ\uff09",
-        //            "img": "",
-        //            "score": 180
-        //        },
-        //        {
-        //            "openid": "HJEH89LJF898OIEJF",
-        //            "nickName": "Encore",
-        //            "img": "",
-        //            "score": 240
-        //        },
-        //        {
-        //            "openid": "HJZSFDF898OIEJF",
-        //            "nickName": "test_test",
-        //            "img": "",
-        //            "score": 320
-        //        },
-        //        {
-        //            "openid": "HJEH89HFF8OIEJF",
-        //            "nickName": "eteaganhnhgge",
-        //            "img": "",
-        //            "score": 480
-        //        },
-        //        {
-        //            "openid": "HJEH89LJF89FTEJF",
-        //            "nickName": "egea36",
-        //            "img": "",
-        //            "score": 786
-        //        }];
-        //    NetProxy.Login("brandyxie", 1320, "", rankList);
-        //}, 100);
+        // Local / standalone play: originally this game expected a host H5 SDK
+        // to call NetProxy.Login(). Without that, GAME_START stays false and
+        // the loading loop never enters the match. Seed a local session so the
+        // embedded serverLogic can start.
+        setTimeout(function () {
+            var rankList = [
+                {openid: "local-1", nickName: "Alpha", img: "", score: 180},
+                {openid: "local-2", nickName: "Bravo", img: "", score: 240},
+                {openid: "local-3", nickName: "Charlie", img: "", score: 320},
+                {openid: "local-4", nickName: "Delta", img: "", score: 480},
+                {openid: "local-5", nickName: "Echo", img: "", score: 786}
+            ];
+            NetProxy.Login("Player", 0, "", rankList);
+        }, 100);
 
         //loading layer
         var loadingLayer = new LoadingLayer();
@@ -136,11 +115,5 @@ var LoginScene = cc.Scene.extend({
 
         //start loading
         loadingLayer.startLoading();
-
-        //var name = "test_test"; //get from url
-        //name = name.replace(/\n/g, '');
-        //console.log("your name is: " + name);
-        //storageManager.recordNickName(name);
-        //MusicManager.playEffect(MusicEffectFiles.Audio_button);
     }
 });
