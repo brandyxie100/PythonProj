@@ -1,0 +1,11 @@
+{
+  "name": "Python Games Collection",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "xvfb",
+      "command": "Xvfb :99 -screen 0 1600x1000x24 -ac +extension GLX +render -noreset"
+    }
+  ],
+  "ports": [8080, 8090]
+}

@@ -3,10 +3,16 @@
 /Python-Core-50-Courses-master
 
 /.venv
-/.cursor
+/.gamevenv
+/.shots
+
+# Keep the Cloud Agent environment config tracked, ignore local caches.
+/.cursor/*
+!/.cursor/environment.json
+!/.cursor/install.sh
+
 /FlyCode/flappybird/__pycache__
 /FlyCode/ship/__pycache__
 /FlyCode/ship/component/__pycache__
-/.gamevenv
 /stickman_battle/__pycache__
 *.pyc
