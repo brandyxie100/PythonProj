@@ -362,8 +362,14 @@ Snake.prototype.updateAABB = function () {
 };
 
 Snake.prototype.setTargetPos = function (targetX, targetY) {
-    this.target.xPos = targetX;
-    this.target.yPos = targetY;
+    var len = Math.sqrt(targetX * targetX + targetY * targetY);
+    if (len > 0.0001) {
+        this.target.xPos = targetX / len;
+        this.target.yPos = targetY / len;
+    } else {
+        this.target.xPos = targetX;
+        this.target.yPos = targetY;
+    }
     var angle1 = Math.atan2(this.dirPos.yPos, this.dirPos.xPos);
     var angle2 = Math.atan2(this.target.yPos, this.target.xPos);
     if (angle2 - angle1 > Math.PI) {

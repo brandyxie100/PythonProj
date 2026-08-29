@@ -13,13 +13,11 @@ Open http://localhost:8090/ — must be served over HTTP (not `file://`).
 
 ## Controls
 
-| Action | Keyboard Key | Alternative |
-|---|---|---|
-| **Move Up** | `Arrow Up` | `W` |
-| **Move Down** | `Arrow Down` | `S` |
-| **Move Left** | `Arrow Left` | |
-| **Move Right** | `Arrow Right` | `D` |
-| **Acceleration / Sprint** | `A` | `Space` / Boost Button |
+Click the game once so the canvas has focus, then:
+
+1. `Arrow Up` / `Arrow Down` / `Arrow Left` / `Arrow Right` — steer
+2. Hold `A` (or `Space`) — boost (needs enough length, same as the on-screen button)
+3. On-screen joystick still works for steering
 
 
 ## Engine

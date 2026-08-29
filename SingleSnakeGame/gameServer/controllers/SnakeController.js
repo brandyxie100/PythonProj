@@ -21,15 +21,12 @@ class SnakeController extends Controller {
 		}
 
 		// Get dir
-		var touchX = parseInt(touchPos.xPos);
-		var touchY = parseInt(touchPos.yPos);
-		if (touchX == 0 && touchY == 0) {
-			console.log("touchX == 0 && touchY == 0");
+		var touchX = parseFloat(touchPos.xPos);
+		var touchY = parseFloat(touchPos.yPos);
+		if (isNaN(touchX) || isNaN(touchY) || (touchX === 0 && touchY === 0)) {
 			return;
 		}
-		if (touchX != snake.target.xPos || touchY != snake.target.yPos) {
-			snake.setTargetPos(touchX, touchY);
-		}
+		snake.setTargetPos(touchX, touchY);
 	}
 
 	changeSpeed(params) {

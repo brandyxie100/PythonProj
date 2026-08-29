@@ -1,15 +1,22 @@
 /**
  * Created by malloyzhu on 2016/5/18.
+ * Keyboard: Arrow keys steer, A (or Space) boosts.
+ *
+ * Cocos2d-JS binds keydown to the canvas and then stopPropagation().
+ * Canvas is not focusable by default, so those events never fire.
+ * Listen on document in capture phase so keys work without canvas focus
+ * and are not swallowed by the canvas handler.
  */
 
 var SnakeMoveController = cc.Class.extend({
     _viewportOffsetPosition: null,
-    _event: null,
     _keysPressed: null,
     _isKeyboardInit: false,
+    _onKeyDown: null,
+    _onKeyUp: null,
+    _onBlur: null,
 
     ctor: function () {
-        this._event = new CEvent();
         this._keysPressed = {
             up: false,
             down: false,
@@ -27,134 +34,151 @@ var SnakeMoveController = cc.Class.extend({
         this._isKeyboardInit = true;
 
         var self = this;
+        this._onKeyDown = function (e) {
+            self._applyKey(e, true);
+        };
+        this._onKeyUp = function (e) {
+            self._applyKey(e, false);
+        };
+        this._onBlur = function () {
+            self.reset();
+        };
 
-        // Cocos2d-JS EventListenerKeyboard
-        if (cc.eventManager) {
-            var keyboardListener = cc.EventListener.create({
-                event: cc.EventListener.KEYBOARD,
-                onKeyPressed: function (keyCode, event) {
-                    self._handleKeyDown(keyCode);
-                },
-                onKeyReleased: function (keyCode, event) {
-                    self._handleKeyUp(keyCode);
-                }
-            });
-            cc.eventManager.addListener(keyboardListener, 1);
+        if (typeof document !== "undefined" && document.addEventListener) {
+            document.addEventListener("keydown", this._onKeyDown, true);
+            document.addEventListener("keyup", this._onKeyUp, true);
         }
-
-        // Web DOM window fallback to guarantee input capture across all browsers
         if (typeof window !== "undefined" && window.addEventListener) {
-            window.addEventListener("keydown", function (e) {
-                self._handleKeyDown(e.keyCode || e.which, e.code || e.key);
-            });
-            window.addEventListener("keyup", function (e) {
-                self._handleKeyUp(e.keyCode || e.which, e.code || e.key);
-            });
+            window.addEventListener("blur", this._onBlur, false);
+        }
+
+        this._focusGameCanvas();
+    },
+
+    _focusGameCanvas: function () {
+        var canvas = (typeof cc !== "undefined" && cc._canvas) ? cc._canvas : document.getElementById("gameCanvas");
+        if (!canvas) {
+            return;
+        }
+        canvas.setAttribute("tabindex", "1");
+        canvas.style.outline = "none";
+        var focusCanvas = function () {
+            canvas.focus();
+        };
+        canvas.addEventListener("mousedown", focusCanvas, false);
+        canvas.addEventListener("touchstart", focusCanvas, false);
+        focusCanvas();
+    },
+
+    /**
+     * Map a DOM keyboard event to steer / boost. Returns true if it is a game key.
+     */
+    _classifyKey: function (e) {
+        var keyCode = e.keyCode || e.which;
+        var code = e.code || "";
+        var key = e.key || "";
+
+        if (keyCode === 38 || code === "ArrowUp" || key === "ArrowUp") {
+            return "up";
+        }
+        if (keyCode === 40 || code === "ArrowDown" || key === "ArrowDown") {
+            return "down";
+        }
+        if (keyCode === 37 || code === "ArrowLeft" || key === "ArrowLeft") {
+            return "left";
+        }
+        if (keyCode === 39 || code === "ArrowRight" || key === "ArrowRight") {
+            return "right";
+        }
+        if (keyCode === 65 || code === "KeyA" || key === "a" || key === "A") {
+            return "acc";
+        }
+        if (keyCode === 32 || code === "Space" || key === " " || key === "Spacebar") {
+            return "acc";
+        }
+        return null;
+    },
+
+    _applyKey: function (e, isDown) {
+        var action = this._classifyKey(e);
+        if (!action) {
+            return;
+        }
+
+        if (e.preventDefault) {
+            e.preventDefault();
+        }
+        if (e.stopPropagation) {
+            e.stopPropagation();
+        }
+
+        if (this._keysPressed[action] === isDown) {
+            return;
+        }
+        this._keysPressed[action] = isDown;
+
+        if (action === "acc") {
+            if (isDown) {
+                this._startAccelerate();
+            } else {
+                this._endAccelerate();
+            }
+            return;
+        }
+
+        this._tickKeyboardSteer();
+    },
+
+    _startAccelerate: function () {
+        var mainPlayer = (typeof playerManager !== "undefined") ? playerManager.getMainPlayer() : null;
+        if (mainPlayer) {
+            mainPlayer.onAccelerateStart();
+        } else if (typeof NetProxy !== "undefined") {
+            NetProxy.ChangeSnakeSpeed(1);
         }
     },
 
-    _handleKeyDown: function (keyCode, keyName) {
-        var changed = false;
-
-        // Key Up (Arrow Up / W)
-        if (keyCode === 38 || keyCode === (cc.KEY && cc.KEY.up) || keyName === "ArrowUp" || keyName === "KeyW") {
-            if (!this._keysPressed.up) {
-                this._keysPressed.up = true;
-                changed = true;
-            }
+    _endAccelerate: function () {
+        if (typeof NetProxy !== "undefined") {
+            NetProxy.ChangeSnakeSpeed(2);
         }
-        // Key Down (Arrow Down / S)
-        else if (keyCode === 40 || keyCode === (cc.KEY && cc.KEY.down) || keyName === "ArrowDown" || keyName === "KeyS") {
-            if (!this._keysPressed.down) {
-                this._keysPressed.down = true;
-                changed = true;
-            }
-        }
-        // Key Left (Arrow Left)
-        else if (keyCode === 37 || keyCode === (cc.KEY && cc.KEY.left) || keyName === "ArrowLeft") {
-            if (!this._keysPressed.left) {
-                this._keysPressed.left = true;
-                changed = true;
-            }
-        }
-        // Key Right (Arrow Right / D)
-        else if (keyCode === 39 || keyCode === (cc.KEY && cc.KEY.right) || keyName === "ArrowRight" || keyName === "KeyD") {
-            if (!this._keysPressed.right) {
-                this._keysPressed.right = true;
-                changed = true;
-            }
-        }
-        // Key A / Space (Acceleration)
-        else if (keyCode === 65 || keyCode === 97 || keyCode === (cc.KEY && cc.KEY.a) || keyCode === 32 || keyCode === (cc.KEY && cc.KEY.space) || keyName === "KeyA" || keyName === "a" || keyName === "A" || keyName === "Space") {
-            if (!this._keysPressed.acc) {
-                this._keysPressed.acc = true;
-                this._event.type = CEventType.ON_START_ACCELERATE;
-                CEventManager.dispatchEvent(this._event);
-            }
-        }
-
-        if (changed) {
-            this._updateKeyboardDirection();
+        var mainPlayer = (typeof playerManager !== "undefined") ? playerManager.getMainPlayer() : null;
+        if (mainPlayer) {
+            mainPlayer.onAccelerateEnd();
         }
     },
 
-    _handleKeyUp: function (keyCode, keyName) {
-        var changed = false;
-
-        // Key Up
-        if (keyCode === 38 || keyCode === (cc.KEY && cc.KEY.up) || keyName === "ArrowUp" || keyName === "KeyW") {
-            if (this._keysPressed.up) {
-                this._keysPressed.up = false;
-                changed = true;
-            }
+    _tickKeyboardSteer: function () {
+        if (!this._keysPressed) {
+            return;
         }
-        // Key Down
-        else if (keyCode === 40 || keyCode === (cc.KEY && cc.KEY.down) || keyName === "ArrowDown" || keyName === "KeyS") {
-            if (this._keysPressed.down) {
-                this._keysPressed.down = false;
-                changed = true;
-            }
+        if (typeof NetProxy === "undefined" || !NetProxy.MoveSnake) {
+            return;
         }
-        // Key Left
-        else if (keyCode === 37 || keyCode === (cc.KEY && cc.KEY.left) || keyName === "ArrowLeft") {
-            if (this._keysPressed.left) {
-                this._keysPressed.left = false;
-                changed = true;
-            }
-        }
-        // Key Right
-        else if (keyCode === 39 || keyCode === (cc.KEY && cc.KEY.right) || keyName === "ArrowRight" || keyName === "KeyD") {
-            if (this._keysPressed.right) {
-                this._keysPressed.right = false;
-                changed = true;
-            }
-        }
-        // Key A / Space
-        else if (keyCode === 65 || keyCode === 97 || keyCode === (cc.KEY && cc.KEY.a) || keyCode === 32 || keyCode === (cc.KEY && cc.KEY.space) || keyName === "KeyA" || keyName === "a" || keyName === "A" || keyName === "Space") {
-            if (this._keysPressed.acc) {
-                this._keysPressed.acc = false;
-                this._event.type = CEventType.ON_END_ACCELERATE;
-                CEventManager.dispatchEvent(this._event);
-            }
+        if (typeof playerManager !== "undefined" && !playerManager.getMainPlayer()) {
+            return;
         }
 
-        if (changed) {
-            this._updateKeyboardDirection();
-        }
-    },
-
-    _updateKeyboardDirection: function () {
         var dirX = 0;
         var dirY = 0;
-
-        if (this._keysPressed.up) dirY += 1;
-        if (this._keysPressed.down) dirY -= 1;
-        if (this._keysPressed.left) dirX -= 1;
-        if (this._keysPressed.right) dirX += 1;
-
-        if (dirX !== 0 || dirY !== 0) {
-            NetProxy.MoveSnake(cc.p(dirX * 500, dirY * 500));
+        if (this._keysPressed.up) {
+            dirY += 1;
         }
+        if (this._keysPressed.down) {
+            dirY -= 1;
+        }
+        if (this._keysPressed.left) {
+            dirX -= 1;
+        }
+        if (this._keysPressed.right) {
+            dirX += 1;
+        }
+
+        if (dirX === 0 && dirY === 0) {
+            return;
+        }
+
+        NetProxy.MoveSnake(cc.p(dirX, dirY));
     },
 
     onOperatorRocker: function (rocker) {
@@ -184,17 +208,17 @@ var SnakeMoveController = cc.Class.extend({
 
     reset: function () {
         this._viewportOffsetPosition = null;
-        if (this._keysPressed) {
-            if (this._keysPressed.acc) {
-                this._keysPressed.acc = false;
-                this._event.type = CEventType.ON_END_ACCELERATE;
-                CEventManager.dispatchEvent(this._event);
-            }
-            this._keysPressed.up = false;
-            this._keysPressed.down = false;
-            this._keysPressed.left = false;
-            this._keysPressed.right = false;
+        if (!this._keysPressed) {
+            return;
         }
+        if (this._keysPressed.acc) {
+            this._keysPressed.acc = false;
+            this._endAccelerate();
+        }
+        this._keysPressed.up = false;
+        this._keysPressed.down = false;
+        this._keysPressed.left = false;
+        this._keysPressed.right = false;
     },
 
     setViewPortOffset: function (offsetPosition) {
@@ -210,4 +234,3 @@ SnakeMoveController.GetInstance = function () {
 };
 
 var snakeMoveController = SnakeMoveController.GetInstance();
-

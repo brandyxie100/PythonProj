@@ -146,6 +146,7 @@ var MainUILayer = cc.Layer.extend({
         Util.registerListener(this._listenerList, CEventType.ON_START_ACCELERATE, this._onStartAccelerate.bind(this));
         Util.registerListener(this._listenerList, CEventType.ON_END_ACCELERATE, this._onEndAccelerate.bind(this));
         Util.registerListener(this._listenerList, CEventType.TIME_OVER, this._onGameOver.bind(this));
+        snakeMoveController._focusGameCanvas();
     },
 
     _onStartAccelerate: function () {
@@ -688,6 +689,8 @@ var MainUILayer = cc.Layer.extend({
     },
 
     update: function (dt) {
+        snakeMoveController._tickKeyboardSteer();
+
         if (!this.isPlayingAnnounceEffect) {
 
             var msg = PDataParser.boardMsgQueue.dequeue();
