@@ -5,6 +5,7 @@
 //  }
 //};
 
+var path = require('path');
 var webpack = require('webpack');
 var uglifyJsPlugin = webpack.optimize.UglifyJsPlugin;
 
@@ -13,6 +14,7 @@ module.exports = {
         'serverLogic': './server/server.js'
     },
     output: {
+        path: path.resolve(__dirname, '../src/server'),
         filename: 'bundle.js',
         library: 'serverLogic',
         libraryTarget: 'umd',

@@ -5,21 +5,15 @@ var PacketHandler = require("../packets/PacketHandler");
 var EventEmitter = require('../utils/eventEmitter');
 var FoodModel = require("../models/FoodModel");
 var Food = require("../entities/food");
-
+var RoomService = require('./RoomService');
 var gameUtils = require("../utils/gameUtils");
 
 // AI蛇的最大数目
 var ROBOT_SNAKE_MAX_COUNT = settings.readSetting("robot-snake-max-count");
-// AI蛇产生的间隔（毫秒）
-//var ROBOT_SNAKE_INTERVAL = settings.readSetting("robot-snake-interval") * 1000;
 // AI蛇转向的平均间隔（秒）
 var ROBOT_SNAKE_ROTATE_TIME = settings.readSetting("robot-snake-rotate-time");
 // AI蛇找食物的平均间隔（秒）
 var ROBOT_SNAKE_FIND_FOOD = settings.readSetting("robot-snake-find-food");
-// AI蛇躲避碰撞的平均间隔（秒）
-//var ROBOT_SNAKE_DODGE_CRASH = settings.readSetting("robot-snake-dodge-crash");
-// AI蛇碰到死亡残留食物是否加速
-//var ROBOT_ACCEL_DEAD_FOOD = settings.readSetting("robot-accel-dead-food");
 
 var g_mapSize = settings.readSetting("map-size");
 var g_mapRadius = settings.readSetting("map-radius");
@@ -27,6 +21,9 @@ var g_frameTime = settings.readSetting("frame", 30);
 var aiNames = settings.readSetting("AI_NAME", []);
 var g_centerPos = {xPos: g_mapSize / 2, yPos: g_mapSize / 2};
 var ROBOT_LIVE_RANGE = settings.readSetting("robot-live-range");
+
+// Candidate ray angles relative to current heading (radians)
+var SENSOR_RAY_ANGLES = [0, 0.45, -0.45, 0.95, -0.95, 1.6, -1.6];
 
 var RobotService = {
     lastTime: new Date(),
@@ -88,11 +85,11 @@ var RobotService = {
 
     updateRobots: function (snakeArrayVisible) {
         var curTime = new Date();
+        var tierConfig = RoomService.getAITierConfig();
 
         // 如果蛇的数量不足，每秒生成1条蛇
         var ROBOT_SNAKE_INTERVAL = netManager.getServerConfig().robot_born_time * 1000;
         if (SnakeModel.snakes.size < ROBOT_SNAKE_MAX_COUNT && this.geneSnakeStatus && curTime - this.lastGeneSnakeTime >= ROBOT_SNAKE_INTERVAL) {
-            // console.info('Generate new snake.');
             this.lastGeneSnakeTime = curTime;
             var snakeName = this.allocAiName();
             var data = SnakeModel.getInitSnake(snakeName);
@@ -116,7 +113,6 @@ var RobotService = {
 
         var deadNum = 0;
         var robotSnakes = this.robotSnakes;
-        //console.log("this.robotSnakes.length= " + robotSnakes.length);
         for (var j = 0; j < robotSnakes.length; j++) {
             var snake = robotSnakes[j];
             if (snake.dead) {
@@ -127,12 +123,10 @@ var RobotService = {
             var distX = snake.headPos.xPos - g_centerPos.xPos;
             var distY = snake.headPos.yPos - g_centerPos.yPos;
             var distS = Math.pow(distX, 2) + Math.pow(distY, 2);
-            //can not in view sight
+
             var bHas = snakeArrayVisible.has(snake.snakeId);
             if (!bHas) {
                 if (Math.round(Math.random() * 20) == 0) {
-                    //console.log("update snake index= " + j);
-
                     if (distS > Math.pow(g_mapRadius, 2)) {
                         this.handleDeath(snake);
                     } else if (distS > Math.pow(ROBOT_LIVE_RANGE, 2)) {
@@ -140,51 +134,288 @@ var RobotService = {
                     }
                     snake.updateMove(dt);
                 }
-            } else {  //only update snakes in sight
-                var bTurn = false;
-                if (Math.round(Math.random() * g_frameTime * ROBOT_SNAKE_ROTATE_TIME) == 0) {
-                    bTurn = true;
-                }
-
-                var bEat = false;
-                if (Math.round(Math.random() * g_frameTime * ROBOT_SNAKE_FIND_FOOD) == 0) {
-                    bEat = true;
-                }
-
-                var bDodge = false;
-                if (Math.round(Math.random() * g_frameTime * snake.dodgeInterval) == 0) {
-                    bDodge = true;
-                }
-
-                if (Math.round(Math.random() * g_frameTime * 2) == 0) {
-                    snake.speedDown();
-                }
-
+            } else {
+                // Out of boundary check
                 if (distS > Math.pow(g_mapRadius, 2)) {
                     this.handleDeath(snake);
+                    continue;
                 } else if (distS > Math.pow(ROBOT_LIVE_RANGE, 2)) {
                     snake.setTargetPos(g_centerPos.xPos - snake.headPos.xPos, g_centerPos.yPos - snake.headPos.yPos);
+                    snake.updateMove(dt);
+                    continue;
+                }
+
+                // AI Decision Cycle:
+                // Step 1: Multi-Ray Spatial Perception to check for obstacles/hazards
+                var rayResults = this.castSpatialRays(snake, tierConfig);
+                var forwardRay = rayResults.rays[0];
+                var isForwardObstructed = forwardRay.clearance < forwardRay.maxDistance * 0.75;
+
+                // Step 2: If forward path is hazardous, execute Tangential Evasion immediately
+                if (isForwardObstructed) {
+                    this.evadeThreats(snake, rayResults, tierConfig);
                 } else {
-                    if (bEat) {
-                        this.eatFood(snake);
+                    // Step 3: Progressive Tactical Behaviors (Hunt, Encircle, Forage)
+                    var effectiveDodgeInterval = Math.min(snake.dodgeInterval || 0.5, tierConfig.dodgeInterval);
+                    var bDodgeTick = (Math.round(Math.random() * g_frameTime * effectiveDodgeInterval) == 0);
+
+                    if (bDodgeTick) {
+                        this.dodgeSnake(snake, tierConfig);
+                    } else {
+                        var bTacticalTick = (Math.round(Math.random() * g_frameTime * ROBOT_SNAKE_FIND_FOOD) == 0);
+                        if (bTacticalTick) {
+                            this.executeTacticalBehavior(snake, tierConfig);
+                        } else if (Math.round(Math.random() * g_frameTime * ROBOT_SNAKE_ROTATE_TIME) == 0) {
+                            // Gentle random wander turn
+                            if (tierConfig.tier === 1) {
+                                snake.setTargetPos(Math.random() - 0.5, Math.random() - 0.5);
+                            }
+                        }
                     }
-                    if (bDodge) {
-                        this.dodgeSnake(snake);
+
+                    // Natural speed regulation
+                    if (Math.round(Math.random() * g_frameTime * 2) == 0 && snake.accelerate) {
+                        // High tier AI only drops speed when energy is low or not actively intercepting
+                        if (tierConfig.tier < 3 || snake.energy < 25) {
+                            snake.speedDown();
+                        }
                     }
                 }
+
                 snake.updateMove(dt);
             }
         }
     },
 
-    eatFood: function (snake) {
+    /**
+     * Cast multi-ray spatial perception cone around snake's heading.
+     * Evaluates boundary hazards and other snake body segments.
+     */
+    castSpatialRays: function (snakeSelf, tierConfig) {
+        var baseAngle = Math.atan2(snakeSelf.dirPos.yPos, snakeSelf.dirPos.xPos);
+        var maxSensorDist = Math.max(90, snakeSelf.speed * 1.5) * tierConfig.sensorRangeScale;
+        var samples = [0.35, 0.7, 1.0];
+        var rays = [];
+        var bestRay = null;
+        var highestScore = -Infinity;
+
+        // Pre-filter nearby snakes to keep spatial ray checks fast and efficient
+        var nearbySnakes = [];
+        for (let other of SnakeModel.snakes.values()) {
+            if (other.snakeId !== snakeSelf.snakeId && !other.dead) {
+                var dx = other.headPos.xPos - snakeSelf.headPos.xPos;
+                var dy = other.headPos.yPos - snakeSelf.headPos.yPos;
+                if (Math.abs(dx) < maxSensorDist * 2.5 && Math.abs(dy) < maxSensorDist * 2.5) {
+                    nearbySnakes.push({
+                        snake: other,
+                        bodyPoints: gameUtils.getInterpolatePoints(other.getBodyPoints(), other.width)
+                    });
+                }
+            }
+        }
+
+        for (var i = 0; i < SENSOR_RAY_ANGLES.length; i++) {
+            var offset = SENSOR_RAY_ANGLES[i];
+            var rayAngle = baseAngle + offset;
+            var dirX = Math.cos(rayAngle);
+            var dirY = Math.sin(rayAngle);
+            var clearance = maxSensorDist;
+            var blocked = false;
+
+            for (var s = 0; s < samples.length; s++) {
+                var d = maxSensorDist * samples[s];
+                var testX = snakeSelf.headPos.xPos + dirX * d;
+                var testY = snakeSelf.headPos.yPos + dirY * d;
+
+                // Check Map Boundary
+                var centerDist = Math.sqrt(Math.pow(testX - g_centerPos.xPos, 2) + Math.pow(testY - g_centerPos.yPos, 2));
+                if (centerDist > g_mapRadius - 80) {
+                    clearance = d;
+                    blocked = true;
+                    break;
+                }
+
+                // Check other snake bodies
+                var collisionRadius = snakeSelf.width * 0.75;
+                var collisionRadiusSq = collisionRadius * collisionRadius;
+
+                for (var k = 0; k < nearbySnakes.length; k++) {
+                    var pts = nearbySnakes[k].bodyPoints;
+                    for (var p = 0; p < pts.length; p++) {
+                        var pDistSq = Math.pow(testX - pts[p].xPos, 2) + Math.pow(testY - pts[p].yPos, 2);
+                        if (pDistSq <= collisionRadiusSq) {
+                            clearance = d;
+                            blocked = true;
+                            break;
+                        }
+                    }
+                    if (blocked) break;
+                }
+                if (blocked) break;
+            }
+
+            // Score ray based on clearance and deviation penalty
+            var score = clearance - Math.abs(offset) * 40;
+            var rayInfo = {
+                angleOffset: offset,
+                rayAngle: rayAngle,
+                dirX: dirX,
+                dirY: dirY,
+                clearance: clearance,
+                maxDistance: maxSensorDist,
+                score: score,
+                isClear: clearance >= maxSensorDist * 0.85
+            };
+            rays.push(rayInfo);
+
+            if (score > highestScore) {
+                highestScore = score;
+                bestRay = rayInfo;
+            }
+        }
+
+        return {
+            rays: rays,
+            bestRay: bestRay,
+            maxSensorDist: maxSensorDist
+        };
+    },
+
+    /**
+     * Steer smoothly along the safest escape vector avoiding sudden 180° jerks.
+     */
+    evadeThreats: function (snakeSelf, rayResults, tierConfig) {
+        var bestRay = rayResults.bestRay;
+        if (bestRay) {
+            snakeSelf.setTargetPos(bestRay.dirX * 500, bestRay.dirY * 500);
+
+            // If clearance is dangerously low, decelerate; if a wide open exit exists in higher tiers, sprint through
+            if (bestRay.clearance < rayResults.maxSensorDist * 0.4) {
+                snakeSelf.speedDown();
+            } else if (tierConfig.tier >= 2 && bestRay.isClear && snakeSelf.energy > 30) {
+                snakeSelf.speedUp();
+            }
+        }
+    },
+
+    /**
+     * Multi-behavior tactical controller: Intercept, Encircle, or Forage based on match tier.
+     */
+    executeTacticalBehavior: function (snakeSelf, tierConfig) {
+        // High Tier Tactics: Predictive Hunting & Encircling
+        if (tierConfig.tier >= 2) {
+            var targetSnake = this.findTacticalTarget(snakeSelf, tierConfig);
+            if (targetSnake) {
+                // Encircling Maneuver: AI is significantly larger and close
+                var distToTarget = Math.sqrt(
+                    Math.pow(targetSnake.headPos.xPos - snakeSelf.headPos.xPos, 2) +
+                    Math.pow(targetSnake.headPos.yPos - snakeSelf.headPos.yPos, 2)
+                );
+
+                var canEncircle = (snakeSelf.length > targetSnake.length * 1.4) &&
+                                  (distToTarget < snakeSelf.length * 0.5) &&
+                                  (Math.random() < tierConfig.encircleProp);
+
+                if (canEncircle) {
+                    this.executeEncircle(snakeSelf, targetSnake);
+                    return;
+                }
+
+                // Predictive Interception Hunting
+                if (Math.random() < tierConfig.huntingAggression) {
+                    this.executeInterception(snakeSelf, targetSnake, tierConfig, distToTarget);
+                    return;
+                }
+            }
+        }
+
+        // Default / Tier 1 Behavior: Intelligent Food Foraging
+        this.eatFood(snakeSelf, tierConfig);
+    },
+
+    /**
+     * Locate the most suitable opponent snake in view.
+     */
+    findTacticalTarget: function (snakeSelf, tierConfig) {
+        var bestTarget = null;
+        var minScore = Infinity;
+
+        for (let other of SnakeModel.snakes.values()) {
+            if (other.snakeId === snakeSelf.snakeId || other.dead || other.isProtected()) {
+                continue;
+            }
+
+            var dx = other.headPos.xPos - snakeSelf.headPos.xPos;
+            var dy = other.headPos.yPos - snakeSelf.headPos.yPos;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > snakeSelf.screenX * 1.5) {
+                continue;
+            }
+
+            // Prefer targets that are closer and smaller / comparable in length
+            var sizeRatio = other.length / (snakeSelf.length + 1);
+            var score = dist * (0.6 + 0.4 * sizeRatio);
+
+            if (score < minScore) {
+                minScore = score;
+                bestTarget = other;
+            }
+        }
+
+        return bestTarget;
+    },
+
+    /**
+     * Predictive Head Interception: Compute target's future path and cut off their trajectory.
+     */
+    executeInterception: function (snakeSelf, targetSnake, tierConfig, distToTarget) {
+        var leadSec = tierConfig.interceptLead;
+        var targetSpeed = targetSnake.speed || 390;
+        var targetHeadingX = targetSnake.dirPos.xPos;
+        var targetHeadingY = targetSnake.dirPos.yPos;
+
+        // Predict future position of enemy snake's head
+        var predictedX = targetSnake.headPos.xPos + targetHeadingX * targetSpeed * leadSec;
+        var predictedY = targetSnake.headPos.yPos + targetHeadingY * targetSpeed * leadSec;
+
+        // Target cut-off vector
+        var interceptVectorX = predictedX - snakeSelf.headPos.xPos;
+        var interceptVectorY = predictedY - snakeSelf.headPos.yPos;
+
+        snakeSelf.setTargetPos(interceptVectorX, interceptVectorY);
+
+        // Tactical Sprint: Boost when closing in for a cut-off
+        if (distToTarget < 400 && snakeSelf.energy > 30 && Math.random() < tierConfig.tacticalBoostProp) {
+            snakeSelf.speedUp();
+        }
+    },
+
+    /**
+     * Encircling / Coiling maneuver around smaller trapped snakes.
+     */
+    executeEncircle: function (snakeSelf, targetSnake) {
+        var dx = targetSnake.headPos.xPos - snakeSelf.headPos.xPos;
+        var dy = targetSnake.headPos.yPos - snakeSelf.headPos.yPos;
+        var angleToTarget = Math.atan2(dy, dx);
+
+        // Steer perpendicular (tangential orbit) around the target
+        var orbitAngle = angleToTarget + Math.PI / 2.2;
+        snakeSelf.setTargetPos(Math.cos(orbitAngle) * 500, Math.sin(orbitAngle) * 500);
+
+        if (snakeSelf.energy > 40) {
+            snakeSelf.speedUp();
+        }
+    },
+
+    eatFood: function (snake, tierConfig) {
         var bFindDead = false;
         var nearestDeadFoodId = 0;
         var nearestOthFoodId = 0;
         var nearestDeadFoodDist = Math.pow(snake.screenX, 2) + Math.pow(snake.screenY, 2);
-        //var nearestDeadFoodDist = snake.screenX * 1.4;
         var nearestOthFoodDist = nearestDeadFoodDist;
         var normalFoods = FoodModel.getFromBlockStore(snake.headPos.xPos, snake.headPos.yPos, snake.screenX, snake.screenY);
+
         normalFoods.forEach(foodId => {
             var food = FoodModel.getById(foodId);
             if (food) {
@@ -211,7 +442,8 @@ var RobotService = {
                 snake.setTargetPos(targetFood.position.xPos - snake.headPos.xPos, targetFood.position.yPos - snake.headPos.yPos);
             }
 
-            var bAcc = (Math.round(Math.random() * 600) <= snake.accProp) ? 1 : 0;
+            var boostChance = (tierConfig && tierConfig.tier >= 2) ? 450 : (snake.accProp || 50);
+            var bAcc = (Math.round(Math.random() * 600) <= boostChance) ? 1 : 0;
             if (bAcc) {
                 if (bFindDead) {
                     snake.speedUp();
@@ -223,7 +455,6 @@ var RobotService = {
     },
 
     filterByAABB: function (moveToPos, radiusSize, othSnake) {
-        // 根据蛇头的包围盒进行可见裁减
         var othAABB = othSnake.getAABB();
         var selfView = {
             xMin: moveToPos.xPos - radiusSize,
@@ -241,7 +472,6 @@ var RobotService = {
     },
 
     mayCrash: function (moveToPos, moveDist, othSnake) {
-
         if (!this.filterByAABB(moveToPos, moveDist, othSnake)) {
             return false;
         }
@@ -260,30 +490,10 @@ var RobotService = {
         return false;
     },
 
-    dodgeSnake: function (snakeSelf) {
-        var bMayCrash = false;
-
-        var moveDist = snakeSelf.speed;
-        var angle0 = Math.atan2(snakeSelf.dirPos.yPos, snakeSelf.dirPos.xPos);
-        var detalY0 = moveDist * Math.sin(angle0);
-        var detalX0 = moveDist * Math.cos(angle0);
-        var moveToPos = {
-            xPos: snakeSelf.headPos.xPos + detalX0,
-            yPos: snakeSelf.headPos.yPos + detalY0
-        };
-
-        for (let snake of SnakeModel.snakes.values()) {
-            if (snake.snakeId !== snakeSelf.snakeId) {
-                if (this.mayCrash(moveToPos, moveDist, snake)) {
-                    bMayCrash = true;
-                    break;
-                }
-            }
-        }
-
-        if (bMayCrash) {
-            snakeSelf.setTargetPos(-1 * snakeSelf.dirPos.xPos, -1 * snakeSelf.dirPos.yPos);
-            snakeSelf.speedDown();
+    dodgeSnake: function (snakeSelf, tierConfig) {
+        var rayResults = this.castSpatialRays(snakeSelf, tierConfig || RoomService.getAITierConfig());
+        if (rayResults.bestRay && !rayResults.bestRay.isClear) {
+            this.evadeThreats(snakeSelf, rayResults, tierConfig || RoomService.getAITierConfig());
         }
     },
 
@@ -301,7 +511,6 @@ var RobotService = {
             }
         }
     }
-
 };
 
 EventEmitter.on('TimeStart', () => {
@@ -317,6 +526,8 @@ EventEmitter.on('TimeOver', () => {
         RobotService.destoryRobots();
     }, 100);
 });
+
+module.exports = RobotService;
 
 
 module.exports = RobotService;

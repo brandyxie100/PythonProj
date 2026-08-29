@@ -11,6 +11,17 @@ python3 -m http.server 8090
 
 Open http://localhost:8090/ — must be served over HTTP (not `file://`).
 
+## Controls
+
+| Action | Keyboard Key | Alternative |
+|---|---|---|
+| **Move Up** | `Arrow Up` | `W` |
+| **Move Down** | `Arrow Down` | `S` |
+| **Move Left** | `Arrow Left` | |
+| **Move Right** | `Arrow Right` | `D` |
+| **Acceleration / Sprint** | `A` | `Space` / Boost Button |
+
+
 ## Engine
 
 `frameworks/cocos2d-html5/` is vendored from

@@ -39,8 +39,7 @@ var MY_SKIN_ID = 9;
 var HALF_PAI = Math.PI * 100 / 2 * 0.01;
 var REVERSE_PAI = 100 / Math.PI * 0.01;
 
-var gGameTime = 1.5; //time for game room
-//var gGameTime = 3; //time for game room
+var gGameTime = 5; //time for game room (minutes per round)
 
 var LOGIN_REQUEST_DATA = {
     GAME_START: false,
