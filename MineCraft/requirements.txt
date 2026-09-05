@@ -1,0 +1,3 @@
+ursina>=7.0.0
+Pillow>=10.0.0
+perlin-noise>=1.12
