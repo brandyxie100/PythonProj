@@ -49,6 +49,7 @@ Grass, Dirt, Stone, Wood, Leaves, Sand, Water, Planks. Bedrock under the map can
 
 ## Notes
 
-- World size is ~24×24 for smooth FPS on a laptop.
+- World is ~12×12 (~300 cubes) so it stays smooth on a laptop. Huge older save files are rejected automatically.
 - Textures are created in `textures/` on first run.
-- Demo is also written to `worlds/demo_island.json` when generated.
+- Demo is rewritten to `worlds/demo_island.json` when you press `1`.
+- If the game ever froze before: delete `worlds/*.json` and relaunch.

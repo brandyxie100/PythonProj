@@ -1,11 +1,16 @@
-"""Voxel world: place/break, demo island, creative flat, JSON save/load."""
+"""Voxel world: place/break, demo island, creative flat, JSON save/load.
+
+Performance: keep entity count low. Ursina freezes if thousands of
+Button+collider cubes spawn in one frame.
+"""
 
 from __future__ import annotations
 
 import json
 import math
 from pathlib import Path
-from ursina import Button, Entity, color, destroy, mouse, scene
+
+from ursina import Entity, Vec3, camera, color, destroy, mouse, raycast, scene
 
 from blocks import BEDROCK, HOTBAR_BLOCKS, BlockType, get_block, texture_path
 
@@ -13,42 +18,28 @@ WORLDS_DIR = Path(__file__).resolve().parent / "worlds"
 DEMO_PATH = WORLDS_DIR / "demo_island.json"
 KID_PATH = WORLDS_DIR / "my_world.json"
 
-# Bounded play area for v1 performance
-WORLD_HALF = 10  # -10..9 → 20×20 (keeps FPS friendly)
-REACH = 6
+# Small map — ~12×12. Larger than this freezes many laptops with per-cube Entities.
+WORLD_HALF = 6
+REACH = 5
+MAX_LOAD_BLOCKS = 500
 
 
-class Voxel(Button):
-    """A single cube block in the world."""
+class Voxel(Entity):
+    """A single cube block (Entity, not Button — much cheaper)."""
 
     def __init__(self, position: tuple[int, int, int], block: BlockType):
-        tex = texture_path(block.texture)
         super().__init__(
             parent=scene,
             position=position,
             model="cube",
             origin_y=0.5,
-            texture=tex,
+            texture=texture_path(block.texture),
             color=color.white,
-            highlight_color=color.rgba(255, 255, 200, 180),
             scale=1,
             collider="box",
         )
         self.block_id = block.id
         self.breakable = block.breakable
-        # Grass / wood: tint slightly; top texture applied as extra entity if needed
-        if block.texture_top:
-            self.top_face = Entity(
-                parent=self,
-                model="quad",
-                texture=texture_path(block.texture_top),
-                position=(0, 0.501, 0),
-                rotation_x=90,
-                scale=0.999,
-                double_sided=True,
-            )
-        else:
-            self.top_face = None
 
 
 class WorldStore:
@@ -86,9 +77,9 @@ class WorldStore:
         """Surface Y for spawn (highest solid at xz)."""
         xi, zi = int(round(x)), int(round(z))
         best = 0
-        for (x, y, z), v in self.voxels.items():
-            if x == xi and z == zi and y >= best:
-                best = y
+        for (bx, by, bz) in self.voxels:
+            if bx == xi and bz == zi and by >= best:
+                best = by
         return float(best + 2)
 
     def to_list(self) -> list[dict]:
@@ -99,6 +90,9 @@ class WorldStore:
 
     def load_list(self, blocks: list[dict]) -> None:
         self.clear()
+        # Cap oversized saves from older builds that froze machines
+        if len(blocks) > MAX_LOAD_BLOCKS:
+            blocks = blocks[:MAX_LOAD_BLOCKS]
         for b in blocks:
             self.set_block((int(b["x"]), int(b["y"]), int(b["z"])), int(b["type"]))
 
@@ -111,112 +105,114 @@ class WorldStore:
         if not path.exists():
             return False
         data = json.loads(path.read_text(encoding="utf-8"))
-        self.load_list(data.get("blocks", []))
+        blocks = data.get("blocks", [])
+        # Reject huge legacy worlds — rebuild instead of freezing
+        if len(blocks) > MAX_LOAD_BLOCKS:
+            return False
+        self.load_list(blocks)
         return True
 
     def build_bedrock_and_flat(self, y_surface: int = 0) -> None:
-        """Kid-safe floor: bedrock under, grass/dirt flat creative pad."""
+        """Kid-safe floor: one bedrock + one grass (≈288 cubes max)."""
+        self.clear()
         for z in range(-WORLD_HALF, WORLD_HALF):
             for x in range(-WORLD_HALF, WORLD_HALF):
-                self.set_block((x, -2, z), BEDROCK.id)
-                self.set_block((x, -1, z), 2)  # dirt
+                self.set_block((x, -1, z), BEDROCK.id)
                 self.set_block((x, y_surface, z), 1)  # grass
 
     def build_demo_island(self) -> None:
-        """Parent showcase: small island, path, and a simple house."""
+        """Small island + house (~200–300 cubes). Always regenerates (safe size)."""
         self.clear()
-        # Bedrock only under playable island (not the whole map)
-        for z in range(-WORLD_HALF, WORLD_HALF):
-            for x in range(-WORLD_HALF, WORLD_HALF):
-                dist = math.sqrt(x * x + z * z)
-                if dist <= 12:
-                    self.set_block((x, -3, z), BEDROCK.id)
 
-        # Island disk with gentle height
+        # Disk terrain: surface only + thin under-layer
         for z in range(-WORLD_HALF, WORLD_HALF):
             for x in range(-WORLD_HALF, WORLD_HALF):
                 dist = math.sqrt(x * x + z * z)
-                if dist > 10.5:
+                if dist > 5.5:
                     continue
                 h = 0
-                if dist < 8:
+                if dist < 3.5:
                     h = 1
-                if dist < 4.5:
-                    h = 2
-                for y in range(-2, h):
-                    bid = 3 if y < 0 else 2
-                    self.set_block((x, y, z), bid)
-                self.set_block((x, h, z), 1)
-                if 8.8 < dist <= 10.5:
-                    self.set_block((x, 0, z), 6)
+                self.set_block((x, -1, z), BEDROCK.id)
+                if dist > 4.2:
+                    self.set_block((x, 0, z), 6)  # sand shore
+                else:
+                    if h > 0:
+                        self.set_block((x, 0, z), 2)  # dirt under hill
+                    self.set_block((x, h, z), 1)  # grass
 
-        # Water ring (decorative)
-        for z in range(-WORLD_HALF, WORLD_HALF):
-            for x in range(-WORLD_HALF, WORLD_HALF):
-                dist = math.sqrt(x * x + z * z)
-                if 10.5 < dist < 12:
-                    if (x, -3, z) not in self.voxels:
-                        self.set_block((x, -3, z), BEDROCK.id)
-                    self.set_block((x, -1, z), 7)
-                    self.set_block((x, 0, z), 7)
+        # Tiny water puddles at edge (few blocks)
+        for x, z in ((5, 0), (5, 1), (-5, 0), (0, 5), (0, -5)):
+            if self.in_bounds(x, z) and (x, 0, z) not in self.voxels:
+                self.set_block((x, -1, z), BEDROCK.id)
+                self.set_block((x, 0, z), 7)
 
-        # Path of planks toward house
-        for z in range(0, 5):
-            self.set_block((0, 2, z), 8)
+        # Path
+        for z in range(0, 3):
+            self.set_block((0, 1, z), 8)
 
-        # Simple house at (0, 2, 6)
-        hx, hy, hz = 0, 2, 6
-        for dx in range(-2, 3):
-            for dz in range(-2, 3):
+        # Compact 3×3 house
+        hx, hy, hz = 0, 1, 4
+        for dx in range(-1, 2):
+            for dz in range(-1, 2):
                 self.set_block((hx + dx, hy, hz + dz), 8)
-        for y in range(1, 4):
-            for dx in range(-2, 3):
-                for dz in range(-2, 3):
-                    edge = abs(dx) == 2 or abs(dz) == 2
-                    if edge:
-                        if y < 3 and dx == 0 and dz == -2:
-                            continue
+        for y in (1, 2):
+            for dx in range(-1, 2):
+                for dz in range(-1, 2):
+                    if abs(dx) == 1 or abs(dz) == 1:
+                        if y == 1 and dx == 0 and dz == -1:
+                            continue  # door
                         self.set_block((hx + dx, hy + y, hz + dz), 4)
-        for dx in range(-2, 3):
-            for dz in range(-2, 3):
-                self.set_block((hx + dx, hy + 4, hz + dz), 8)
-        # little tree
-        self.set_block((5, 2, 3), 4)
-        self.set_block((5, 3, 3), 4)
+        for dx in range(-1, 2):
+            for dz in range(-1, 2):
+                self.set_block((hx + dx, hy + 3, hz + dz), 8)
+
+        # Tree
+        self.set_block((3, 1, 2), 4)
+        self.set_block((3, 2, 2), 4)
         for dx in (-1, 0, 1):
             for dz in (-1, 0, 1):
-                self.set_block((5 + dx, 4, 3 + dz), 5)
-        self.set_block((5, 5, 3), 5)
+                self.set_block((3 + dx, 3, 2 + dz), 5)
+        self.set_block((3, 4, 2), 5)
 
         self.save(DEMO_PATH)
 
+    def _ray_hit_voxel(self) -> tuple[Voxel | None, Vec3 | None]:
+        """Ray from camera; return hit Voxel and face normal."""
+        hit = raycast(camera.world_position, camera.forward, distance=REACH, ignore=[camera])
+        if not hit.hit:
+            return None, None
+        ent = hit.entity
+        if not isinstance(ent, Voxel):
+            # Walk up parent chain in case of nested visuals
+            parent = getattr(ent, "parent", None)
+            if isinstance(parent, Voxel):
+                ent = parent
+            else:
+                return None, None
+        return ent, hit.normal
+
     def try_break(self) -> None:
-        hit = mouse.hovered_entity
-        if not isinstance(hit, Voxel):
+        ent, _ = self._ray_hit_voxel()
+        if ent is None:
             return
-        pos = (int(hit.x), int(hit.y), int(hit.z))
-        # Ursina origin_y=0.5 means entity.y is bottom-ish; position tuple matches init
-        key = self._key_for_entity(hit)
+        key = self._key_for_entity(ent)
         if key:
             self.remove_block(key)
 
     def try_place(self) -> None:
-        hit = mouse.hovered_entity
-        if not isinstance(hit, Voxel):
+        ent, normal = self._ray_hit_voxel()
+        if ent is None or normal is None:
             return
-        key = self._key_for_entity(hit)
+        key = self._key_for_entity(ent)
         if not key:
-            return
-        # Place adjacent to hovered face
-        normal = mouse.normal
-        if normal is None:
             return
         nx = key[0] + int(round(normal.x))
         ny = key[1] + int(round(normal.y))
         nz = key[2] + int(round(normal.z))
         if not self.in_bounds(nx, nz):
             return
-        if ny < -3 or ny > 20:
+        if ny < -2 or ny > 12:
             return
         if (nx, ny, nz) in self.voxels:
             return
@@ -226,5 +222,4 @@ class WorldStore:
         for k, v in self.voxels.items():
             if v is ent:
                 return k
-        # Fallback from position
         return (int(round(ent.x)), int(round(ent.y)), int(round(ent.z)))

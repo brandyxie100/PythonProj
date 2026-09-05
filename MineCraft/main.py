@@ -96,10 +96,8 @@ def show_menu() -> None:
 
 def start_demo() -> None:
     global current_world_name
-    if DEMO_PATH.exists():
-        world.load(DEMO_PATH)
-    else:
-        world.build_demo_island()
+    # Always rebuild from code (avoids loading oversized legacy JSON that freezes)
+    world.build_demo_island()
     current_world_name = "Demo Island"
     hotbar.set_mode_label(current_world_name)
     hide_menu()
@@ -118,7 +116,7 @@ def start_creative() -> None:
 def load_kid_world() -> None:
     global current_world_name
     if not world.load(KID_PATH):
-        hotbar.mode_text.text = "No my_world.json — starting Creative"
+        hotbar.mode_text.text = "Saved world too big or missing — Creative"
         start_creative()
         return
     current_world_name = "My World"
@@ -136,11 +134,10 @@ def save_kid_world() -> None:
 
 Sky(color=color.rgb(135, 206, 235))
 
-# Directional light feel via ambient
-from ursina import AmbientLight, DirectionalLight
+# Soft lighting only (DirectionalLight + many cubes can stutter)
+from ursina import AmbientLight
 
-AmbientLight(color=color.rgba(200, 200, 200, 0.6))
-DirectionalLight(direction=(1, -1, -0.5), color=color.rgba(255, 255, 240, 0.8))
+AmbientLight(color=color.rgba(220, 220, 220, 0.85))
 
 
 def input(key: str) -> None:  # noqa: A001 — Ursina callback name
