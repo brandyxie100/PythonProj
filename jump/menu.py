@@ -19,13 +19,14 @@ class MainMenu:
         self._btn = pygame.font.SysFont("Arial", 28, bold=True)
         self._tiny = pygame.font.SysFont("Arial", 15)
         self.play_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 268, 280, 58)
-        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 342, 280, 58)
+        self.editor_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 342, 280, 58)
+        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 416, 280, 58)
         self._choice: Optional[str] = None
         self._pulse = 0.0
 
     @property
     def choice(self) -> Optional[str]:
-        """``'play'``, ``'quit'``, or ``None`` until the player picks."""
+        """``'play'``, ``'editor'``, ``'quit'``, or ``None`` until picked."""
         return self._choice
 
     def reset(self) -> None:
@@ -37,12 +38,16 @@ class MainMenu:
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._choice = "play"
+            elif event.key == pygame.K_e:
+                self._choice = "editor"
             elif event.key == pygame.K_ESCAPE:
                 self._choice = "quit"
             return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.play_rect.collidepoint(event.pos):
                 self._choice = "play"
+            elif self.editor_rect.collidepoint(event.pos):
+                self._choice = "editor"
             elif self.quit_rect.collidepoint(event.pos):
                 self._choice = "quit"
 
@@ -97,17 +102,20 @@ class MainMenu:
             surf, self.play_rect, "PLAY", self.play_rect.collidepoint(mouse)
         )
         self._draw_button(
+            surf, self.editor_rect, "EDITOR", self.editor_rect.collidepoint(mouse)
+        )
+        self._draw_button(
             surf, self.quit_rect, "QUIT", self.quit_rect.collidepoint(mouse)
         )
 
         hints = [
             "Inspired by Geometry Dash's first official level",
             "Green portal returns you to the cube for the final stretch",
-            "Space / Enter to play  ·  Esc to quit",
+            "Space / Enter to play  ·  E to edit  ·  Esc to quit",
         ]
         for i, line in enumerate(hints):
             text = self._tiny.render(line, True, c.UI_DIM)
-            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 430 + i * 20)))
+            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 488 + i * 16)))
 
     def _draw_button(
         self, surf: pygame.Surface, rect: pygame.Rect, label: str, hover: bool

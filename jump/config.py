@@ -98,5 +98,6 @@ ORB_CLICK_BUFFER: float = 0.14  # seconds of buffered click before touching
 ORB_YELLOW: tuple[int, int, int] = (255, 220, 50)
 ORB_PINK: tuple[int, int, int] = (255, 90, 200)
 ORB_BLUE: tuple[int, int, int] = (70, 160, 255)
+ORB_BLACK: tuple[int, int, int] = (8, 8, 12)
 
 DEATH_FLASH_TIME: float = 0.55

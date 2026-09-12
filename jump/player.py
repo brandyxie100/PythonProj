@@ -95,7 +95,7 @@ class Player:
         # Ship ignores taps — it is hold-controlled.
 
     def activate_orb(self, kind: str) -> None:
-        """Fire a jump-orb effect (yellow / pink / blue)."""
+        """Fire a jump-orb effect (yellow / pink / blue / black)."""
         if not self.alive:
             return
         self.on_ground = False
@@ -104,13 +104,13 @@ class Player:
             self.vy = c.JUMP_VELOCITY
         elif kind == "pink":
             self.vy = c.JUMP_VELOCITY * 1.12
-        elif kind == "blue":
-            # Blue orb flips gravity and gives a small shove that way.
+        elif kind in ("blue", "black"):
+            # Gravity orbs flip gravity and give a small shove that way.
             self.gravity_dir *= -1.0
             self.vy = -220.0 * self.gravity_dir
         if self.mode == "ship":
             # Orbs give ships a vertical kick instead of a cube jump.
-            self.vy = c.JUMP_VELOCITY * 0.85 if kind != "blue" else self.vy
+            self.vy = c.JUMP_VELOCITY * 0.85 if kind not in ("blue", "black") else self.vy
 
     def update(
         self,

@@ -8,6 +8,7 @@ import pygame
 
 import config as c
 from game import Game
+from editor import Editor
 from menu import MainMenu
 
 
@@ -20,6 +21,7 @@ def main() -> int:
 
     menu = MainMenu()
     game: Game | None = None
+    editor: Editor | None = None
     scene = "menu"
 
     running = True
@@ -35,12 +37,18 @@ def main() -> int:
                 menu.handle_event(event)
             elif game is not None:
                 game.handle_event(event)
+            elif editor is not None:
+                editor.handle_event(event)
 
         if scene == "menu":
             menu.update(dt)
             if menu.choice == "play":
                 game = Game()
                 scene = "game"
+                menu.reset()
+            elif menu.choice == "editor":
+                editor = Editor()
+                scene = "editor"
                 menu.reset()
             elif menu.choice == "quit":
                 running = False
@@ -53,6 +61,18 @@ def main() -> int:
                 game = None
             else:
                 game.draw(screen)
+        elif editor is not None:
+            editor.update(dt)
+            if editor.request_play:
+                game = Game(editor.level_data())
+                editor = None
+                scene = "game"
+            elif editor.request_menu:
+                scene = "menu"
+                menu.reset()
+                editor = None
+            else:
+                editor.draw(screen)
 
         pygame.display.flip()
 

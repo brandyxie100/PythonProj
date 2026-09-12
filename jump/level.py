@@ -11,12 +11,12 @@ import config as c
 
 ObstacleKind = Literal["spike", "block"]
 Gamemode = Literal["cube", "ship", "ball", "ufo"]
-OrbKind = Literal["yellow", "pink", "blue"]
+OrbKind = Literal["yellow", "pink", "blue", "black"]
 
 LEVEL_NAME: str = "Stereo Madness"
 
 
-@dataclass(slots=True)
+@dataclass
 class Obstacle:
     """A world-space hazard or platform."""
 
@@ -59,7 +59,7 @@ class Obstacle:
         return rect.inflate(-inset * 2, -inset * 2)
 
 
-@dataclass(slots=True)
+@dataclass
 class Portal:
     """World-space gamemode switch."""
 
@@ -72,9 +72,9 @@ class Portal:
         return self.x - camera_x
 
 
-@dataclass(slots=True)
+@dataclass
 class Orb:
-    """Clickable jump orb (yellow / pink / blue)."""
+    """Clickable jump orb (yellow / pink / blue / black)."""
 
     kind: OrbKind
     x: float  # world center X
@@ -352,6 +352,7 @@ def draw_orb(surf: pygame.Surface, orb: Orb, camera_x: float, pulse: float) -> N
         "yellow": c.ORB_YELLOW,
         "pink": c.ORB_PINK,
         "blue": c.ORB_BLUE,
+        "black": c.ORB_BLACK,
     }
     color = colors[orb.kind]
     r = int(c.ORB_RADIUS + 2 * abs((pulse * 5) % 2 - 1))

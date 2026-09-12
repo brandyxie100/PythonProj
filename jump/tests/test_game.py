@@ -8,6 +8,7 @@ import pygame
 import pytest
 
 import config as c
+from editor import Editor
 from game import Game
 from level import Obstacle, LEVEL_NAME, build_level
 from menu import MainMenu
@@ -130,12 +131,26 @@ def test_ship_hold_flies_up_release_flies_down() -> None:
     assert p.vy > 0.0  # flying down
 
 
-def test_ship_hits_ceiling_and_dies() -> None:
+def test_ship_touching_ceiling_survives() -> None:
     game = Game()
     game.player.set_mode("ship")
-    game.player.y = c.CEILING_Y - 2
+    game.player.y = c.CEILING_Y
+    game.player.vy = -120.0
     game._resolve_collisions()
-    assert game.state == "dead"
+    assert game.state == "playing"
+    assert game.player.y == pytest.approx(c.CEILING_Y)
+    assert game.player.vy == 0.0
+
+
+def test_ship_touching_floor_survives() -> None:
+    game = Game()
+    game.player.set_mode("ship")
+    game.player.y = c.GROUND_Y - game.player.size
+    game.player.vy = 120.0
+    game._resolve_collisions()
+    assert game.state == "playing"
+    assert game.player.y == pytest.approx(c.GROUND_Y - game.player.size)
+    assert game.player.vy == 0.0
 
 
 def test_purple_portal_switches_to_ship() -> None:
@@ -154,6 +169,12 @@ def test_ball_inverts_gravity() -> None:
     assert p.gravity_dir == -1.0
 
 
+def test_black_orb_inverts_gravity() -> None:
+    p = Player()
+    p.activate_orb("black")
+    assert p.gravity_dir == -1.0
+
+
 def test_ufo_jumps_mid_air() -> None:
     p = Player()
     p.set_mode("ufo")
@@ -167,6 +188,38 @@ def test_menu_play_on_space() -> None:
     menu = MainMenu()
     menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
     assert menu.choice == "play"
+
+
+def test_menu_editor_on_e() -> None:
+    menu = MainMenu()
+    menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_e))
+    assert menu.choice == "editor"
+
+
+def test_editor_places_snapped_spike() -> None:
+    editor = Editor()
+    editor.place((100, int(c.GROUND_Y)))
+    assert len(editor.obstacles) == 1
+    assert editor.obstacles[0].kind == "spike"
+    assert editor.obstacles[0].x % 18 == 0
+
+
+def test_editor_cycles_portal_and_orb_variants() -> None:
+    editor = Editor()
+    editor.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_p))
+    editor.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_o))
+    assert editor.portal_mode == "ball"
+    assert editor.orb_kind == "pink"
+
+
+def test_editor_play_requests_custom_level() -> None:
+    editor = Editor()
+    editor.handle_event(
+        pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=editor.play_rect.center)
+    )
+    game = Game(editor.level_data())
+    assert editor.request_play
+    assert game.finish_x == editor.finish_x
 
 
 def test_esc_requests_menu() -> None:
