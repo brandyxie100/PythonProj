@@ -29,6 +29,16 @@ colors. Use the mouse wheel or arrow keys to scroll, `S` to save,
 Press the green **PLAY** button in the editor to test the current layout
 without saving it first.
 
+Use the **DOUBLE JUMP: ON/OFF** button to toggle the extra cube jump for the
+test run.
+
+Press `P` in the editor to cycle through portal types, including the yellow
+speed portal that increases the auto-scroll speed.
+
+Click **SAVE** in the editor to save your level progress, or press `S`.
+Saved levels automatically reopen when you enter the editor again.
+Click **UNSAVE** to remove the saved copy while keeping the current layout open.
+
 ## Orbs
 
 Click **Space** while touching an orb:

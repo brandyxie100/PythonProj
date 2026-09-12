@@ -9,6 +9,7 @@ import pygame
 import config as c
 from game import Game
 from editor import Editor
+from level import build_secret_level
 from menu import MainMenu
 
 
@@ -64,7 +65,13 @@ def main() -> int:
         elif editor is not None:
             editor.update(dt)
             if editor.request_play:
-                game = Game(editor.level_data())
+                if editor.request_secret:
+                    game = Game(build_secret_level())
+                else:
+                    game = Game(
+                        editor.level_data(),
+                        double_jump_enabled=editor.double_jump_enabled,
+                    )
                 editor = None
                 scene = "game"
             elif editor.request_menu:

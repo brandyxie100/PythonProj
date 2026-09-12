@@ -23,17 +23,20 @@ class Game:
     def __init__(
         self,
         level_data: tuple[list[Obstacle], list[Portal], list[Orb], float] | None = None,
+        *,
+        double_jump_enabled: bool = True,
     ) -> None:
         """Load the course and reset run stats."""
         self._font = pygame.font.SysFont("Arial", 28, bold=True)
         self._small = pygame.font.SysFont("Arial", 18)
         self._huge = pygame.font.SysFont("Arial", 54, bold=True)
-        self.player = Player()
+        self.player = Player(double_jump_enabled=double_jump_enabled)
         self.obstacles: list[Obstacle] = []
         self.portals = []
         self.orbs = []
         self.finish_x = 0.0
         self.camera_x = 0.0
+        self.scroll_speed = c.SCROLL_SPEED
         self.attempts = 1
         self.best_progress = 0.0
         self.state: str = "playing"
@@ -54,6 +57,7 @@ class Game:
             self.portals = [Portal(item.x, item.mode) for item in portals]
             self.orbs = [Orb(item.kind, item.x, item.y) for item in orbs]
         self.camera_x = 0.0
+        self.scroll_speed = c.SCROLL_SPEED
         self.player.reset()
         self.state = "playing"
         self.death_timer = 0.0
@@ -104,7 +108,7 @@ class Game:
         if self.state == "won":
             return
 
-        self.camera_x += c.SCROLL_SPEED * dt
+        self.camera_x += self.scroll_speed * dt
         self._check_portals()
 
         solid_tops: list[tuple[float, float, float]] = []
@@ -160,7 +164,10 @@ class Game:
                 continue
             if world_x >= portal.x:
                 portal.triggered = True
-                self.player.set_mode(portal.mode)
+                if portal.mode == "speed":
+                    self.scroll_speed *= c.SPEED_PORTAL_MULTIPLIER
+                else:
+                    self.player.set_mode(portal.mode)
 
     def _needs_ceiling(self) -> bool:
         """Ceiling is active for ship, inverted ball, and UFO flight."""

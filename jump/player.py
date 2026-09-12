@@ -15,8 +15,9 @@ Gamemode = Literal["cube", "ship", "ball", "ufo"]
 class Player:
     """Auto-running icon that switches gamemode through portals."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, double_jump_enabled: bool = True) -> None:
         """Place the icon on the ground at the fixed screen X."""
+        self.double_jump_enabled = double_jump_enabled
         self.size = c.CUBE_SIZE
         self.x = c.PLAYER_SCREEN_X
         self.y = c.GROUND_Y - self.size
@@ -81,7 +82,7 @@ class Player:
             if self.on_ground:
                 self.vy = c.JUMP_VELOCITY
                 self.on_ground = False
-                self.air_jumps_left = 1  # one extra mid-air jump
+                self.air_jumps_left = 1 if self.double_jump_enabled else 0
             elif self.air_jumps_left > 0:
                 self.vy = c.DOUBLE_JUMP_VELOCITY
                 self.air_jumps_left -= 1

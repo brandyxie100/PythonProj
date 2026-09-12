@@ -42,6 +42,9 @@ class Editor:
         self.orb_kind: OrbKind = "yellow"
         self.request_menu = False
         self.request_play = False
+        self.request_secret = False
+        self._secret_input = ""
+        self.double_jump_enabled = True
         self._pulse = 0.0
         self._status = "New level"
         self._status_timer = 4.0
@@ -55,11 +58,23 @@ class Editor:
         }
         self.scroll_left_rect = pygame.Rect(680, TOOLBAR_TOP + 12, 56, 34)
         self.scroll_right_rect = pygame.Rect(742, TOOLBAR_TOP + 12, 56, 34)
+        self.double_jump_rect = pygame.Rect(490, TOOLBAR_TOP + 12, 174, 34)
+        self.save_rect = pygame.Rect(424, TOOLBAR_TOP + 12, 58, 34)
+        self.unsave_rect = pygame.Rect(424, TOOLBAR_TOP + 48, 76, 24)
         self.play_rect = pygame.Rect(820, TOOLBAR_TOP + 12, 126, 34)
+        if LEVEL_FILE.exists():
+            self.load()
 
     def handle_event(self, event: pygame.event.Event) -> None:
         """Handle tools, placement, scrolling, and file commands."""
         if event.type == pygame.KEYDOWN:
+            key_name = pygame.key.name(event.key).lower()
+            if key_name in ("e", "s", "a"):
+                self._secret_input = (self._secret_input + key_name)[-3:]
+                if self._secret_input == "esa":
+                    self.request_secret = True
+                    self.request_play = True
+                    return
             if event.key == pygame.K_ESCAPE:
                 self.request_menu = True
             elif event.key == pygame.K_1:
@@ -73,7 +88,7 @@ class Editor:
             elif event.key == pygame.K_5:
                 self.tool = "erase"
             elif event.key == pygame.K_p:
-                modes: tuple[Gamemode, ...] = ("cube", "ship", "ball", "ufo")
+                modes: tuple[Gamemode, ...] = ("cube", "ship", "ball", "ufo", "speed")
                 self.portal_mode = modes[(modes.index(self.portal_mode) + 1) % len(modes)]
             elif event.key == pygame.K_o:
                 kinds: tuple[OrbKind, ...] = ("yellow", "pink", "blue", "black")
@@ -100,6 +115,21 @@ class Editor:
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
+                if self.unsave_rect.collidepoint(event.pos):
+                    self.unsave()
+                    return
+                if self.save_rect.collidepoint(event.pos):
+                    self.save()
+                    return
+                if self.double_jump_rect.collidepoint(event.pos):
+                    self.double_jump_enabled = not self.double_jump_enabled
+                    self._status = (
+                        "Double jump enabled"
+                        if self.double_jump_enabled
+                        else "Double jump disabled"
+                    )
+                    self._status_timer = 2.0
+                    return
                 if self.scroll_left_rect.collidepoint(event.pos):
                     self.camera_x = max(0.0, self.camera_x - c.CUBE_SIZE * 8)
                     return
@@ -189,12 +219,29 @@ class Editor:
         """Write the current layout to the project's custom level file."""
         data = {
             "finish_x": self.finish_x,
+            "double_jump_enabled": self.double_jump_enabled,
             "obstacles": [asdict(obstacle) for obstacle in self.obstacles],
             "portals": [asdict(portal) for portal in self.portals],
             "orbs": [asdict(orb) for orb in self.orbs],
         }
-        LEVEL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        try:
+            LEVEL_FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        except OSError as error:
+            self._status = f"Save failed: {error.strerror or 'write error'}"
+            self._status_timer = 4.0
+            return
         self._status = f"Saved {LEVEL_FILE.name}"
+        self._status_timer = 3.0
+
+    def unsave(self) -> None:
+        """Remove the saved level while keeping the current editor layout."""
+        try:
+            LEVEL_FILE.unlink(missing_ok=True)
+        except OSError as error:
+            self._status = f"Unsave failed: {error.strerror or 'delete error'}"
+            self._status_timer = 4.0
+            return
+        self._status = "Saved progress removed"
         self._status_timer = 3.0
 
     def load(self) -> None:
@@ -219,6 +266,7 @@ class Editor:
             orbs,
             finish_x,
         )
+        self.double_jump_enabled = bool(data.get("double_jump_enabled", True))
         self.camera_x = 0.0
         self._status = f"Loaded {LEVEL_FILE.name}"
         self._status_timer = 3.0
@@ -286,10 +334,14 @@ class Editor:
         if self._status_timer > 0:
             info = self._status
         text = self._small.render(info, True, c.UI_DIM)
-        surf.blit(text, (440, TOOLBAR_TOP + 12))
+        surf.blit(text, (440, TOOLBAR_TOP + 50))
         help_text = "Click place  Right-click erase  P/O variants  S/L save/load  N new  Esc menu"
         help_surface = self._small.render(help_text, True, c.UI_DIM)
         surf.blit(help_surface, (14, TOOLBAR_TOP + 48))
+        pygame.draw.rect(surf, (100, 70, 80), self.unsave_rect, border_radius=5)
+        pygame.draw.rect(surf, c.UI, self.unsave_rect, width=1, border_radius=5)
+        unsave_text = self._small.render("UNSAVE", True, c.UI)
+        surf.blit(unsave_text, unsave_text.get_rect(center=self.unsave_rect.center))
         for rect, label in (
             (self.scroll_left_rect, "<"),
             (self.scroll_right_rect, ">"),
@@ -298,6 +350,16 @@ class Editor:
             pygame.draw.rect(surf, c.UI, rect, width=1, border_radius=5)
             text = self._font.render(label, True, c.UI)
             surf.blit(text, text.get_rect(center=rect.center))
+        pygame.draw.rect(surf, c.MENU_BTN, self.save_rect, border_radius=5)
+        pygame.draw.rect(surf, c.UI, self.save_rect, width=1, border_radius=5)
+        save_text = self._small.render("SAVE", True, c.UI)
+        surf.blit(save_text, save_text.get_rect(center=self.save_rect.center))
+        toggle_color = c.MENU_BTN_HOVER if self.double_jump_enabled else (100, 70, 80)
+        pygame.draw.rect(surf, toggle_color, self.double_jump_rect, border_radius=5)
+        pygame.draw.rect(surf, c.UI, self.double_jump_rect, width=1, border_radius=5)
+        toggle_label = "DOUBLE JUMP: ON" if self.double_jump_enabled else "DOUBLE JUMP: OFF"
+        toggle_text = self._small.render(toggle_label, True, c.UI)
+        surf.blit(toggle_text, toggle_text.get_rect(center=self.double_jump_rect.center))
         pygame.draw.rect(surf, c.PROGRESS_FILL, self.play_rect, border_radius=5)
         pygame.draw.rect(surf, c.UI, self.play_rect, width=1, border_radius=5)
         play_text = self._font.render("PLAY", True, (15, 20, 38))

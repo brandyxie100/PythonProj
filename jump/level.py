@@ -10,7 +10,7 @@ import pygame
 import config as c
 
 ObstacleKind = Literal["spike", "block"]
-Gamemode = Literal["cube", "ship", "ball", "ufo"]
+Gamemode = Literal["cube", "ship", "ball", "ufo", "speed"]
 OrbKind = Literal["yellow", "pink", "blue", "black"]
 
 LEVEL_NAME: str = "Stereo Madness"
@@ -61,7 +61,7 @@ class Obstacle:
 
 @dataclass
 class Portal:
-    """World-space gamemode switch."""
+    """World-space gamemode or speed switch."""
 
     x: float
     mode: Gamemode
@@ -273,6 +273,67 @@ def build_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
     block(x, g - s, w=s * 5)
     finish_x = x + s * 5 + 100
     return objs, portals, orbs, finish_x
+
+
+def build_secret_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float]:
+    """Build the hidden E-S-A challenge course: brutal, but beatable."""
+    ground = c.GROUND_Y
+    obstacles: list[Obstacle] = []
+
+    # Opening cube gauntlet: single, double, and triple spikes with small rests.
+    for x in (500.0, 620.0, 740.0, 860.0, 980.0, 1100.0):
+        obstacles.append(Obstacle("spike", x, ground - 28.0, 28.0, 28.0))
+    for x in (1240.0, 1278.0, 1316.0, 1450.0, 1488.0, 1526.0, 1680.0, 1800.0):
+        obstacles.append(Obstacle("spike", x, ground - 28.0, 28.0, 28.0))
+    obstacles.extend(
+        [
+            Obstacle("block", 1770.0, ground - 72.0, 72.0, 36.0),
+            Obstacle("spike", 1880.0, ground - 28.0, 28.0, 28.0),
+            Obstacle("block", 2040.0, ground - 108.0, 72.0, 36.0),
+        ]
+    )
+
+    # Ship tunnel: alternating ceiling/floor spikes leave a narrow center lane.
+    for index, x in enumerate(range(2240, 3200, 120)):
+        top = index % 2 == 1
+        obstacles.append(
+            Obstacle(
+                "spike",
+                float(x),
+                c.CEILING_Y if top else ground - 28.0,
+                28.0,
+                28.0,
+            )
+        )
+        if index in (2, 5):
+            obstacles.append(
+                Obstacle("block", float(x + 48), c.CEILING_Y + 54.0, 36.0, 36.0)
+            )
+
+    # Final cube section after the speed boost: demanding rhythm with recovery orbs.
+    for x in (3460.0, 3620.0, 3780.0, 3940.0):
+        obstacles.append(Obstacle("spike", x, ground - 28.0, 28.0, 28.0))
+    obstacles.extend(
+        [
+            Obstacle("spike", 4100.0, ground - 28.0, 28.0, 28.0),
+            Obstacle("spike", 4138.0, ground - 28.0, 28.0, 28.0),
+            Obstacle("block", 4300.0, ground - 72.0, 72.0, 36.0),
+            Obstacle("spike", 4420.0, ground - 28.0, 28.0, 28.0),
+        ]
+    )
+    portals = [
+        Portal(420.0, "speed"),
+        Portal(2160.0, "ship"),
+        Portal(3240.0, "speed"),
+        Portal(3380.0, "cube"),
+    ]
+    orbs = [
+        Orb("black", 1120.0, ground - 120.0),
+        Orb("pink", 1660.0, ground - 150.0),
+        Orb("yellow", 2700.0, (c.CEILING_Y + ground) / 2),
+        Orb("black", 4000.0, ground - 120.0),
+    ]
+    return obstacles, portals, orbs, 4700.0
 
 
 def draw_obstacle(surf: pygame.Surface, obs: Obstacle, camera_x: float) -> None:

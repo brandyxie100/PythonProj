@@ -10,7 +10,7 @@ import pytest
 import config as c
 from editor import Editor
 from game import Game
-from level import Obstacle, LEVEL_NAME, build_level
+from level import Obstacle, Portal, LEVEL_NAME, build_level, build_secret_level
 from menu import MainMenu
 from player import Player
 
@@ -117,6 +117,17 @@ def test_progress_increases_with_camera() -> None:
     assert game.progress() == pytest.approx(0.5, abs=0.05)
 
 
+def test_speed_portal_increases_scroll_speed() -> None:
+    game = Game()
+    speed_portal = Portal(c.PLAYER_SCREEN_X, "speed")
+    game.portals = [speed_portal]
+    game._check_portals()
+    assert game.scroll_speed == pytest.approx(
+        c.SCROLL_SPEED * c.SPEED_PORTAL_MULTIPLIER
+    )
+    assert game.player.mode == "cube"
+
+
 def test_ship_hold_flies_up_release_flies_down() -> None:
     p = Player()
     p.set_mode("ship")
@@ -220,6 +231,63 @@ def test_editor_play_requests_custom_level() -> None:
     game = Game(editor.level_data())
     assert editor.request_play
     assert game.finish_x == editor.finish_x
+
+
+def test_editor_toggles_double_jump() -> None:
+    editor = Editor()
+    editor.handle_event(
+        pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=editor.double_jump_rect.center
+        )
+    )
+    assert not editor.double_jump_enabled
+    player = Player(double_jump_enabled=editor.double_jump_enabled)
+    player.jump()
+    player.vy = 80.0
+    player.jump()
+    assert player.air_jumps_left == 0
+
+
+def test_editor_save_button(monkeypatch: pytest.MonkeyPatch) -> None:
+    editor = Editor()
+    saved = []
+    monkeypatch.setattr(editor, "save", lambda: saved.append(True))
+    editor.handle_event(
+        pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=editor.save_rect.center)
+    )
+    assert saved == [True]
+
+
+def test_editor_unsave_button(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "custom_level.json"
+    path.write_text("{}")
+    import editor as editor_module
+
+    monkeypatch.setattr(editor_module, "LEVEL_FILE", path)
+    editor = Editor()
+    editor.handle_event(
+        pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=editor.unsave_rect.center
+        )
+    )
+    assert not path.exists()
+
+
+def test_editor_esa_secret_sequence() -> None:
+    editor = Editor()
+    for key in (pygame.K_e, pygame.K_s, pygame.K_a):
+        editor.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key))
+    secret = build_secret_level()
+    assert editor.request_secret
+    assert editor.request_play
+    assert secret[3] > 3000
+    assert [portal.mode for portal in secret[1]] == [
+        "speed",
+        "ship",
+        "speed",
+        "cube",
+    ]
+    assert len(secret[0]) >= 35
 
 
 def test_esc_requests_menu() -> None:
