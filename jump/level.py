@@ -11,7 +11,7 @@ import config as c
 
 ObstacleKind = Literal["spike", "block"]
 Gamemode = Literal["cube", "ship", "ball", "ufo", "speed"]
-OrbKind = Literal["yellow", "pink", "blue", "black"]
+OrbKind = Literal["yellow", "pink", "blue", "black", "white"]
 
 LEVEL_NAME: str = "Stereo Madness"
 
@@ -283,7 +283,19 @@ def build_secret_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float
     # Opening cube gauntlet: single, double, and triple spikes with small rests.
     for x in (500.0, 620.0, 740.0, 860.0, 980.0, 1100.0):
         obstacles.append(Obstacle("spike", x, ground - 28.0, 28.0, 28.0))
-    for x in (1240.0, 1278.0, 1316.0, 1450.0, 1488.0, 1526.0, 1680.0, 1800.0):
+    for x in (
+        1240.0,
+        1278.0,
+        1316.0,
+        1450.0,
+        1488.0,
+        1526.0,
+        1680.0,
+        1800.0,
+        1920.0,
+        1960.0,
+        2000.0,
+    ):
         obstacles.append(Obstacle("spike", x, ground - 28.0, 28.0, 28.0))
     obstacles.extend(
         [
@@ -323,6 +335,7 @@ def build_secret_level() -> tuple[list[Obstacle], list[Portal], list[Orb], float
     )
     portals = [
         Portal(420.0, "speed"),
+        Portal(2050.0, "speed"),
         Portal(2160.0, "ship"),
         Portal(3240.0, "speed"),
         Portal(3380.0, "cube"),
@@ -414,6 +427,7 @@ def draw_orb(surf: pygame.Surface, orb: Orb, camera_x: float, pulse: float) -> N
         "pink": c.ORB_PINK,
         "blue": c.ORB_BLUE,
         "black": c.ORB_BLACK,
+        "white": c.ORB_WHITE,
     }
     color = colors[orb.kind]
     r = int(c.ORB_RADIUS + 2 * abs((pulse * 5) % 2 - 1))

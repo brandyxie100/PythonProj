@@ -23,10 +23,14 @@ class MainMenu:
         self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 416, 280, 58)
         self._choice: Optional[str] = None
         self._pulse = 0.0
+        self._typed = ""
+        self.vault_unlocked = False
+        self.vault_key = False
+        self.path_completed: set[int] = set()
 
     @property
     def choice(self) -> Optional[str]:
-        """``'play'``, ``'editor'``, ``'quit'``, or ``None`` until picked."""
+        """``'play'``, ``'editor'``, ``'vault'``, ``'quit'``, or ``None``."""
         return self._choice
 
     def reset(self) -> None:
@@ -36,6 +40,16 @@ class MainMenu:
     def handle_event(self, event: pygame.event.Event) -> None:
         """Click / keyboard shortcuts for Play and Quit."""
         if event.type == pygame.KEYDOWN:
+            key_name = pygame.key.name(event.key).lower()
+            if key_name.isalpha() and len(key_name) == 1:
+                self._typed = (self._typed + key_name)[-6:]
+                if self._typed.endswith("unlock"):
+                    self.vault_unlocked = True
+                    self._typed = ""
+                elif self._typed.endswith("vault"):
+                    self._choice = "vault"
+                    self._typed = ""
+                    return
             if event.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._choice = "play"
             elif event.key == pygame.K_e:
@@ -96,6 +110,11 @@ class MainMenu:
             c.PORTAL_SHIP,
         )
         surf.blit(tip, tip.get_rect(center=(c.SCREEN_W // 2, 242)))
+
+        lock_label = "VAULT UNLOCKED" if self.vault_unlocked else "VAULT LOCKED"
+        lock_color = c.PROGRESS_FILL if self.vault_unlocked else c.UI_DIM
+        lock_text = self._tiny.render(lock_label, True, lock_color)
+        surf.blit(lock_text, lock_text.get_rect(center=(c.SCREEN_W // 2, 254)))
 
         mouse = pygame.mouse.get_pos()
         self._draw_button(

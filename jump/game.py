@@ -25,6 +25,7 @@ class Game:
         level_data: tuple[list[Obstacle], list[Portal], list[Orb], float] | None = None,
         *,
         double_jump_enabled: bool = True,
+        path_level: int | None = None,
     ) -> None:
         """Load the course and reset run stats."""
         self._font = pygame.font.SysFont("Arial", 28, bold=True)
@@ -45,6 +46,8 @@ class Game:
         self._jump_held = False
         self.request_menu = False
         self._level_data = level_data
+        self.is_first_level = level_data is None
+        self.path_level = path_level
         self._reset_level()
 
     def _reset_level(self) -> None:

@@ -102,5 +102,6 @@ ORB_YELLOW: tuple[int, int, int] = (255, 220, 50)
 ORB_PINK: tuple[int, int, int] = (255, 90, 200)
 ORB_BLUE: tuple[int, int, int] = (70, 160, 255)
 ORB_BLACK: tuple[int, int, int] = (8, 8, 12)
+ORB_WHITE: tuple[int, int, int] = (245, 250, 255)
 
 DEATH_FLASH_TIME: float = 0.55

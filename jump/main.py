@@ -11,6 +11,8 @@ from game import Game
 from editor import Editor
 from level import build_secret_level
 from menu import MainMenu
+from path import Path, build_path_level
+from vault import Vault
 
 
 def main() -> int:
@@ -23,6 +25,8 @@ def main() -> int:
     menu = MainMenu()
     game: Game | None = None
     editor: Editor | None = None
+    vault: Vault | None = None
+    path: Path | None = None
     scene = "menu"
 
     running = True
@@ -40,6 +44,10 @@ def main() -> int:
                 game.handle_event(event)
             elif editor is not None:
                 editor.handle_event(event)
+            elif vault is not None:
+                vault.handle_event(event)
+            elif path is not None:
+                path.handle_event(event)
 
         if scene == "menu":
             menu.update(dt)
@@ -51,11 +59,22 @@ def main() -> int:
                 editor = Editor()
                 scene = "editor"
                 menu.reset()
+            elif menu.choice == "vault":
+                vault = Vault(menu.vault_unlocked, menu.vault_key)
+                scene = "vault"
+                menu.reset()
             elif menu.choice == "quit":
                 running = False
             menu.draw(screen)
         elif game is not None:
             game.update(dt)
+            if game.state == "won" and game.is_first_level:
+                menu.vault_key = True
+            if game.state == "won" and game.path_level is not None and path is not None:
+                menu.path_completed.add(game.path_level)
+                game = None
+                scene = "path"
+                continue
             if game.request_menu:
                 scene = "menu"
                 menu.reset()
@@ -80,6 +99,31 @@ def main() -> int:
                 editor = None
             else:
                 editor.draw(screen)
+        elif vault is not None:
+            vault.update(dt)
+            if vault.request_path:
+                path = Path(menu.path_completed)
+                vault = None
+                scene = "path"
+            elif vault.request_menu:
+                scene = "menu"
+                menu.reset()
+                vault = None
+            else:
+                vault.draw(screen)
+        elif path is not None:
+            path.update(dt)
+            if path.level_to_play is not None:
+                level_index = path.level_to_play
+                path.level_to_play = None
+                game = Game(build_path_level(level_index), path_level=level_index)
+                scene = "game"
+            elif path.request_vault:
+                vault = Vault(menu.vault_unlocked, menu.vault_key)
+                path = None
+                scene = "vault"
+            else:
+                path.draw(screen)
 
         pygame.display.flip()
 

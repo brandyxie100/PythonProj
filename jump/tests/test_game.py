@@ -13,6 +13,8 @@ from game import Game
 from level import Obstacle, Portal, LEVEL_NAME, build_level, build_secret_level
 from menu import MainMenu
 from player import Player
+from vault import Vault
+from path import Path, build_path_level
 
 
 @pytest.fixture(autouse=True)
@@ -207,6 +209,43 @@ def test_menu_editor_on_e() -> None:
     assert menu.choice == "editor"
 
 
+def test_menu_unlocks_and_opens_vault() -> None:
+    menu = MainMenu()
+    for key in (pygame.K_u, pygame.K_n, pygame.K_l, pygame.K_o, pygame.K_c, pygame.K_k):
+        menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key))
+    assert menu.vault_unlocked
+    for key in (pygame.K_v, pygame.K_a, pygame.K_u, pygame.K_l, pygame.K_t):
+        menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key))
+    assert menu.choice == "vault"
+    assert Vault(menu.vault_unlocked).unlocked
+
+
+def test_vault_explodes_after_ten_taps_and_needs_key() -> None:
+    vault = Vault(True, has_key=False)
+    for _ in range(10):
+        vault.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(480, 250))
+        )
+    assert vault.exploded
+    assert not vault.has_key
+
+
+def test_vault_path_has_ten_levels_and_white_orbs() -> None:
+    path = Path()
+    assert len(path.level_rects) == 10
+    level = build_path_level(9)
+    assert level[2][0].kind == "white"
+    path.completed.update(range(10))
+    assert path.door_open
+
+
+def test_first_level_grants_vault_key() -> None:
+    game = Game()
+    assert game.is_first_level
+    custom = Game(([], [], [], 1000.0))
+    assert not custom.is_first_level
+
+
 def test_editor_places_snapped_spike() -> None:
     editor = Editor()
     editor.place((100, int(c.GROUND_Y)))
@@ -282,6 +321,7 @@ def test_editor_esa_secret_sequence() -> None:
     assert editor.request_play
     assert secret[3] > 3000
     assert [portal.mode for portal in secret[1]] == [
+        "speed",
         "speed",
         "ship",
         "speed",
