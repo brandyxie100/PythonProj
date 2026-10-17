@@ -164,3 +164,42 @@ def test_cross_campaign_has_hybrid_zombies() -> None:
     assert c.EMBER_CONE_ZOMBIE in all_names
     assert c.FLAG_PAPER_ZOMBIE in all_names
     assert c.CONE_BUCKET_ZOMBIE in all_names
+    assert c.RUSH_FLAG_ZOMBIE in all_names
+    assert c.IRON_BUCKET_ZOMBIE in all_names
+    assert c.FROST_PAPER_ZOMBIE in all_names
+
+
+def test_cross_pools_include_extra_base_plants() -> None:
+    """Cross chapters offer Chomper, Squash, Threepeater, and at least one shroom."""
+    root = Path(__file__).resolve().parents[1] / "source" / "data" / "map"
+    required = {c.CHOMPER, c.SQUASH, c.THREEPEASHOOTER}
+    any_shroom = {c.PUFFSHROOM, c.SCAREDYSHROOM, c.SUNSHROOM, c.ICESHROOM, c.HYPNOSHROOM}
+    for i in range(1, c.MAX_CROSS_LEVEL + 1):
+        data = json.loads((root / f"cross_{i}.json").read_text())
+        names = {entry["name"] for entry in data[c.CARD_POOL]}
+        assert required <= names, f"cross_{i} missing combat plants"
+        assert names & any_shroom, f"cross_{i} missing shroom"
+
+
+def test_chomp_nut_and_squash_pea_recipes() -> None:
+    from source.component.hybrids import fuse_plant_names
+
+    chomp = fuse_plant_names(c.CHOMPER, c.WALLNUT, rng=__import__("random").Random(7))
+    assert chomp.name == c.CHOMP_NUT
+    assert chomp.chomps is True
+    assert chomp.health >= c.WALLNUT_HEALTH
+
+    squash = fuse_plant_names(c.SQUASH, c.PEASHOOTER, rng=__import__("random").Random(8))
+    assert squash.name == c.SQUASH_PEA
+    assert squash.squashes is True
+    assert squash.shoots is True
+
+    frost = fuse_plant_names(c.SNOWPEASHOOTER, c.POTATOMINE, rng=__import__("random").Random(9))
+    assert frost.name == c.FROST_MINE
+    assert frost.mine and frost.ice and frost.shoots
+
+
+def test_new_zombie_constants_exist() -> None:
+    assert c.RUSH_FLAG_HEALTH < c.FLAG_HEALTH or c.RUSH_FLAG_HEALTH > 0
+    assert c.IRON_BUCKET_HEALTH > c.BUCKETHEAD_HEALTH
+    assert c.FROST_PAPER_HEALTH > 0
