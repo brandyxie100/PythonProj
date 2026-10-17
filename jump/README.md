@@ -41,6 +41,13 @@ Click **UNSAVE** to remove the saved copy while keeping the current layout open.
 Enable **INFINITE TEST** in the editor to keep playing without reaching a finish
 line; press `Esc` to stop the test.
 
+Click **SAVE CHAPTER** in the editor to create a new portable chapter in
+`jump/chapters/`. Other players can copy those JSON files into their own
+`jump/chapters/` folder, choose **CHAPTERS** from the main menu, and play them.
+
+The **ADMIN** menu opens a password-gated panel for temporary session unlocks.
+Admin unlocks are not written to saved chapter files.
+
 After unlocking the vault, tapping its lock ten times and earning the key from
 the first level reveals the ten-level path. Each completed path level awards a
 white orb; completing all ten opens the path door.

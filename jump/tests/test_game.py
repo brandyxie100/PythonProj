@@ -9,6 +9,8 @@ import pytest
 
 import config as c
 from editor import Editor
+from chapters import ChapterBrowser, dict_to_level, load_chapters, save_chapter
+from admin import AdminMenu
 from game import Game
 from level import Obstacle, Portal, LEVEL_NAME, build_level, build_secret_level
 from menu import MainMenu
@@ -240,6 +242,41 @@ def test_menu_editor_on_e() -> None:
     assert menu.choice == "editor"
 
 
+def test_menu_c_does_not_open_chapters() -> None:
+    menu = MainMenu()
+    menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_c))
+    assert menu.choice is None
+
+
+def test_menu_admin_button() -> None:
+    menu = MainMenu()
+    menu.handle_event(
+        pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=menu.admin_rect.center)
+    )
+    assert menu.choice == "admin"
+
+
+def test_admin_password_is_masked_and_unlocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    import hashlib
+    import admin as admin_module
+
+    monkeypatch.setattr(
+        admin_module,
+        "_ADMIN_PASSWORD_SHA256",
+        hashlib.sha256("12#34".encode("utf-8")).hexdigest(),
+    )
+    admin = AdminMenu()
+    admin.handle_event(pygame.event.Event(pygame.TEXTINPUT, text="12#34"))
+    assert admin.password == "12#34"
+    admin.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+    assert admin.authenticated
+    assert admin.password == ""
+    admin.handle_event(
+        pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=admin.action_rects["vault"].center)
+    )
+    assert admin.action == "vault"
+
+
 def test_menu_unlocks_and_opens_vault() -> None:
     menu = MainMenu()
     for key in (pygame.K_u, pygame.K_n, pygame.K_l, pygame.K_o, pygame.K_c, pygame.K_k):
@@ -406,6 +443,17 @@ def test_editor_save_button(monkeypatch: pytest.MonkeyPatch) -> None:
         pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=editor.save_rect.center)
     )
     assert saved == [True]
+
+
+def test_editor_save_as_chapter(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    import chapters as chapters_module
+
+    monkeypatch.setattr(chapters_module, "CHAPTERS_DIR", tmp_path)
+    editor = Editor()
+    editor.save_as_chapter()
+    saved = load_chapters()
+    assert len(saved) == 1
+    assert dict_to_level(saved[0][1])[3] == editor.finish_x
 
 
 def test_editor_unsave_button(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:

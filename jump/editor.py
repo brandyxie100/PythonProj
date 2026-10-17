@@ -10,6 +10,7 @@ from typing import Optional
 import pygame
 
 import config as c
+from chapters import save_chapter
 from level import (
     Gamemode,
     Obstacle,
@@ -67,6 +68,7 @@ class Editor:
         self.rotate_rect = pygame.Rect(510, TOOLBAR_TOP + 48, 110, 24)
         self.long_level_rect = pygame.Rect(628, TOOLBAR_TOP + 48, 170, 24)
         self.infinite_test_rect = pygame.Rect(804, TOOLBAR_TOP + 48, 142, 24)
+        self.save_chapter_rect = pygame.Rect(14, TOOLBAR_TOP + 48, 130, 24)
         self.play_rect = pygame.Rect(820, TOOLBAR_TOP + 12, 126, 34)
         if LEVEL_FILE.exists():
             self.load()
@@ -129,6 +131,9 @@ class Editor:
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
+                if self.save_chapter_rect.collidepoint(event.pos):
+                    self.save_as_chapter()
+                    return
                 if self.unsave_rect.collidepoint(event.pos):
                     self.unsave()
                     return
@@ -290,6 +295,21 @@ class Editor:
         self._status = f"Saved {LEVEL_FILE.name}"
         self._status_timer = 3.0
 
+    def save_as_chapter(self) -> None:
+        """Export the current level as a new chapter for other players."""
+        try:
+            target = save_chapter(
+                self.level_data(),
+                double_jump_enabled=self.double_jump_enabled,
+                infinite_test_enabled=self.infinite_test_enabled,
+            )
+        except OSError as error:
+            self._status = f"Chapter save failed: {error.strerror or 'write error'}"
+            self._status_timer = 4.0
+            return
+        self._status = f"Created {target.stem.replace('_', ' ').upper()}"
+        self._status_timer = 3.0
+
     def unsave(self) -> None:
         """Remove the saved level while keeping the current editor layout."""
         try:
@@ -397,7 +417,11 @@ class Editor:
         surf.blit(text, (440, TOOLBAR_TOP + 50))
         help_text = "Click place  Right-click erase  P/O variants  S/L save/load  N new  Esc menu"
         help_surface = self._small.render(help_text, True, c.UI_DIM)
-        surf.blit(help_surface, (14, TOOLBAR_TOP + 48))
+        surf.blit(help_surface, (150, TOOLBAR_TOP + 48))
+        pygame.draw.rect(surf, c.MENU_BTN_HOVER, self.save_chapter_rect, border_radius=5)
+        pygame.draw.rect(surf, c.UI, self.save_chapter_rect, width=1, border_radius=5)
+        chapter_text = self._small.render("SAVE CHAPTER", True, c.UI)
+        surf.blit(chapter_text, chapter_text.get_rect(center=self.save_chapter_rect.center))
         pygame.draw.rect(surf, (100, 70, 80), self.unsave_rect, border_radius=5)
         pygame.draw.rect(surf, c.UI, self.unsave_rect, width=1, border_radius=5)
         unsave_text = self._small.render("UNSAVE", True, c.UI)

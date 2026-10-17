@@ -7,8 +7,10 @@ import sys
 import pygame
 
 import config as c
+from admin import AdminMenu
 from game import Game
 from editor import Editor
+from chapters import ChapterBrowser
 from level import build_secret_level
 from menu import MainMenu
 from path import Path, build_boss_level, build_master_level, build_path_level
@@ -25,6 +27,8 @@ def main() -> int:
     menu = MainMenu()
     game: Game | None = None
     editor: Editor | None = None
+    chapters: ChapterBrowser | None = None
+    admin: AdminMenu | None = None
     vault: Vault | None = None
     path: Path | None = None
     scene = "menu"
@@ -44,6 +48,10 @@ def main() -> int:
                 game.handle_event(event)
             elif editor is not None:
                 editor.handle_event(event)
+            elif chapters is not None:
+                chapters.handle_event(event)
+            elif admin is not None:
+                admin.handle_event(event)
             elif vault is not None:
                 vault.handle_event(event)
             elif path is not None:
@@ -58,6 +66,15 @@ def main() -> int:
             elif menu.choice == "editor":
                 editor = Editor()
                 scene = "editor"
+                menu.reset()
+            elif menu.choice == "chapters":
+                chapters = ChapterBrowser()
+                scene = "chapters"
+                menu.reset()
+            elif menu.choice == "admin":
+                admin = AdminMenu()
+                pygame.key.start_text_input()
+                scene = "admin"
                 menu.reset()
             elif menu.choice == "vault":
                 vault = Vault(menu.vault_unlocked, menu.vault_key)
@@ -104,6 +121,44 @@ def main() -> int:
                 editor = None
             else:
                 editor.draw(screen)
+        elif chapters is not None:
+            chapters.update(dt)
+            if chapters.level_data is not None:
+                game = Game(
+                    chapters.level_data,
+                    double_jump_enabled=chapters.double_jump_enabled,
+                    infinite=chapters.infinite_test_enabled,
+                )
+                chapters = None
+                scene = "game"
+            elif chapters.request_menu:
+                scene = "menu"
+                menu.reset()
+                chapters = None
+            else:
+                chapters.draw(screen)
+        elif admin is not None:
+            admin.update(dt)
+            if admin.action == "vault":
+                menu.vault_unlocked = True
+                menu.vault_key = True
+                admin.action = None
+                admin.message = "Vault and key unlocked for this session"
+            elif admin.action == "path":
+                menu.path_completed.update(range(10))
+                admin.action = None
+                admin.message = "All path levels unlocked for this session"
+            elif admin.action == "boss":
+                menu.boss_unlocked = True
+                admin.action = None
+                admin.message = "Boss level unlocked for this session"
+            if admin.request_menu:
+                pygame.key.stop_text_input()
+                scene = "menu"
+                menu.reset()
+                admin = None
+            else:
+                admin.draw(screen)
         elif vault is not None:
             vault.update(dt)
             if vault.request_path:

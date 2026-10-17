@@ -18,9 +18,12 @@ class MainMenu:
         self._sub = pygame.font.SysFont("Arial", 22)
         self._btn = pygame.font.SysFont("Arial", 28, bold=True)
         self._tiny = pygame.font.SysFont("Arial", 15)
-        self.play_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 268, 280, 58)
-        self.editor_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 342, 280, 58)
-        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 416, 280, 58)
+        self.play_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 248, 280, 42)
+        self.editor_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 298, 280, 42)
+        self.chapters_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 348, 280, 42)
+        self.admin_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 398, 280, 42)
+        self.quit_rect = pygame.Rect(c.SCREEN_W // 2 - 140, 448, 280, 42)
+        self._btn = pygame.font.SysFont("Arial", 23, bold=True)
         self._choice: Optional[str] = None
         self._pulse = 0.0
         self._typed = ""
@@ -31,7 +34,7 @@ class MainMenu:
 
     @property
     def choice(self) -> Optional[str]:
-        """``'play'``, ``'editor'``, ``'vault'``, ``'quit'``, or ``None``."""
+        """Menu choice: play, editor, chapters, admin, vault, quit, or None."""
         return self._choice
 
     def reset(self) -> None:
@@ -63,6 +66,10 @@ class MainMenu:
                 self._choice = "play"
             elif self.editor_rect.collidepoint(event.pos):
                 self._choice = "editor"
+            elif self.chapters_rect.collidepoint(event.pos):
+                self._choice = "chapters"
+            elif self.admin_rect.collidepoint(event.pos):
+                self._choice = "admin"
             elif self.quit_rect.collidepoint(event.pos):
                 self._choice = "quit"
 
@@ -125,6 +132,12 @@ class MainMenu:
             surf, self.editor_rect, "EDITOR", self.editor_rect.collidepoint(mouse)
         )
         self._draw_button(
+            surf, self.chapters_rect, "CHAPTERS", self.chapters_rect.collidepoint(mouse)
+        )
+        self._draw_button(
+            surf, self.admin_rect, "ADMIN", self.admin_rect.collidepoint(mouse)
+        )
+        self._draw_button(
             surf, self.quit_rect, "QUIT", self.quit_rect.collidepoint(mouse)
         )
 
@@ -135,7 +148,7 @@ class MainMenu:
         ]
         for i, line in enumerate(hints):
             text = self._tiny.render(line, True, c.UI_DIM)
-            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 488 + i * 16)))
+            surf.blit(text, text.get_rect(center=(c.SCREEN_W // 2, 503 + i * 14)))
 
     def _draw_button(
         self, surf: pygame.Surface, rect: pygame.Rect, label: str, hover: bool
