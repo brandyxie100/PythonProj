@@ -16,14 +16,15 @@ class Spike:
 
     rect: pg.Rect
     born_ms: int
+    warning_ms: int = 700
     warning: bool = True
 
     def update(self, now_ms: int) -> bool:
         """Advance state. Return False when the spike should despawn."""
         age = now_ms - self.born_ms
-        if self.warning and age >= c.WARNING_MS:
+        if self.warning and age >= self.warning_ms:
             self.warning = False
-        if age >= c.WARNING_MS + c.SPIKE_LIFE_MS:
+        if age >= self.warning_ms + c.SPIKE_LIFE_MS:
             return False
         return True
 
@@ -56,40 +57,137 @@ class LevelLayout:
 
 
 def _layouts() -> list[LevelLayout]:
-    """Three short troll rooms."""
-    ground = pg.Rect(0, c.SCREEN_H - 48, c.SCREEN_W, 48)
+    """Ten rooms: easy → almost-impossible (still jumpable gaps)."""
+    g = c.SCREEN_H - 48  # ground top
+    ground = pg.Rect(0, g, c.SCREEN_W, 48)
+    spawn_y = g - c.PLAYER_H
+
+    def door(x: int, stand_top: int) -> pg.Rect:
+        return pg.Rect(x, stand_top - 64, 40, 64)
+
     return [
+        # 1 Warmup — flat walk to exit
         LevelLayout(
             floors=[ground],
-            platforms=[
-                pg.Rect(180, 340, 140, 18),
-                pg.Rect(420, 280, 140, 18),
-            ],
-            exit_rect=pg.Rect(c.SCREEN_W - 70, c.SCREEN_H - 48 - 64, 40, 64),
-            spawn=(60, c.SCREEN_H - 48 - c.PLAYER_H),
+            platforms=[],
+            exit_rect=door(c.SCREEN_W - 70, g),
+            spawn=(50, spawn_y),
         ),
+        # 2 Stroll — one easy step
         LevelLayout(
             floors=[ground],
-            platforms=[
-                pg.Rect(120, 360, 100, 18),
-                pg.Rect(300, 300, 100, 18),
-                pg.Rect(480, 240, 100, 18),
-                pg.Rect(620, 320, 120, 18),
-            ],
-            exit_rect=pg.Rect(c.SCREEN_W - 70, 320 - 64, 40, 64),
-            spawn=(40, c.SCREEN_H - 48 - c.PLAYER_H),
+            platforms=[pg.Rect(280, 360, 180, 18)],
+            exit_rect=door(c.SCREEN_W - 70, g),
+            spawn=(50, spawn_y),
         ),
+        # 3 Hop — two wide platforms
         LevelLayout(
             floors=[ground],
             platforms=[
-                pg.Rect(90, 380, 90, 18),
-                pg.Rect(250, 320, 90, 18),
-                pg.Rect(410, 260, 90, 18),
-                pg.Rect(560, 200, 90, 18),
-                pg.Rect(680, 340, 100, 18),
+                pg.Rect(180, 360, 150, 18),
+                pg.Rect(420, 300, 150, 18),
             ],
-            exit_rect=pg.Rect(c.SCREEN_W - 60, 340 - 64, 40, 64),
-            spawn=(50, c.SCREEN_H - 48 - c.PLAYER_H),
+            exit_rect=door(c.SCREEN_W - 70, g),
+            spawn=(50, spawn_y),
+        ),
+        # 4 Climb — exit on mid ledge
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(140, 360, 120, 18),
+                pg.Rect(320, 300, 120, 18),
+                pg.Rect(500, 250, 140, 18),
+                pg.Rect(680, 250, 100, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 70, 250),
+            spawn=(40, spawn_y),
+        ),
+        # 5 Zigzag — up then across
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(100, 380, 100, 18),
+                pg.Rect(260, 320, 100, 18),
+                pg.Rect(420, 260, 100, 18),
+                pg.Rect(580, 210, 100, 18),
+                pg.Rect(700, 280, 90, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 60, 280),
+            spawn=(40, spawn_y),
+        ),
+        # 6 Narrow — thinner platforms
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(110, 370, 80, 18),
+                pg.Rect(250, 310, 70, 18),
+                pg.Rect(390, 255, 70, 18),
+                pg.Rect(530, 200, 70, 18),
+                pg.Rect(670, 255, 90, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 55, 255),
+            spawn=(40, spawn_y),
+        ),
+        # 7 Gauntlet — longer path, mid heights
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(80, 390, 70, 18),
+                pg.Rect(200, 340, 70, 18),
+                pg.Rect(320, 290, 70, 18),
+                pg.Rect(440, 240, 70, 18),
+                pg.Rect(560, 190, 70, 18),
+                pg.Rect(680, 240, 80, 18),
+                pg.Rect(680, 340, 80, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 55, 340),
+            spawn=(30, spawn_y),
+        ),
+        # 8 Pressure — tight staircase to high exit
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(90, 390, 65, 18),
+                pg.Rect(200, 340, 60, 18),
+                pg.Rect(310, 290, 60, 18),
+                pg.Rect(420, 240, 60, 18),
+                pg.Rect(530, 190, 60, 18),
+                pg.Rect(640, 150, 70, 18),
+                pg.Rect(720, 150, 70, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 50, 150),
+            spawn=(30, spawn_y),
+        ),
+        # 9 Nightmare — sparse ledges (gaps still jumpable)
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(100, 380, 60, 18),
+                pg.Rect(240, 320, 55, 18),
+                pg.Rect(380, 260, 55, 18),
+                pg.Rect(520, 200, 55, 18),
+                pg.Rect(650, 160, 60, 18),
+                pg.Rect(720, 250, 70, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 50, 250),
+            spawn=(30, spawn_y),
+        ),
+        # 10 Almost Impossible — tall climb, fast spikes, still reachable
+        LevelLayout(
+            floors=[ground],
+            platforms=[
+                pg.Rect(70, 400, 55, 18),
+                pg.Rect(170, 355, 50, 18),
+                pg.Rect(270, 310, 50, 18),
+                pg.Rect(370, 265, 50, 18),
+                pg.Rect(470, 220, 50, 18),
+                pg.Rect(570, 175, 50, 18),
+                pg.Rect(670, 140, 55, 18),
+                pg.Rect(730, 140, 60, 18),
+                pg.Rect(730, 280, 60, 18),
+            ],
+            exit_rect=door(c.SCREEN_W - 45, 280),
+            spawn=(25, spawn_y),
         ),
     ]
 
@@ -151,11 +249,12 @@ class Game:
     def advance_level(self, now_ms: int) -> None:
         if self.level_index + 1 >= c.MAX_LEVEL:
             self.won = True
-            self.message = "You survived the troll."
+            self.message = "You survived all 10 levels."
             return
         self.level_index += 1
-        self.message = f"Level {self.level_index + 1} — spikes get meaner"
-        self.message_until = now_ms + 1500
+        name = c.LEVEL_NAMES[self.level_index]
+        self.message = f"Level {self.level_index + 1}: {name}"
+        self.message_until = now_ms + 1600
         self.reset_level(keep_message=True)
 
     def solids(self) -> list[pg.Rect]:
@@ -165,18 +264,19 @@ class Game:
         """Pick a random solid top edge and plant a spike."""
         surfaces = self.solids()
         surface = self.rng.choice(surfaces)
-        # Keep off the exit pad a bit
+        warn = c.LEVEL_WARNING_MS[self.level_index]
         exit_r = self.layout.exit_rect
         for _ in range(12):
             w = 22
             left = self.rng.randint(surface.left, max(surface.left, surface.right - w))
             rect = pg.Rect(left, surface.top - 28, w, 28)
-            # Don't spawn on player or exit
             if rect.colliderect(self.player_rect.inflate(40, 20)):
                 continue
             if rect.colliderect(exit_r.inflate(30, 10)):
                 continue
-            self.spikes.append(Spike(rect=rect, born_ms=now_ms, warning=True))
+            self.spikes.append(
+                Spike(rect=rect, born_ms=now_ms, warning_ms=warn, warning=True)
+            )
             return
 
     def handle_input(self, keys: pg.key.ScancodeWrapper) -> None:
@@ -225,14 +325,16 @@ class Game:
         if self.message and now_ms > self.message_until:
             self.message = ""
 
-        # Schedule spikes
+        # Schedule spikes (burst grows on later levels)
         interval = c.LEVEL_SPAWN_MS[self.level_index]
         if self.next_spike_ms == 0:
             self.next_spike_ms = now_ms + interval // 2
         elif now_ms >= self.next_spike_ms:
-            self._spawn_spike(now_ms)
-            jitter = self.rng.randint(-300, 400)
-            self.next_spike_ms = now_ms + max(600, interval + jitter)
+            burst = c.LEVEL_SPIKE_BURST[self.level_index]
+            for _ in range(burst):
+                self._spawn_spike(now_ms)
+            jitter = self.rng.randint(-250, 350)
+            self.next_spike_ms = now_ms + max(550, interval + jitter)
 
         # Spike lifecycle
         self.spikes = [s for s in self.spikes if s.update(now_ms)]
@@ -349,8 +451,9 @@ class Game:
         pg.draw.rect(surf, c.PLAYER, self.player_rect, border_radius=4)
 
         # HUD
+        name = c.LEVEL_NAMES[self.level_index]
         hud = font.render(
-            f"Level {self.level_index + 1}/{c.MAX_LEVEL}   A/D move · Up arrow jump",
+            f"Level {self.level_index + 1}/{c.MAX_LEVEL}: {name}   A/D · ↑ jump",
             True,
             c.HUD,
         )
@@ -366,7 +469,7 @@ class Game:
             overlay = pg.Surface((c.SCREEN_W, c.SCREEN_H), pg.SRCALPHA)
             overlay.fill((0, 0, 0, 160))
             surf.blit(overlay, (0, 0))
-            win = big.render("You survived the troll.", True, c.EXIT_C)
-            sub = font.render("Close the window or press Esc to quit.", True, c.TEXT)
+            win = big.render("You survived all 10 levels.", True, c.EXIT_C)
+            sub = font.render("Esc to quit. (Level 10 was only almost impossible.)", True, c.TEXT)
             surf.blit(win, win.get_rect(center=(c.SCREEN_W // 2, c.SCREEN_H // 2 - 20)))
             surf.blit(sub, sub.get_rect(center=(c.SCREEN_W // 2, c.SCREEN_H // 2 + 24)))

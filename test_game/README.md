@@ -22,4 +22,5 @@ python main.py
 
 ## Goal
 
-Reach the green **EXIT** through 3 rooms. Spikes spawn faster each level.
+Reach the green **EXIT** through **10 levels** (Warmup → Almost Impossible).
+Spikes spawn faster and warn shorter each room — level 10 is brutal but still beatable.

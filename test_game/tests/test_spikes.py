@@ -16,21 +16,28 @@ import config as c  # noqa: E402
 
 
 def test_spike_becomes_lethal_after_warning() -> None:
-    spike = Spike(rect=pg.Rect(0, 0, 20, 28), born_ms=0, warning=True)
+    warn = 700
+    spike = Spike(rect=pg.Rect(0, 0, 20, 28), born_ms=0, warning_ms=warn, warning=True)
     assert spike.is_lethal() is False
-    assert spike.update(c.WARNING_MS) is True
+    assert spike.update(warn) is True
     assert spike.warning is False
     assert spike.is_lethal() is True
 
 
 def test_spike_despawns() -> None:
-    spike = Spike(rect=pg.Rect(0, 0, 20, 28), born_ms=0, warning=True)
-    assert spike.update(c.WARNING_MS + c.SPIKE_LIFE_MS + 1) is False
+    warn = 700
+    spike = Spike(rect=pg.Rect(0, 0, 20, 28), born_ms=0, warning_ms=warn, warning=True)
+    assert spike.update(warn + c.SPIKE_LIFE_MS + 1) is False
 
 
-def test_game_has_three_levels() -> None:
+def test_game_has_ten_levels() -> None:
     g = Game(rng=__import__("random").Random(0))
-    assert len(g._layouts) == c.MAX_LEVEL
+    assert c.MAX_LEVEL == 10
+    assert len(g._layouts) == 10
+    assert len(c.LEVEL_SPAWN_MS) == 10
+    assert len(c.LEVEL_WARNING_MS) == 10
+    assert c.LEVEL_SPAWN_MS[-1] >= 700  # hard, not impossible
+    assert c.LEVEL_WARNING_MS[-1] >= 400
     assert g.level_index == 0
 
 
