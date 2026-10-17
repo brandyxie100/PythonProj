@@ -81,7 +81,8 @@ TRAIT_PROFILES: dict[str, HybridConfig] = {
     ),
     c.POTATOMINE: HybridConfig(
         c.POTATOMINE, "Potato Mine", c.POTATOMINE, (210, 190, 90),
-        mine=True, colorkey_white=True, health=c.PLANT_HEALTH + 1,
+        # Extra HP so fused potato bodies still soak bites while arming / after merge.
+        mine=True, colorkey_white=True, health=c.PLANT_HEALTH + 8,
     ),
     c.SPIKEWEED: HybridConfig(
         c.SPIKEWEED, "Spikeweed", c.SPIKEWEED, (90, 160, 80),

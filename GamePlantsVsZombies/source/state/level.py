@@ -445,6 +445,16 @@ class Level(tool.State):
                             zombie.setAttack(plant)
                     elif plant.name == c.TORCH_NUT:
                         zombie.setAttack(plant)
+                    elif getattr(plant, "config", None) is not None:
+                        # Cross hybrids: keep Wall-Nut style blocking; spikes/mines special.
+                        cfg = plant.config
+                        if cfg.spikes:
+                            pass
+                        elif cfg.mine:
+                            if getattr(plant, "is_init", True):
+                                zombie.setAttack(plant)
+                        else:
+                            zombie.setAttack(plant)
                     else:
                         zombie.setAttack(plant)
             for hypno_zombie in self.hypno_zombie_groups[i]:
@@ -493,13 +503,16 @@ class Level(tool.State):
         map_x, map_y = self.map.getMapIndex(x, y)
         if self.bar_type != c.CHOOSEBAR_BOWLING:
             self.map.setMapGridType(map_x, map_y, c.MAP_EMPTY)
-        boom_hybrid = bool(
-            getattr(getattr(plant, "config", None), "explode", False)
+        cfg = getattr(plant, "config", None)
+        boom_hybrid = bool(getattr(cfg, "explode", False))
+        # Armed potato-mine trait on any Cross fusion still detonates on death.
+        mine_boom = bool(
+            getattr(cfg, "mine", False) and not getattr(plant, "is_init", True)
         )
         if (plant.name == c.CHERRYBOMB or plant.name == c.JALAPENO or
             (plant.name == c.POTATOMINE and not plant.is_init) or
             (plant.name == c.SPIKE_MINE and not getattr(plant, "is_init", True)) or
-            boom_hybrid or
+            boom_hybrid or mine_boom or
             plant.name == c.REDWALLNUTBOWLING):
             y_range = getattr(plant, "explode_y_range", 0)
             x_range = getattr(plant, "explode_x_range", c.GRID_X_SIZE)
@@ -587,16 +600,29 @@ class Level(tool.State):
         elif(plant.name == c.WALLNUTBOWLING or
              plant.name == c.REDWALLNUTBOWLING):
             pass
+        elif getattr(plant, "config", None) is not None:
+            # Cross HybridPlant: keep ALL fused abilities active together.
+            # Always pass the lane zombie group so mine + spikes work with shooting.
+            can_attack = False
+            if zombie_len > 0:
+                for zombie in self.zombie_groups[i]:
+                    if plant.canAttack(zombie):
+                        can_attack = True
+                        break
+            if can_attack:
+                plant.setAttack(self.zombie_groups[i])
+            elif plant.state == c.ATTACK:
+                plant.setIdle()
         else:
             can_attack = False
-            if (plant.state == c.IDLE and zombie_len > 0):
+            if zombie_len > 0:
                 for zombie in self.zombie_groups[i]:
                     if plant.canAttack(zombie):
                         can_attack = True
                         break
             if plant.state == c.IDLE and can_attack:
                 plant.setAttack()
-            elif (plant.state == c.ATTACK and not can_attack):
+            elif plant.state == c.ATTACK and not can_attack:
                 plant.setIdle()
 
     def checkPlants(self):

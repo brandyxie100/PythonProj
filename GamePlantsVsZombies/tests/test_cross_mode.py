@@ -104,6 +104,42 @@ def test_map_show_plant_or_merge() -> None:
     assert m.isOccupied(2, 1)
 
 
+def test_pea_potato_fusion_keeps_both_abilities() -> None:
+    """Merged peashooter + potato mine must still shoot and mine."""
+    from source.component.hybrids import fuse_plant_names
+
+    cfg = fuse_plant_names(
+        c.PEASHOOTER, c.POTATOMINE, rng=__import__("random").Random(4)
+    )
+    assert cfg.shoots is True
+    assert cfg.mine is True
+    assert cfg.health > TRAIT_PROFILES[c.PEASHOOTER].health
+
+
+def test_pea_wallnut_fusion_keeps_shoot_and_tank() -> None:
+    """Merged peashooter + wall-nut must shoot and keep high HP for blocking."""
+    from source.component.hybrids import fuse_plant_names
+
+    cfg = fuse_plant_names(
+        c.PEASHOOTER, c.WALLNUT, rng=__import__("random").Random(5)
+    )
+    assert cfg.shoots is True
+    assert cfg.health >= c.WALLNUT_HEALTH
+    assert cfg.mine is False
+
+
+def test_cross_maps_longer_and_denser() -> None:
+    """Each Cross chapter lasts longer and has more zombies than the short draft."""
+    root = Path(__file__).resolve().parents[1] / "source" / "data" / "map"
+    # Chapter 1: was ~11 zombies / ~94s; expect denser + longer.
+    mins = {1: (20, 150000), 2: (24, 170000), 3: (28, 190000)}
+    for i, (min_count, min_last_ms) in mins.items():
+        data = json.loads((root / f"cross_{i}.json").read_text())
+        zombies = data[c.ZOMBIE_LIST]
+        assert len(zombies) >= min_count, f"cross_{i} zombie count"
+        assert max(z["time"] for z in zombies) >= min_last_ms, f"cross_{i} duration"
+
+
 def test_cross_maps_exist() -> None:
     root = Path(__file__).resolve().parents[1] / "source" / "data" / "map"
     for i in range(1, c.MAX_CROSS_LEVEL + 1):

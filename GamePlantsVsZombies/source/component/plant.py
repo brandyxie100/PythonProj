@@ -1103,17 +1103,26 @@ class HybridPlant(Plant):
     def idling(self):
         pass
 
+    def _zombie_on_mine(self, zombie) -> bool:
+        """True if an armed mine trigger overlaps this zombie."""
+        if zombie.state == c.DIE:
+            return False
+        trigger = self.rect.inflate(self.explode_x_range // 2, 24)
+        return zombie.rect.colliderect(trigger)
+
     def canAttack(self, zombie):
+        """Any retained parent ability that can engage this zombie (OR, not exclusive)."""
         if zombie.state == c.DIE:
             return False
         cfg = self.config
-        if cfg.mine and not self.is_init:
-            trigger = self.rect.inflate(self.explode_x_range // 2, 24)
-            return zombie.rect.colliderect(trigger)
-        if cfg.spikes:
-            return self.rect.x <= zombie.rect.right and self.rect.right >= zombie.rect.x
-        if cfg.shoots:
-            return self.rect.x <= zombie.rect.right
+        if cfg.mine and not self.is_init and self._zombie_on_mine(zombie):
+            return True
+        if cfg.spikes and self.rect.x <= zombie.rect.right and self.rect.right >= zombie.rect.x:
+            return True
+        if cfg.shoots and self.rect.x <= zombie.rect.right:
+            return True
+        # Tank / blocker hybrids (Wall-Nut body) still "engage" by being chewed —
+        # attack state is driven by zombies; keep False here so we idle-shoot only.
         return False
 
     def setAttack(self, zombie_group=None):
@@ -1122,21 +1131,39 @@ class HybridPlant(Plant):
         self.state = c.ATTACK
 
     def attacking(self):
+        """Run all fused combat abilities in the same tick (shoot + spikes + mine)."""
         cfg = self.config
+
+        # Potato-Mine fuse: keep shooting until a zombie steps on the armed mine.
         if cfg.mine and not self.is_init:
-            if self.bomb_timer == 0:
-                self.bomb_timer = self.current_time
-            elif (self.current_time - self.bomb_timer) > 300:
-                self.health = 0
-            return
+            on_mine = False
+            if self.zombie_group is not None:
+                for zombie in self.zombie_group:
+                    if self._zombie_on_mine(zombie):
+                        on_mine = True
+                        break
+            if on_mine:
+                if self.bomb_timer == 0:
+                    self.bomb_timer = self.current_time
+                elif (self.current_time - self.bomb_timer) > 300:
+                    self.health = 0
+                    return
+            else:
+                self.bomb_timer = 0
+
         if cfg.spikes and self.zombie_group is not None:
-            interval = max(400, self.shoot_interval)
+            interval = max(400, int(getattr(cfg, "spike_interval", self.shoot_interval)))
             if (self.current_time - self.spike_timer) > interval:
                 self.spike_timer = self.current_time
                 dmg = max(1, int(round(cfg.spike_damage * self.power_mult)))
                 for zombie in self.zombie_group:
-                    if self.canAttack(zombie):
+                    if (
+                        zombie.state != c.DIE
+                        and self.rect.x <= zombie.rect.right
+                        and self.rect.right >= zombie.rect.x
+                    ):
                         zombie.setDamage(dmg, False)
+
         if cfg.shoots and self.bullet_group is not None:
             if (self.current_time - self.shoot_timer) > self.shoot_interval:
                 bullet_name = c.BULLET_PEA_ICE if cfg.ice else c.BULLET_PEA
