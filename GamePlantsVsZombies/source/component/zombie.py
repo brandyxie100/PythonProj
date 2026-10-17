@@ -459,3 +459,36 @@ class EmberConeZombie(ConeHeadZombie):
         self.health = c.EMBER_CONE_HEALTH
         self.speed = 2
         self.skin_tint = (255, 140, 60)
+
+
+class RushFlagZombie(FlagZombie):
+    """Fast scout flag zombie (cyan tint, low HP, high speed)."""
+
+    def __init__(self, x, y, head_group):
+        FlagZombie.__init__(self, x, y, head_group)
+        self.name = c.RUSH_FLAG_ZOMBIE
+        self.health = c.RUSH_FLAG_HEALTH
+        self.speed = 3
+        self.skin_tint = (80, 255, 220)
+
+
+class IronBucketZombie(BucketHeadZombie):
+    """Ultra-tank bucket zombie (steel tint, very high HP)."""
+
+    def __init__(self, x, y, head_group):
+        BucketHeadZombie.__init__(self, x, y, head_group)
+        self.name = c.IRON_BUCKET_ZOMBIE
+        self.health = c.IRON_BUCKET_HEALTH
+        self.damage = 2
+        self.skin_tint = (160, 170, 190)
+
+
+class FrostPaperZombie(NewspaperZombie):
+    """Chilling newspaper zombie (ice tint, solid HP, bites harder)."""
+
+    def __init__(self, x, y, head_group):
+        NewspaperZombie.__init__(self, x, y, head_group)
+        self.name = c.FROST_PAPER_ZOMBIE
+        self.health = c.FROST_PAPER_HEALTH
+        self.damage = 2
+        self.skin_tint = (180, 230, 255)

@@ -1025,6 +1025,10 @@ class HybridPlant(Plant):
         self.is_init = bool(config.mine)
         self.init_timer = 0
         self.bomb_timer = 0
+        self.digest_timer = 0
+        self.attack_zombie = None
+        self.chomp_windup = 0
+        self.squash_windup = 0
         self.explode_y_range = config.explode_y_range
         self.explode_x_range = config.explode_x_range
         self.overlay_sprite = config.overlay_sprite
@@ -1110,29 +1114,81 @@ class HybridPlant(Plant):
         trigger = self.rect.inflate(self.explode_x_range // 2, 24)
         return zombie.rect.colliderect(trigger)
 
-    def canAttack(self, zombie):
-        """Any retained parent ability that can engage this zombie (OR, not exclusive)."""
+    def _melee_range(self, zombie) -> bool:
+        """True if zombie is within one-tile melee of this hybrid."""
         if zombie.state == c.DIE:
             return False
+        return (
+            self.rect.x <= zombie.rect.right
+            and self.rect.right + c.GRID_X_SIZE // 2 >= zombie.rect.x
+        )
+
+    def canAttack(self, zombie):
+        """Any retained parent ability that can engage this zombie (OR, not exclusive)."""
+        if zombie.state == c.DIE or self.state == c.DIGEST:
+            return False
         cfg = self.config
+        if cfg.chomps and self._melee_range(zombie):
+            return True
+        if cfg.squashes and self.state == c.IDLE and self._melee_range(zombie):
+            return True
         if cfg.mine and not self.is_init and self._zombie_on_mine(zombie):
             return True
         if cfg.spikes and self.rect.x <= zombie.rect.right and self.rect.right >= zombie.rect.x:
             return True
         if cfg.shoots and self.rect.x <= zombie.rect.right:
             return True
-        # Tank / blocker hybrids (Wall-Nut body) still "engage" by being chewed —
-        # attack state is driven by zombies; keep False here so we idle-shoot only.
         return False
 
-    def setAttack(self, zombie_group=None):
+    def setAttack(self, zombie_group=None, zombie=None):
         if zombie_group is not None:
             self.zombie_group = zombie_group
+        if zombie is not None:
+            self.attack_zombie = zombie
         self.state = c.ATTACK
 
-    def attacking(self):
-        """Run all fused combat abilities in the same tick (shoot + spikes + mine)."""
+    def setDigest(self):
+        """Enter Chomper-style digest cooldown after a bite."""
+        self.state = c.DIGEST
+        self.digest_timer = 0
+        self.attack_zombie = None
+        self.chomp_windup = 0
+
+    def digest(self):
         cfg = self.config
+        if self.digest_timer == 0:
+            self.digest_timer = self.current_time
+        elif (self.current_time - self.digest_timer) > cfg.digest_ms:
+            self.digest_timer = 0
+            self.setIdle()
+
+    def attacking(self):
+        """Run all fused combat abilities in the same tick (shoot + spikes + mine + bite)."""
+        cfg = self.config
+
+        # Chomper fuse: bite a melee zombie, then digest.
+        if cfg.chomps and self.attack_zombie is not None:
+            if self.chomp_windup == 0:
+                self.chomp_windup = self.current_time
+            elif (self.current_time - self.chomp_windup) > 400:
+                prey = self.attack_zombie
+                if self.zombie_group is not None and prey in self.zombie_group:
+                    self.zombie_group.remove(prey)
+                prey.kill()
+                self.setDigest()
+                return
+
+        # Squash fuse: leap-crush once, then die (still shoot until impact).
+        if cfg.squashes and self.attack_zombie is not None:
+            if self.squash_windup == 0:
+                self.squash_windup = self.current_time
+            elif (self.current_time - self.squash_windup) > 700:
+                prey = self.attack_zombie
+                if self.zombie_group is not None and prey in self.zombie_group:
+                    self.zombie_group.remove(prey)
+                prey.kill()
+                self.health = 0
+                return
 
         # Potato-Mine fuse: keep shooting until a zombie steps on the armed mine.
         if cfg.mine and not self.is_init:

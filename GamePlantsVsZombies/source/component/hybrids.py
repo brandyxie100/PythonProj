@@ -45,6 +45,9 @@ class HybridConfig:
     explode: bool = False
     explode_y_range: int = 0
     explode_x_range: int = c.GRID_X_SIZE
+    chomps: bool = False
+    squashes: bool = False
+    digest_ms: int = 12000
     colorkey_white: bool = False
     overlay_sprite: str | None = None
 
@@ -106,11 +109,11 @@ TRAIT_PROFILES: dict[str, HybridConfig] = {
     ),
     c.CHOMPER: HybridConfig(
         c.CHOMPER, "Chomper", c.CHOMPER, (80, 160, 80),
-        health=c.PLANT_HEALTH + 4,
+        chomps=True, health=c.PLANT_HEALTH + 4, digest_ms=12000,
     ),
     c.SQUASH: HybridConfig(
         c.SQUASH, "Squash", c.SQUASH, (80, 180, 80),
-        colorkey_white=True, health=c.PLANT_HEALTH + 2,
+        squashes=True, colorkey_white=True, health=c.PLANT_HEALTH + 2,
     ),
     c.ICESHROOM: HybridConfig(
         c.ICESHROOM, "Ice-Shroom", c.ICESHROOM, (160, 220, 255),
@@ -201,6 +204,43 @@ HYBRID_CONFIGS: dict[str, HybridConfig] = {
         mine_arm_ms=8000,
         health=c.PLANT_HEALTH + 6,
     ),
+    c.CHOMP_NUT: HybridConfig(
+        name=c.CHOMP_NUT,
+        display_name="Chomp-Nut",
+        primary_sprite=c.WALLNUT,
+        overlay_sprite=c.CHOMPER,
+        tint=(100, 180, 90),
+        health=c.WALLNUT_HEALTH + 12,
+        chomps=True,
+        digest_ms=10000,
+    ),
+    c.SQUASH_PEA: HybridConfig(
+        name=c.SQUASH_PEA,
+        display_name="Squash-Pea",
+        primary_sprite=c.PEASHOOTER,
+        overlay_sprite=c.SQUASH,
+        tint=(140, 220, 100),
+        shoots=True,
+        burst=1,
+        bullet_damage=2,
+        squashes=True,
+        colorkey_white=True,
+        health=c.PLANT_HEALTH + 6,
+    ),
+    c.FROST_MINE: HybridConfig(
+        name=c.FROST_MINE,
+        display_name="Frost-Mine",
+        primary_sprite=c.SNOWPEASHOOTER,
+        overlay_sprite=c.POTATOMINE,
+        tint=(160, 220, 255),
+        shoots=True,
+        ice=True,
+        burst=1,
+        bullet_damage=2,
+        mine=True,
+        mine_arm_ms=7000,
+        health=c.PLANT_HEALTH + 10,
+    ),
 }
 
 _FUSION_PAIRS: list[tuple[set[str], str]] = [
@@ -211,6 +251,9 @@ _FUSION_PAIRS: list[tuple[set[str], str]] = [
     ({c.WALLNUT, c.JALAPENO}, c.TORCH_NUT),
     ({c.SNOWPEASHOOTER, c.REPEATERPEA}, c.FROST_REPEATER),
     ({c.SPIKEWEED, c.POTATOMINE}, c.SPIKE_MINE),
+    ({c.CHOMPER, c.WALLNUT}, c.CHOMP_NUT),
+    ({c.SQUASH, c.PEASHOOTER}, c.SQUASH_PEA),
+    ({c.SNOWPEASHOOTER, c.POTATOMINE}, c.FROST_MINE),
 ]
 
 FUSION_RECIPES: dict[frozenset[str], str] = {
@@ -331,6 +374,9 @@ def fuse_configs(
     mine_arm = min(left.mine_arm_ms, right.mine_arm_ms) if (
         left.mine or right.mine
     ) else 8000
+    digest = min(left.digest_ms, right.digest_ms) if (
+        left.chomps or right.chomps
+    ) else 12000
 
     return HybridConfig(
         name=name,
@@ -361,6 +407,9 @@ def fuse_configs(
         explode=left.explode or right.explode,
         explode_y_range=explode_y,
         explode_x_range=explode_x,
+        chomps=left.chomps or right.chomps,
+        squashes=left.squashes or right.squashes,
+        digest_ms=digest,
         colorkey_white=left.colorkey_white or right.colorkey_white,
     )
 

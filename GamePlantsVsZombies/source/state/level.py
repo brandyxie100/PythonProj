@@ -241,6 +241,12 @@ class Level(tool.State):
             self.zombie_groups[map_y].add(zombie.FlagPaperZombie(c.ZOMBIE_START_X, y, self.head_group))
         elif name == c.EMBER_CONE_ZOMBIE:
             self.zombie_groups[map_y].add(zombie.EmberConeZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.RUSH_FLAG_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.RushFlagZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.IRON_BUCKET_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.IronBucketZombie(c.ZOMBIE_START_X, y, self.head_group))
+        elif name == c.FROST_PAPER_ZOMBIE:
+            self.zombie_groups[map_y].add(zombie.FrostPaperZombie(c.ZOMBIE_START_X, y, self.head_group))
 
     def canSeedPlant(self):
         x, y = pg.mouse.get_pos()
@@ -602,7 +608,18 @@ class Level(tool.State):
             pass
         elif getattr(plant, "config", None) is not None:
             # Cross HybridPlant: keep ALL fused abilities active together.
-            # Always pass the lane zombie group so mine + spikes work with shooting.
+            if plant.state == c.DIGEST:
+                return
+            cfg = plant.config
+            # Prefer a melee target when bite/squash is available.
+            if (cfg.chomps or cfg.squashes) and zombie_len > 0:
+                for zombie in self.zombie_groups[i]:
+                    if plant.canAttack(zombie) and (
+                        (cfg.chomps or cfg.squashes)
+                        and plant._melee_range(zombie)
+                    ):
+                        plant.setAttack(self.zombie_groups[i], zombie=zombie)
+                        return
             can_attack = False
             if zombie_len > 0:
                 for zombie in self.zombie_groups[i]:
