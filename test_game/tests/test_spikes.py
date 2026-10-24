@@ -13,6 +13,7 @@ pg.init()
 
 from game import Game, Spike  # noqa: E402
 import config as c  # noqa: E402
+from multiplayer import create_room_code, validate_room_code  # noqa: E402
 
 
 def test_spike_becomes_lethal_after_warning() -> None:
@@ -68,3 +69,19 @@ def test_jump_buffer_fires_after_landing() -> None:
     g.on_ground = True
     g._try_consume_jump(60)
     assert g.vy == c.JUMP_VEL
+
+
+def test_room_code_is_six_digits() -> None:
+    code = create_room_code()
+    assert len(code) == 6
+    assert code.isdigit()
+    assert validate_room_code(code) == code
+
+
+def test_invalid_room_code_is_rejected() -> None:
+    for code in ("", "12345", "1234567", "abc123"):
+        try:
+            validate_room_code(code)
+        except ValueError:
+            continue
+        raise AssertionError(f"Invalid room code accepted: {code!r}")

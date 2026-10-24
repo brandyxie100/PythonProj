@@ -20,6 +20,9 @@ python main.py
 | R | Restart room |
 | Esc | Quit |
 
+Click the globe button to create a six-digit room code or join a friend's
+code. Both players must be on the same Wi-Fi network to see each other.
+
 ## Goal
 
 Reach the green **EXIT** through **10 levels** (Warmup → Almost Impossible).
