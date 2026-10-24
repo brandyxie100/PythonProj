@@ -431,7 +431,13 @@ class Game:
                 self.vy = 0
             pret = self.player_rect
 
-    def draw(self, surf: pg.Surface, font: pg.font.Font, big: pg.font.Font) -> None:
+    def draw(
+        self,
+        surf: pg.Surface,
+        font: pg.font.Font,
+        big: pg.font.Font,
+        top_pad: int = 0,
+    ) -> None:
         surf.fill(c.BG)
         for r in self.layout.floors:
             pg.draw.rect(surf, c.FLOOR, r)
@@ -450,20 +456,20 @@ class Game:
 
         pg.draw.rect(surf, c.PLAYER, self.player_rect, border_radius=4)
 
-        # HUD
+        # HUD (shifted down when a room lobby bar is on screen)
         name = c.LEVEL_NAMES[self.level_index]
         hud = font.render(
             f"Level {self.level_index + 1}/{c.MAX_LEVEL}: {name}   A/D · ↑ jump",
             True,
             c.HUD,
         )
-        surf.blit(hud, (16, 12))
+        surf.blit(hud, (16, 12 + top_pad))
         hint = font.render("Yellow = warning. Red = death.", True, c.WARNING)
-        surf.blit(hint, (16, 36))
+        surf.blit(hint, (16, 36 + top_pad))
 
         if self.message:
             msg = big.render(self.message, True, c.TEXT)
-            surf.blit(msg, msg.get_rect(center=(c.SCREEN_W // 2, 80)))
+            surf.blit(msg, msg.get_rect(center=(c.SCREEN_W // 2, 80 + top_pad)))
 
         if self.won:
             overlay = pg.Surface((c.SCREEN_W, c.SCREEN_H), pg.SRCALPHA)

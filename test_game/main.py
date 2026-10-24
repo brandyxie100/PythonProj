@@ -32,17 +32,48 @@ def main() -> int:
     join_button = pg.Rect(320, 278, 150, 44)
     leave_button = pg.Rect(490, 278, 150, 44)
 
+    def focus_code_box() -> None:
+        pg.key.start_text_input()
+        pg.key.set_text_input_rect(code_box)
+
     def open_room(code: str) -> None:
+        nonlocal room, room_code, room_status, room_code_input
+        cleaned = "".join(ch for ch in code if ch.isdigit())[:6]
+        room_code_input = cleaned
+        if room is not None:
+            room.close()
+            room = None
+            room_code = ""
+        try:
+            room_code = validate_room_code(cleaned)
+            room = LanRoom(room_code)
+            room_code_input = room_code
+            room_status = f"Joined room {room_code}. Share this code on the same Wi-Fi."
+        except ValueError as exc:
+            room_status = str(exc)
+        except OSError as exc:
+            room_status = str(exc)
+
+    def create_room() -> None:
+        nonlocal room_code_input
+        room_code_input = create_room_code()
+        open_room(room_code_input)
+
+    def join_room() -> None:
+        open_room(room_code_input)
+
+    def leave_room() -> None:
         nonlocal room, room_code, room_status
         if room is not None:
             room.close()
             room = None
-        try:
-            room_code = validate_room_code(code)
-            room = LanRoom(room_code)
-            room_status = "Room opened. Share the code with your friend."
-        except (ValueError, OSError) as exc:
-            room_status = str(exc) if isinstance(exc, ValueError) else f"Could not open room: {exc}"
+        room_code = ""
+        room_status = "You left the room."
+
+    def append_code_digit(digit: str) -> None:
+        nonlocal room_code_input
+        if digit in "0123456789" and len(room_code_input) < 6:
+            room_code_input += digit
 
     running = True
 
@@ -58,32 +89,43 @@ def main() -> int:
                 if globe_button.collidepoint(event.pos):
                     room_panel_open = not room_panel_open
                     if room_panel_open:
-                        room_code_input = ""
-                        pg.key.start_text_input()
+                        if room is not None:
+                            room_code_input = room_code
+                        focus_code_box()
+                        room_status = room_status or "Create a code, or type a friend's 6 digits."
                     else:
                         pg.key.stop_text_input()
                 elif room_panel_open and create_button.collidepoint(event.pos):
-                    room_code_input = create_room_code()
-                    open_room(room_code_input)
+                    create_room()
+                    focus_code_box()
                 elif room_panel_open and join_button.collidepoint(event.pos):
-                    open_room(room_code_input)
+                    join_room()
+                    focus_code_box()
                 elif room_panel_open and leave_button.collidepoint(event.pos):
-                    if room is not None:
-                        room.close()
-                        room = None
-                    room_code = ""
-                    room_status = "You left the room."
+                    leave_room()
                 elif room_panel_open and code_box.collidepoint(event.pos):
-                    pg.key.start_text_input()
+                    focus_code_box()
             elif event.type == pg.KEYDOWN:
                 if room_panel_open:
                     if event.key == pg.K_ESCAPE:
                         room_panel_open = False
                         pg.key.stop_text_input()
                     elif event.key == pg.K_RETURN:
-                        open_room(room_code_input)
+                        if len(room_code_input) == 6:
+                            join_room()
+                        else:
+                            create_room()
                     elif event.key == pg.K_BACKSPACE:
                         room_code_input = room_code_input[:-1]
+                    else:
+                        # Digits via KEYDOWN (TEXTINPUT is unreliable on some Macs)
+                        digit = event.unicode if event.unicode in "0123456789" else ""
+                        if not digit and pg.K_KP0 <= event.key <= pg.K_KP9:
+                            digit = str(event.key - pg.K_KP0)
+                        if not digit and pg.K_0 <= event.key <= pg.K_9:
+                            digit = str(event.key - pg.K_0)
+                        if digit:
+                            append_code_digit(digit)
                 elif event.key == pg.K_ESCAPE:
                     running = False
                 elif event.key in (pg.K_UP, pg.K_SPACE, pg.K_w):
@@ -91,9 +133,8 @@ def main() -> int:
                 elif event.key == pg.K_r and not game.won:
                     game.reset_level(keep_message=False)
             elif event.type == pg.TEXTINPUT and room_panel_open:
-                room_code_input = "".join(
-                    char for char in room_code_input + event.text if char in "0123456789"
-                )[:6]
+                for char in event.text:
+                    append_code_digit(char)
 
         keys = pg.key.get_pressed()
         if not room_panel_open:
@@ -106,6 +147,7 @@ def main() -> int:
                 room_status = f"Room connection failed: {exc}"
                 room.close()
                 room = None
+                room_code = ""
         game.draw(screen, font, big)
 
         if room is not None:
@@ -143,7 +185,11 @@ def main() -> int:
             pg.draw.rect(screen, c.HUD, panel, 2, border_radius=12)
             screen.blit(big.render("Play together", True, c.TEXT), (125, 128))
             screen.blit(
-                font.render("Same Wi-Fi only: create a code or enter a friend's.", True, c.HUD),
+                font.render(
+                    "Same Wi-Fi: Create code, or type 6 digits then Join.",
+                    True,
+                    c.HUD,
+                ),
                 (125, 170),
             )
 
@@ -154,7 +200,10 @@ def main() -> int:
             pg.draw.rect(screen, c.PLAYER, code_box, 2, border_radius=6)
             shown_code = room_code_input or "Type 6-digit code"
             code_color = c.TEXT if room_code_input else c.HUD
-            screen.blit(font.render(shown_code, True, code_color), (code_box.x + 12, code_box.y + 12))
+            screen.blit(
+                font.render(shown_code, True, code_color),
+                (code_box.x + 12, code_box.y + 12),
+            )
 
             pg.draw.rect(screen, (54, 93, 143), join_button, border_radius=6)
             join_label = font.render("Join room", True, c.TEXT)
@@ -163,9 +212,15 @@ def main() -> int:
             leave_label = font.render("Leave room", True, c.TEXT)
             screen.blit(leave_label, leave_label.get_rect(center=leave_button.center))
             if room is not None:
-                room_status = f"Room code: {room_code} | Players: {len(room.players) + 1}"
-            status = room_status or "Enter the same code on both computers."
-            screen.blit(font.render(status, True, c.WARNING), (125, 337))
+                live = f"In room {room_code} | Players: {len(room.players) + 1}"
+                screen.blit(font.render(live, True, c.EXIT_C), (125, 337))
+            elif room_status:
+                screen.blit(font.render(room_status, True, c.WARNING), (125, 337))
+            else:
+                screen.blit(
+                    font.render("Enter the same code on both computers.", True, c.WARNING),
+                    (125, 337),
+                )
 
         pg.display.flip()
 
