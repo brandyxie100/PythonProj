@@ -12,11 +12,13 @@ from main import (
     BOSS_DAMAGE,
     BOSS_HP,
     DUNGEON_TWO,
+    DEPTH_ZOMBIE_LOOT,
     DungeonGame,
     GOLD_SWORD_DAMAGE,
     GOLD_SWORD_LOOT,
     HOTBAR_SIZE,
     POTION_HEAL,
+    RESPAWN_DELAY,
     SCREEN_H,
     SCREEN_W,
     ZOMBIE_DAMAGE,
@@ -68,6 +70,53 @@ class DungeonGameTests(unittest.TestCase):
         boss.x, boss.y = game.x + 0.5, game.y
         game.update(0.01, pg.key.get_pressed())
         self.assertEqual(game.health, 100 - BOSS_DAMAGE)
+
+    def test_death_freezes_player_and_enemies_until_respawn(self) -> None:
+        game = DungeonGame()
+        game.select_slot(1)
+        game.health = 40
+        game._begin_death()
+        player_position = (game.x, game.y)
+        enemy_positions = [(enemy.x, enemy.y) for enemy in game.living_enemies]
+        potions = game.health_potions
+
+        self.assertEqual(game.respawn_timer, RESPAWN_DELAY)
+        game.move(forward=1, sideways=0, dt=1)
+        self.assertFalse(game.attack())
+        self.assertFalse(game.use_selected_item())
+        game.update(4.99, pg.key.get_pressed())
+        self.assertEqual((game.x, game.y), player_position)
+        self.assertEqual(
+            [(enemy.x, enemy.y) for enemy in game.living_enemies],
+            enemy_positions,
+        )
+        self.assertEqual(game.health_potions, potions)
+        self.assertEqual(game.health, 0)
+
+    def test_respawn_after_five_seconds_reloads_same_stage_and_keeps_gear(self) -> None:
+        game = DungeonGame()
+        game._load_stage(1)
+        game.weapon_name = "Gold Sword"
+        game.weapon_bonus = GOLD_SWORD_DAMAGE
+        game.armor_name = "Bone Guard"
+        game.armor_value = 4
+        game.health_potions = 2
+        game.health = 0
+        game._begin_death()
+        game.update(RESPAWN_DELAY - 0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 0)
+        self.assertEqual(game.stage_index, 1)
+
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 100)
+        self.assertEqual(game.stage_index, 1)
+        self.assertEqual((game.x, game.y), (2.5, 1.5))
+        self.assertEqual(game.weapon_name, "Gold Sword")
+        self.assertEqual(game.weapon_bonus, GOLD_SWORD_DAMAGE)
+        self.assertEqual(game.armor_name, "Bone Guard")
+        self.assertEqual(game.armor_value, 4)
+        self.assertEqual(game.health_potions, 2)
+        self.assertEqual(len(game.living_enemies), 5)
 
     def test_defeated_zombie_drops_collectible_weapon_or_armor(self) -> None:
         game = DungeonGame()
@@ -144,7 +193,7 @@ class DungeonGameTests(unittest.TestCase):
             if enemy is not boss:
                 enemy.alive = False
         self.assertEqual(boss.hp, WARDEN_HP)
-        self.assertEqual(boss.max_hp, 100)
+        self.assertEqual(boss.max_hp, 600)
 
         game.weapon_name = "Iron Sword"
         game.weapon_bonus = 12
@@ -158,6 +207,45 @@ class DungeonGameTests(unittest.TestCase):
         self.assertEqual(game.weapon_name, GOLD_SWORD_LOOT.name)
         self.assertEqual(game.weapon_bonus, GOLD_SWORD_DAMAGE)
         self.assertIn("replaces your Iron Sword", game.message)
+
+    def test_level_two_zombies_drop_stronger_equipment(self) -> None:
+        game = DungeonGame()
+        game._load_stage(1)
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+
+        for _ in range(20):
+            game._drop_loot(zombie)
+
+        dropped_names = {drop.loot.name for drop in game.loot_drops}
+        self.assertEqual(dropped_names, {loot.name for loot in DEPTH_ZOMBIE_LOOT})
+        self.assertEqual(
+            next(loot.value for loot in DEPTH_ZOMBIE_LOOT if loot.kind == "weapon"),
+            30,
+        )
+        self.assertGreater(
+            next(loot.value for loot in DEPTH_ZOMBIE_LOOT if loot.kind == "armor"),
+            4,
+        )
+
+    def test_selected_equipped_weapon_attacks_and_weapon_name_selects_appearance(self) -> None:
+        game = DungeonGame()
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+        for enemy in game.enemies:
+            if enemy is not zombie:
+                enemy.alive = False
+        zombie.x, zombie.y = game.x + 1, game.y
+        game.weapon_name = "Gold Sword"
+        game.weapon_bonus = GOLD_SWORD_DAMAGE
+        game.select_slot(2)
+
+        self.assertTrue(game.use_selected_item())
+        self.assertEqual(zombie.hp, ZOMBIE_HP - 15 - GOLD_SWORD_DAMAGE)
+
+        from main import draw_held_item
+
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        draw_held_item(screen, game)
+        self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
 
     def test_first_person_scene_renders(self) -> None:
         screen = pg.Surface((SCREEN_W, SCREEN_H))

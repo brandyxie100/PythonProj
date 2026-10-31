@@ -24,6 +24,11 @@ python3 main.py
 | R | Restart the dungeon |
 | Esc | Quit |
 
+When your health reaches zero, movement and combat stop. You automatically
+respawn at the start of the current level after five seconds with full health.
+Your equipment and remaining potions are kept, but enemies in that level
+return.
+
 The hotbar starts with an infinite-use blade and three healing potions.
 Select the potion and use it to restore up to 40 health. The other three
 slots are empty.
@@ -31,12 +36,15 @@ slots are empty.
 The crypt enemies have been made tougher: zombies have 45 HP and deal 12
 damage, while boss 67 has 134 HP and deals 25 damage per hit.
 
-Defeated zombies drop a random Grave Axe or Bone Guard. Walk over a drop to
-equip it: axes increase your attack damage, while armor reduces incoming
-damage. Boss 67 drops an Iron Sword.
+Defeated zombies drop a random Grave Axe or Bone Guard. Level 2 zombies drop
+stronger Shadow Greatswords (+30 damage) or Dreadplate (blocks 12 damage).
+Walk over a drop to equip it:
+weapons increase attack damage, while armor reduces incoming damage. Boss 67
+drops an Iron Sword. Equipped weapons change appearance and can be used from
+their weapon hotbar slot.
 
 Defeat every enemy in level 1 to enter level 2 automatically. Your health,
-potions, and equipment carry over. The level 2 boss has 100 HP; defeating it
+potions, and equipment carry over. The level 2 boss has 600 HP; defeating it
 automatically replaces the Iron Sword with a stronger Gold Sword. Clear level
 2 to finish the game.
 

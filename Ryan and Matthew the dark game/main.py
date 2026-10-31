@@ -23,7 +23,7 @@ HOTBAR_SIZE = 5
 POTION_HEAL = 40
 ZOMBIE_HP = 45
 BOSS_HP = 134
-WARDEN_HP = 100
+WARDEN_HP = 600
 GOLD_SWORD_DAMAGE = 24
 ZOMBIE_DAMAGE = 12
 BOSS_DAMAGE = 25
@@ -32,6 +32,7 @@ BOSS_ATTACK_INTERVAL = 0.75
 ZOMBIE_SPEED = 0.55
 BOSS_SPEED = 0.75
 LOOT_PICKUP_DISTANCE = 0.55
+RESPAWN_DELAY = 5.0
 
 DUNGEON = (
     "###############",
@@ -101,6 +102,10 @@ ZOMBIE_LOOT = (
     Loot("Grave Axe", "weapon", 6, (206, 119, 80)),
     Loot("Bone Guard", "armor", 4, (177, 219, 167)),
 )
+DEPTH_ZOMBIE_LOOT = (
+    Loot("Shadow Greatsword", "weapon", 30, (156, 106, 231)),
+    Loot("Dreadplate", "armor", 12, (109, 188, 195)),
+)
 BOSS_LOOT = Loot("Iron Sword", "weapon", 12, (210, 216, 225))
 GOLD_SWORD_LOOT = Loot("Gold Sword", "weapon", GOLD_SWORD_DAMAGE, (255, 209, 79))
 
@@ -123,6 +128,7 @@ class DungeonGame:
         self.selected_slot = 0
         self.health_potions = 3
         self.stage_index = 0
+        self.respawn_timer = 0.0
         self.won = False
         self.message = ""
         self.message_timer = 0.0
@@ -186,6 +192,8 @@ class DungeonGame:
         return self.dungeon_map[cell_y][cell_x] == "#"
 
     def move(self, forward: float, sideways: float, dt: float) -> None:
+        if self.health <= 0 or self.won:
+            return
         dx = (math.cos(self.angle) * forward - math.sin(self.angle) * sideways) * PLAYER_SPEED * dt
         dy = (math.sin(self.angle) * forward + math.cos(self.angle) * sideways) * PLAYER_SPEED * dt
         radius = 0.2
@@ -195,7 +203,7 @@ class DungeonGame:
             self.y += dy
 
     def attack(self) -> bool:
-        if self.attack_timer > 0 or self.won:
+        if self.attack_timer > 0 or self.won or self.health <= 0:
             return False
         self.attack_timer = ATTACK_COOLDOWN
         self.attack_flash = 0.16
@@ -232,7 +240,8 @@ class DungeonGame:
         if enemy.boss:
             loot = BOSS_LOOT
         else:
-            loot = self.rng.choice(ZOMBIE_LOOT)
+            loot_table = DEPTH_ZOMBIE_LOOT if self.stage_index == 1 else ZOMBIE_LOOT
+            loot = self.rng.choice(loot_table)
         self.loot_drops.append(LootDrop(enemy.x, enemy.y, loot))
 
     def _collect_loot(self) -> None:
@@ -268,6 +277,8 @@ class DungeonGame:
             return False
         if self.selected_slot == 0:
             return self.attack()
+        if self.selected_slot == 2 and self.weapon_bonus > 0:
+            return self.attack()
         if self.selected_slot == 1:
             if self.health_potions <= 0:
                 self.message = "Your health-potion slot is empty."
@@ -288,6 +299,11 @@ class DungeonGame:
 
     def update(self, dt: float, keys: pg.key.ScancodeWrapper) -> None:
         if self.won:
+            return
+        if self.health <= 0:
+            self.respawn_timer = max(0.0, self.respawn_timer - dt)
+            if self.respawn_timer == 0:
+                self._respawn()
             return
         self.attack_timer = max(0.0, self.attack_timer - dt)
         self.attack_flash = max(0.0, self.attack_flash - dt)
@@ -330,9 +346,8 @@ class DungeonGame:
                     self.message = f"{enemy.name} hit you!"
                     self.message_timer = 0.8
                     if self.health <= 0:
-                        self.health = 0
-                        self.message = "You fell in the dungeon. Press R to try again."
-                        self.message_timer = 999
+                        self._begin_death()
+                        return
             elif distance < (6.0 if enemy.boss else 5.0):
                 dx = (self.x - enemy.x) / distance
                 dy = (self.y - enemy.y) / distance
@@ -356,6 +371,23 @@ class DungeonGame:
 
         if self.health > 0 and not self.living_enemies:
             self._advance_stage()
+
+    def _begin_death(self) -> None:
+        if self.health <= 0 and self.respawn_timer > 0:
+            return
+        self.health = 0
+        self.respawn_timer = RESPAWN_DELAY
+        self.attack_timer = 0.0
+        self.attack_flash = 0.0
+        self.message = "You died. Respawning in 5 seconds..."
+        self.message_timer = RESPAWN_DELAY
+
+    def _respawn(self) -> None:
+        self.health = 100
+        self.respawn_timer = 0.0
+        self._load_stage(self.stage_index)
+        self.message = "Respawned. Your equipment and potions are safe."
+        self.message_timer = 2.5
 
 
 def cast_ray(game: DungeonGame, ray_angle: float) -> float:
@@ -487,7 +519,12 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         overlay.fill((5, 6, 12, 190))
         screen.blit(overlay, (0, 0))
         title = big_font.render("DUNGEON CLEARED" if game.won else "YOU WERE LOST", True, (173, 246, 205) if game.won else (255, 125, 140))
-        subtitle = font.render("Press R to play again", True, (235, 231, 220))
+        subtitle_text = (
+            "Press R to play again"
+            if game.won
+            else f"Respawning in {math.ceil(game.respawn_timer)} seconds — movement disabled"
+        )
+        subtitle = font.render(subtitle_text, True, (235, 231, 220))
         screen.blit(title, title.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 20)))
         screen.blit(subtitle, subtitle.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 28)))
 
@@ -502,8 +539,28 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
     base_x = SCREEN_W - 210
     base_y = SCREEN_H - 210 + int(bob)
 
-    if game.selected_slot == 0:
+    if game.selected_slot in (0, 2) and (game.selected_slot == 0 or game.weapon_bonus > 0):
         # Blade held in the lower-right, tip up; swings left when attacking.
+        if game.weapon_name == "Gold Sword":
+            blade_color = (255, 215, 72)
+            blade_edge = (255, 244, 173)
+            guard_color = (210, 151, 41)
+        elif game.weapon_name == "Iron Sword":
+            blade_color = (187, 204, 221)
+            blade_edge = (242, 248, 255)
+            guard_color = (117, 129, 145)
+        elif game.weapon_name == "Shadow Greatsword":
+            blade_color = (142, 93, 204)
+            blade_edge = (220, 187, 255)
+            guard_color = (83, 58, 112)
+        elif game.weapon_name == "Grave Axe":
+            blade_color = (206, 119, 80)
+            blade_edge = (255, 196, 124)
+            guard_color = (111, 76, 53)
+        else:
+            blade_color = (208, 222, 230)
+            blade_edge = (255, 240, 178)
+            guard_color = (120, 78, 48)
         tip_x = base_x + 90 - int(swing * 120)
         tip_y = base_y - 20 - int(swing * 40)
         guard_x = base_x + 130 - int(swing * 40)
@@ -516,10 +573,10 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
             (guard_x + 18, guard_y),
             (guard_x - 10, guard_y + 8),
         ]
-        pg.draw.polygon(screen, (208, 222, 230), blade)
-        pg.draw.polygon(screen, (160, 175, 190), blade, 2)
-        pg.draw.line(screen, (255, 240, 178), (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
-        pg.draw.line(screen, (120, 78, 48), (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
+        pg.draw.polygon(screen, blade_color, blade)
+        pg.draw.polygon(screen, blade_edge, blade, 2)
+        pg.draw.line(screen, blade_edge, (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
+        pg.draw.line(screen, guard_color, (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
         pg.draw.line(screen, (246, 220, 166), (guard_x - 18, guard_y + 2), (guard_x + 30, guard_y - 4), 2)
         pg.draw.line(screen, (92, 58, 36), (guard_x + 4, guard_y), (pommel_x, pommel_y), 10)
         pg.draw.circle(screen, (180, 140, 70), (pommel_x, pommel_y), 8)
@@ -669,15 +726,15 @@ def main() -> int:
             elif event.type == pg.KEYDOWN:
                 if event.key == pg.K_ESCAPE:
                     running = False
-                elif event.key == pg.K_r:
+                elif event.key == pg.K_r and (game.health > 0 or game.won):
                     game.reset()
-                elif event.key in (pg.K_1, pg.K_2, pg.K_3, pg.K_4, pg.K_5):
+                elif game.health > 0 and event.key in (pg.K_1, pg.K_2, pg.K_3, pg.K_4, pg.K_5):
                     game.select_slot(event.key - pg.K_1)
-                elif event.key == pg.K_SPACE:
+                elif game.health > 0 and event.key == pg.K_SPACE:
                     game.use_selected_item()
-            elif event.type == pg.MOUSEMOTION:
+            elif event.type == pg.MOUSEMOTION and game.health > 0:
                 game.angle += event.rel[0] * MOUSE_SENSITIVITY
-            elif event.type == pg.MOUSEBUTTONDOWN and event.button in (1, 3):
+            elif event.type == pg.MOUSEBUTTONDOWN and game.health > 0 and event.button in (1, 3):
                 game.use_selected_item()
 
         game.update(dt, pg.key.get_pressed())
