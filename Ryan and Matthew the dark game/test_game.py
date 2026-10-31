@@ -299,6 +299,15 @@ class DungeonGameTests(unittest.TestCase):
         draw_held_item(screen, game)
         self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
 
+    def test_minecraft_style_sword_surface_builds(self) -> None:
+        from main import build_minecraft_sword_surface
+
+        for name in ("Crypt Blade", "Iron Sword", "Diamond Sword", "Gold Sword"):
+            surf = build_minecraft_sword_surface(name, pixel=4)
+            self.assertEqual(surf.get_size(), (64, 64))
+            # Opaque pixels exist (sword is not blank)
+            self.assertTrue(any(surf.get_at((x, y)).a > 0 for x in range(64) for y in range(64)))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -552,6 +552,110 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         screen.blit(subtitle, subtitle.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 28)))
 
 
+# Original Minecraft-inspired 16×16 sword (diagonal tip → handle). Not Mojang art.
+# . empty  O outline  L light blade  M mid blade  D dark blade  H handle  G guard
+_MC_SWORD = (
+    "................",
+    "............LL..",
+    "...........LLMM.",
+    "..........LLMMD.",
+    ".........LLMMD..",
+    "........LLMMD...",
+    ".......LLMMD....",
+    "......LLMMD.....",
+    ".....GMMMD......",
+    "....GGMD........",
+    "...HHGD.........",
+    "..HHH...........",
+    ".HHHH...........",
+    ".HHH............",
+    "..H.............",
+    "................",
+)
+
+_MC_SWORD_PALETTES: dict[str, dict[str, tuple[int, int, int]]] = {
+    "Crypt Blade": {
+        "O": (40, 40, 48),
+        "L": (230, 235, 240),
+        "M": (180, 190, 200),
+        "D": (120, 130, 145),
+        "H": (110, 70, 40),
+        "G": (90, 90, 100),
+    },
+    "Iron Sword": {
+        "O": (50, 55, 65),
+        "L": (230, 235, 245),
+        "M": (175, 185, 200),
+        "D": (110, 120, 135),
+        "H": (100, 65, 35),
+        "G": (95, 100, 110),
+    },
+    "Diamond Sword": {
+        "O": (20, 70, 90),
+        "L": (180, 250, 255),
+        "M": (80, 220, 230),
+        "D": (30, 160, 180),
+        "H": (100, 65, 35),
+        "G": (40, 140, 160),
+    },
+    "Gold Sword": {
+        "O": (120, 80, 20),
+        "L": (255, 245, 160),
+        "M": (255, 210, 70),
+        "D": (200, 150, 30),
+        "H": (100, 65, 35),
+        "G": (180, 130, 40),
+    },
+    "Shadow Greatsword": {
+        "O": (40, 20, 60),
+        "L": (220, 190, 255),
+        "M": (150, 100, 210),
+        "D": (90, 50, 140),
+        "H": (70, 45, 30),
+        "G": (80, 50, 110),
+    },
+    "Grave Axe": {
+        "O": (60, 35, 25),
+        "L": (255, 200, 140),
+        "M": (210, 120, 80),
+        "D": (140, 70, 45),
+        "H": (90, 55, 30),
+        "G": (100, 70, 45),
+    },
+}
+
+
+def _sword_palette(weapon_name: str) -> dict[str, tuple[int, int, int]]:
+    return _MC_SWORD_PALETTES.get(weapon_name, _MC_SWORD_PALETTES["Crypt Blade"])
+
+
+def build_minecraft_sword_surface(weapon_name: str, pixel: int = 8) -> pg.Surface:
+    """Build a chunky pixel sword surface (Minecraft-like silhouette)."""
+    size = 16 * pixel
+    surf = pg.Surface((size, size), pg.SRCALPHA)
+    colors = _sword_palette(weapon_name)
+    for row, line in enumerate(_MC_SWORD):
+        for col, ch in enumerate(line):
+            if ch == ".":
+                continue
+            color = colors.get(ch, colors["M"])
+            pg.draw.rect(surf, color, (col * pixel, row * pixel, pixel, pixel))
+    return surf
+
+
+def blit_minecraft_sword(
+    screen: pg.Surface,
+    weapon_name: str,
+    center: tuple[int, int],
+    pixel: int,
+    angle_deg: float = -35.0,
+) -> None:
+    """Draw a rotated Minecraft-style pixel sword centered on a point."""
+    sword = build_minecraft_sword_surface(weapon_name, pixel)
+    rotated = pg.transform.rotate(sword, angle_deg)
+    screen.blit(rotated, rotated.get_rect(center=center))
+
+
 def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
     """Draw a first-person view of whatever is in the selected hotbar slot."""
     # Slight idle bob + attack swing so the held item feels alive.
@@ -559,50 +663,15 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
     swing = 0.0
     if game.attack_flash > 0:
         swing = (0.16 - game.attack_flash) / 0.16
-    base_x = SCREEN_W - 210
-    base_y = SCREEN_H - 210 + int(bob)
+    base_x = SCREEN_W - 160
+    base_y = SCREEN_H - 130 + int(bob)
 
     if game.selected_slot in (0, 2) and (game.selected_slot == 0 or game.weapon_bonus > 0):
-        # Blade held in the lower-right, tip up; swings left when attacking.
-        if game.weapon_name == "Gold Sword":
-            blade_color = (255, 215, 72)
-            blade_edge = (255, 244, 173)
-            guard_color = (210, 151, 41)
-        elif game.weapon_name == "Iron Sword":
-            blade_color = (187, 204, 221)
-            blade_edge = (242, 248, 255)
-            guard_color = (117, 129, 145)
-        elif game.weapon_name == "Shadow Greatsword":
-            blade_color = (142, 93, 204)
-            blade_edge = (220, 187, 255)
-            guard_color = (83, 58, 112)
-        elif game.weapon_name == "Grave Axe":
-            blade_color = (206, 119, 80)
-            blade_edge = (255, 196, 124)
-            guard_color = (111, 76, 53)
-        else:
-            blade_color = (208, 222, 230)
-            blade_edge = (255, 240, 178)
-            guard_color = (120, 78, 48)
-        tip_x = base_x + 90 - int(swing * 120)
-        tip_y = base_y - 20 - int(swing * 40)
-        guard_x = base_x + 130 - int(swing * 40)
-        guard_y = base_y + 110
-        pommel_x = base_x + 150 - int(swing * 20)
-        pommel_y = base_y + 160
-        blade = [
-            (tip_x, tip_y),
-            (tip_x + 28, tip_y + 18),
-            (guard_x + 18, guard_y),
-            (guard_x - 10, guard_y + 8),
-        ]
-        pg.draw.polygon(screen, (208, 222, 230), blade)
-        pg.draw.polygon(screen, (160, 175, 190), blade, 2)
-        pg.draw.line(screen, (255, 240, 178), (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
-        pg.draw.line(screen, (120, 78, 48), (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
-        pg.draw.line(screen, (246, 220, 166), (guard_x - 18, guard_y + 2), (guard_x + 30, guard_y - 4), 2)
-        pg.draw.line(screen, (92, 58, 36), (guard_x + 4, guard_y), (pommel_x, pommel_y), 10)
-        pg.draw.circle(screen, (180, 140, 70), (pommel_x, pommel_y), 8)
+        # Minecraft-style pixel sword in the lower-right (swings on attack).
+        cx = base_x - int(swing * 110)
+        cy = base_y - int(swing * 50)
+        angle = -28.0 - swing * 55.0
+        blit_minecraft_sword(screen, game.weapon_name, (cx, cy), pixel=10, angle_deg=angle)
     elif game.selected_slot == 1:
         # Health potion bottle in the lower-right hand.
         raise_y = int(swing * 50)
@@ -695,10 +764,9 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
         screen.blit(font.render(str(index + 1), True, (255, 221, 161) if selected else (184, 187, 200)), (x + 6, top + 4))
 
         if index == 0:
-            blade_points = [(x + 26, top + 16), (x + 39, top + 18), (x + 30, top + 44), (x + 24, top + 40)]
-            pg.draw.polygon(screen, (218, 228, 232), blade_points)
-            pg.draw.line(screen, (160, 111, 77), (x + 23, top + 40), (x + 37, top + 46), 4)
-            pg.draw.line(screen, (246, 220, 166), (x + 23, top + 43), (x + 35, top + 39), 2)
+            blit_minecraft_sword(
+                screen, game.weapon_name, (slot.centerx, top + 30), pixel=2, angle_deg=-35.0
+            )
             count = "INF"
         elif index == 1:
             bottle = pg.Rect(x + 25, top + 19, 22, 27)
@@ -707,10 +775,8 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
             pg.draw.rect(screen, (192, 169, 136), (x + 31, top + 14, 10, 7), border_radius=2)
             count = str(game.health_potions)
         elif index == 2 and game.weapon_bonus:
-            pg.draw.polygon(
-                screen,
-                (206, 119, 80),
-                [(x + 21, top + 18), (x + 45, top + 37), (x + 29, top + 34), (x + 20, top + 46)],
+            blit_minecraft_sword(
+                screen, game.weapon_name, (slot.centerx, top + 30), pixel=2, angle_deg=-35.0
             )
             count = f"+{game.weapon_bonus}"
         elif index == 3 and game.armor_value:
