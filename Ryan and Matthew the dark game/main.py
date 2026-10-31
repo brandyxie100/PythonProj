@@ -24,15 +24,19 @@ POTION_HEAL = 40
 ZOMBIE_HP = 45
 BOSS_HP = 134
 WARDEN_HP = 600
+BOSS3_HP = 1000
 GOLD_SWORD_DAMAGE = 24
 DIAMOND_SWORD_DAMAGE = 18
 DIAMOND_SWORD_CHANCE = 0.10
+VOID_BLADE_DAMAGE = 40
 ZOMBIE_DAMAGE = 12
 BOSS_DAMAGE = 25
+BOSS3_DAMAGE = 35
 ZOMBIE_ATTACK_INTERVAL = 0.85
 BOSS_ATTACK_INTERVAL = 0.75
 ZOMBIE_SPEED = 0.55
 BOSS_SPEED = 0.75
+BOSS3_SPEED = 0.85
 LOOT_PICKUP_DISTANCE = 0.55
 RESPAWN_DELAY = 5.0
 
@@ -71,6 +75,59 @@ DUNGEON_TWO = (
     "###############",
 )
 
+DUNGEON_THREE = (
+    "#################",
+    "#.......#.......#",
+    "#.#####.#.#####.#",
+    "#.#...#...#...#.#",
+    "#.#.#.#####.#.#.#",
+    "#...#...#...#...#",
+    "###.###.#.###.###",
+    "#.....#...#.....#",
+    "#.###.#####.###.#",
+    "#.#...........#.#",
+    "#.#.#########.#.#",
+    "#.#.....#.....#.#",
+    "#.#####.#.#####.#",
+    "#...............#",
+    "#################",
+)
+
+DUNGEON_FOUR = (
+    "###############",
+    "#.............#",
+    "#.###...###...#",
+    "#.#.......#...#",
+    "#.#..###..#.###",
+    "#....#.#......#",
+    "###..#.#..#####",
+    "#....#.#......#",
+    "#.###...###...#",
+    "#.#.......#...#",
+    "#.#..###..#.###",
+    "#....#........#",
+    "#.............#",
+    "###############",
+)
+
+DUNGEON_FIVE = (
+    "#################",
+    "#...............#",
+    "#.#############.#",
+    "#.#...........#.#",
+    "#.#.#########.#.#",
+    "#.#.#.......#.#.#",
+    "#.#.#.#####.#.#.#",
+    "#.#.#.#...#.#.#.#",
+    "#.#.#.#.#.#.#.#.#",
+    "#.#.#...#...#.#.#",
+    "#.#.#########.#.#",
+    "#.#...........#.#",
+    "#.#############.#",
+    "#...............#",
+    "#################",
+)
+
 
 @dataclass
 class Enemy:
@@ -80,6 +137,7 @@ class Enemy:
     hp: int
     max_hp: int
     boss: bool = False
+    kind: str = "zombie"  # zombie | boss67 | warden | boss3
     alive: bool = True
     attack_timer: float = 0.0
     wander_angle: float = 0.0
@@ -113,11 +171,38 @@ DIAMOND_SWORD_LOOT = Loot(
     "Diamond Sword", "weapon", DIAMOND_SWORD_DAMAGE, (120, 220, 255)
 )
 GOLD_SWORD_LOOT = Loot("Gold Sword", "weapon", GOLD_SWORD_DAMAGE, (255, 209, 79))
+VOID_BLADE_LOOT = Loot("Void Blade", "weapon", VOID_BLADE_DAMAGE, (180, 120, 255))
+
+
+@dataclass(frozen=True)
+class RoomMap:
+    """A selectable dungeon room / campaign stage."""
+
+    key: str
+    name: str
+    blurb: str
+    dungeon: tuple[str, ...]
+    spawn: tuple[float, float]
+
+
+ROOM_MAPS: tuple[RoomMap, ...] = (
+    RoomMap("crypt", "Crypt of 67", "Boss 1: 67", DUNGEON, (2.5, 2.5)),
+    RoomMap("depths", "Warden's Depths", "Boss 2: The Warden", DUNGEON_TWO, (2.5, 1.5)),
+    RoomMap("abyss", "Abyssal Halls", "Boss 3: 1000 HP titan", DUNGEON_THREE, (1.5, 1.5)),
+    RoomMap("crossroads", "Crossroads", "Open lanes, mid fight", DUNGEON_FOUR, (2.5, 2.5)),
+    RoomMap("spiral", "Spiral Pit", "Tight spiral corridors", DUNGEON_FIVE, (1.5, 1.5)),
+)
+
+# Full campaign order (Boss 3 is the finale).
+CAMPAIGN_KEYS: tuple[str, ...] = ("crypt", "depths", "abyss")
+ROOM_BY_KEY: dict[str, RoomMap] = {room.key: room for room in ROOM_MAPS}
 
 
 class DungeonGame:
     def __init__(self) -> None:
         self.rng = random.Random()
+        self.campaign_mode = True
+        self.room_key = CAMPAIGN_KEYS[0]
         self.reset()
 
     def reset(self) -> None:
@@ -137,7 +222,24 @@ class DungeonGame:
         self.won = False
         self.message = ""
         self.message_timer = 0.0
-        self._load_stage(0)
+        if self.campaign_mode:
+            self._load_room(CAMPAIGN_KEYS[0])
+        else:
+            self._load_room(self.room_key)
+
+    def start_campaign(self) -> None:
+        """Begin the 3-stage campaign ending with Boss 3."""
+        self.campaign_mode = True
+        self.room_key = CAMPAIGN_KEYS[0]
+        self.reset()
+
+    def start_room(self, room_key: str) -> None:
+        """Play a single selected map."""
+        if room_key not in ROOM_BY_KEY:
+            raise KeyError(room_key)
+        self.campaign_mode = False
+        self.room_key = room_key
+        self.reset()
 
     @property
     def living_enemies(self) -> list[Enemy]:
@@ -145,34 +247,67 @@ class DungeonGame:
 
     @property
     def stage_name(self) -> str:
-        return "Crypt of 67" if self.stage_index == 0 else "The Warden's Depths"
+        return ROOM_BY_KEY[self.room_key].name
 
     def _load_stage(self, stage_index: int) -> None:
-        self.stage_index = stage_index
-        self.dungeon_map = DUNGEON if stage_index == 0 else DUNGEON_TWO
-        self.x, self.y = (2.5, 2.5) if stage_index == 0 else (2.5, 1.5)
+        """Campaign helper: load stage by index into CAMPAIGN_KEYS."""
+        stage_index = max(0, min(stage_index, len(CAMPAIGN_KEYS) - 1))
+        self.campaign_mode = True
+        self._load_room(CAMPAIGN_KEYS[stage_index])
+
+    def _load_room(self, room_key: str) -> None:
+        room = ROOM_BY_KEY[room_key]
+        self.room_key = room_key
+        if self.campaign_mode and room_key in CAMPAIGN_KEYS:
+            self.stage_index = CAMPAIGN_KEYS.index(room_key)
+        self.dungeon_map = room.dungeon
+        self.x, self.y = room.spawn
         self.angle = 0.0
         self.attack_timer = 0.0
         self.attack_flash = 0.0
         self.loot_drops.clear()
-        if stage_index == 0:
-            self.enemies = [
+        self.enemies = self._enemies_for_room(room_key)
+        self.message = f"{room.name} — {room.blurb}"
+        self.message_timer = 4.0
+
+    def _enemies_for_room(self, room_key: str) -> list[Enemy]:
+        if room_key == "crypt":
+            return [
                 Enemy(9.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=2.1),
                 Enemy(11.5, 7.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=4.4),
                 Enemy(3.5, 11.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.8),
-                Enemy(10.5, 11.5, "67", BOSS_HP, BOSS_HP, boss=True),
+                Enemy(10.5, 11.5, "67", BOSS_HP, BOSS_HP, boss=True, kind="boss67"),
             ]
-            self.message = "Clear every zombie and defeat 67 to descend."
-        else:
-            self.enemies = [
+        if room_key == "depths":
+            return [
                 Enemy(11.5, 1.5, "Depth Zombie", 60, 60, wander_angle=1.4),
                 Enemy(12.5, 4.5, "Depth Zombie", 60, 60, wander_angle=4.2),
                 Enemy(2.5, 8.5, "Depth Zombie", 60, 60, wander_angle=3.0),
                 Enemy(11.5, 12.5, "Depth Zombie", 60, 60, wander_angle=0.7),
-                Enemy(7.5, 12.5, "The Warden", WARDEN_HP, WARDEN_HP, boss=True),
+                Enemy(7.5, 12.5, "The Warden", WARDEN_HP, WARDEN_HP, boss=True, kind="warden"),
             ]
-            self.message = "Level 2: defeat the Depth Zombies and the Warden!"
-        self.message_timer = 4.0
+        if room_key == "abyss":
+            return [
+                Enemy(8.5, 3.5, "Abyss Wraith", 80, 80, wander_angle=1.1),
+                Enemy(14.5, 7.5, "Abyss Wraith", 80, 80, wander_angle=2.7),
+                Enemy(3.5, 12.5, "Abyss Wraith", 80, 80, wander_angle=4.0),
+                Enemy(12.5, 12.5, "Abyss Wraith", 80, 80, wander_angle=0.5),
+                Enemy(8.5, 8.5, "Boss 3", BOSS3_HP, BOSS3_HP, boss=True, kind="boss3"),
+            ]
+        if room_key == "crossroads":
+            return [
+                Enemy(7.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.9),
+                Enemy(12.5, 7.5, "Crypt Zombie", ZOMBIE_HP + 10, ZOMBIE_HP + 10, wander_angle=2.2),
+                Enemy(4.5, 11.5, "Depth Zombie", 55, 55, wander_angle=3.5),
+                Enemy(11.5, 11.5, "Depth Zombie", 55, 55, wander_angle=5.0),
+            ]
+        # spiral
+        return [
+            Enemy(8.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=1.2),
+            Enemy(14.5, 8.5, "Depth Zombie", 60, 60, wander_angle=2.8),
+            Enemy(8.5, 8.5, "Depth Zombie", 60, 60, wander_angle=4.1),
+            Enemy(3.5, 12.5, "Abyss Wraith", 70, 70, wander_angle=0.4),
+        ]
 
     def _advance_stage(self) -> None:
         for drop in self.loot_drops:
@@ -183,11 +318,16 @@ class DungeonGame:
                 self.armor_value = drop.loot.value
                 self.armor_name = drop.loot.name
         self.loot_drops.clear()
-        if self.stage_index == 0:
-            self._load_stage(1)
+        if not self.campaign_mode:
+            self.won = True
+            self.message = f"{self.stage_name} cleared! Esc menu · R replay."
+            self.message_timer = 999
+            return
+        if self.stage_index < len(CAMPAIGN_KEYS) - 1:
+            self._load_stage(self.stage_index + 1)
         else:
             self.won = True
-            self.message = "Dungeon cleared! Press R to explore again."
+            self.message = "Campaign cleared — Boss 3 falls! Esc menu · R replay."
             self.message_timer = 999
 
     def is_wall(self, x: float, y: float) -> bool:
@@ -224,15 +364,18 @@ class DungeonGame:
                 if enemy.hp <= 0:
                     enemy.alive = False
                     self.kills += 1
-                    if enemy.boss and self.stage_index == 1:
+                    if enemy.kind == "warden":
                         self.weapon_name = GOLD_SWORD_LOOT.name
                         self.weapon_bonus = GOLD_SWORD_LOOT.value
                         self.message = "The Warden falls! Gold Sword replaces your Iron Sword."
+                    elif enemy.kind == "boss3":
+                        self.weapon_name = VOID_BLADE_LOOT.name
+                        self.weapon_bonus = VOID_BLADE_LOOT.value
+                        self.message = "Boss 3 falls! Void Blade surges into your grip."
                     else:
                         self._drop_loot(enemy)
                         rare = (
-                            enemy.boss
-                            and self.stage_index == 0
+                            enemy.kind == "boss67"
                             and self.loot_drops
                             and self.loot_drops[-1].loot.name == DIAMOND_SWORD_LOOT.name
                         )
@@ -253,8 +396,8 @@ class DungeonGame:
         return hit_any
 
     def _drop_loot(self, enemy: Enemy) -> None:
-        """Drop loot at the enemy. First boss: 10% Diamond Sword, else Iron Sword."""
-        if enemy.boss and self.stage_index == 0:
+        """Drop loot at the enemy. Boss 67: 10% Diamond Sword, else Iron Sword."""
+        if enemy.kind == "boss67":
             loot = (
                 DIAMOND_SWORD_LOOT
                 if self.rng.random() < DIAMOND_SWORD_CHANCE
@@ -263,7 +406,10 @@ class DungeonGame:
         elif enemy.boss:
             loot = BOSS_LOOT
         else:
-            loot_table = DEPTH_ZOMBIE_LOOT if self.stage_index == 1 else ZOMBIE_LOOT
+            if self.room_key in ("depths", "abyss", "spiral"):
+                loot_table = DEPTH_ZOMBIE_LOOT
+            else:
+                loot_table = ZOMBIE_LOOT
             loot = self.rng.choice(loot_table)
         self.loot_drops.append(LootDrop(enemy.x, enemy.y, loot))
 
@@ -347,42 +493,41 @@ class DungeonGame:
             distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
             if distance < 0.58:
                 if enemy.attack_timer <= 0:
-                    incoming_damage = (
-                        BOSS_DAMAGE + 10
-                        if enemy.boss and self.stage_index == 1
-                        else BOSS_DAMAGE
-                        if enemy.boss
-                        else ZOMBIE_DAMAGE + 4
-                        if self.stage_index == 1
-                        else ZOMBIE_DAMAGE
-                    )
+                    if enemy.kind == "boss3":
+                        incoming_damage = BOSS3_DAMAGE
+                        enemy.attack_timer = 0.55
+                    elif enemy.kind == "warden":
+                        incoming_damage = BOSS_DAMAGE + 10
+                        enemy.attack_timer = 0.6
+                    elif enemy.boss:
+                        incoming_damage = BOSS_DAMAGE
+                        enemy.attack_timer = BOSS_ATTACK_INTERVAL
+                    elif self.room_key in ("depths", "abyss", "spiral"):
+                        incoming_damage = ZOMBIE_DAMAGE + 4
+                        enemy.attack_timer = 0.7
+                    else:
+                        incoming_damage = ZOMBIE_DAMAGE
+                        enemy.attack_timer = ZOMBIE_ATTACK_INTERVAL
                     self.health -= max(1, incoming_damage - self.armor_value)
-                    enemy.attack_timer = (
-                        0.6
-                        if enemy.boss and self.stage_index == 1
-                        else BOSS_ATTACK_INTERVAL
-                        if enemy.boss
-                        else 0.7
-                        if self.stage_index == 1
-                        else ZOMBIE_ATTACK_INTERVAL
-                    )
                     self.message = f"{enemy.name} hit you!"
                     self.message_timer = 0.8
                     if self.health <= 0:
                         self._begin_death()
                         return
-            elif distance < (6.0 if enemy.boss else 5.0):
+            elif distance < (7.0 if enemy.kind == "boss3" else 6.0 if enemy.boss else 5.0):
                 dx = (self.x - enemy.x) / distance
                 dy = (self.y - enemy.y) / distance
-                speed = (
-                    BOSS_SPEED + 0.2
-                    if enemy.boss and self.stage_index == 1
-                    else BOSS_SPEED
-                    if enemy.boss
-                    else ZOMBIE_SPEED + 0.1
-                    if self.stage_index == 1
-                    else ZOMBIE_SPEED
-                )
+                if enemy.kind == "boss3":
+                    speed = BOSS3_SPEED
+                elif enemy.kind == "warden":
+                    speed = BOSS_SPEED + 0.2
+                elif enemy.boss:
+                    speed = BOSS_SPEED
+                elif self.room_key in ("depths", "abyss", "spiral"):
+                    speed = ZOMBIE_SPEED + 0.1
+                else:
+                    speed = ZOMBIE_SPEED
+
                 new_x = enemy.x + dx * speed * dt
                 new_y = enemy.y + dy * speed * dt
                 if not self.is_wall(new_x, enemy.y):
@@ -503,13 +648,63 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         if abs(relative_angle) > FOV / 2 + 0.3 or distance < 0.1:
             continue
         screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
-        size = min(SCREEN_H, int(SCREEN_H * (0.65 if enemy.boss else 0.48) / distance))
+        scale = 0.9 if enemy.kind == "boss3" else 0.72 if enemy.kind == "warden" else 0.65 if enemy.boss else 0.48
+        size = min(SCREEN_H, int(SCREEN_H * scale / distance))
         center_y = horizon + int(SCREEN_H * 0.08 / distance)
         sprite_rect = pg.Rect(screen_x - size // 3, center_y - size // 2, size * 2 // 3, size)
         ray_index = min(RAY_COUNT - 1, max(0, screen_x // RAY_WIDTH))
         if distance >= depths[ray_index]:
             continue
-        if enemy.boss:
+        if enemy.kind == "boss3":
+            # Boss 3: tall bone-white / void crown — distinct from crimson/purple bosses.
+            body = sprite_rect.inflate(size // 5, size // 6)
+            pg.draw.ellipse(screen, (20, 40, 55), body.inflate(size // 2, size // 8))
+            pg.draw.rect(screen, (210, 230, 240), body, border_radius=max(4, size // 10))
+            pg.draw.rect(screen, (40, 60, 80), body, 3, border_radius=max(4, size // 10))
+            # Crown spikes
+            for i, ox in enumerate((-size // 3, 0, size // 3)):
+                tip = (body.centerx + ox, body.y - size // 6 - (i % 2) * 8)
+                pg.draw.polygon(
+                    screen,
+                    (120, 220, 255),
+                    [tip, (tip[0] - 8, body.y + 4), (tip[0] + 8, body.y + 4)],
+                )
+            # Hollow eyes
+            for eye_x in (body.x + size // 5, body.right - size // 5):
+                pg.draw.circle(screen, (10, 20, 30), (eye_x, body.y + size // 4), max(4, size // 14))
+                pg.draw.circle(screen, (80, 255, 255), (eye_x, body.y + size // 4), max(2, size // 28))
+            label = big_font.render("BOSS 3", True, (160, 240, 255))
+            screen.blit(label, label.get_rect(center=(screen_x, body.y - size // 5)))
+            bar_width = body.width
+            pg.draw.rect(screen, (15, 25, 35), (body.x, body.y - 16, bar_width, 8))
+            pg.draw.rect(
+                screen,
+                (80, 220, 255),
+                (body.x, body.y - 16, int(bar_width * enemy.hp / enemy.max_hp), 8),
+            )
+        elif enemy.kind == "warden":
+            # Warden: tall violet cloak
+            pg.draw.ellipse(screen, (30, 12, 48), sprite_rect.inflate(size // 3, size // 10))
+            pg.draw.rect(screen, (70, 35, 110), sprite_rect, border_radius=max(3, size // 8))
+            pg.draw.rect(
+                screen,
+                (160, 90, 220),
+                (sprite_rect.x + size // 8, sprite_rect.y + size // 8, size // 2, size // 5),
+                border_radius=6,
+            )
+            for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
+                pg.draw.circle(screen, (255, 120, 255), (eye_x, sprite_rect.y + size // 3), max(2, size // 18))
+            label = big_font.render(enemy.name, True, (220, 180, 255))
+            screen.blit(label, label.get_rect(center=(screen_x, sprite_rect.y - size // 10)))
+            bar_width = size * 2 // 3
+            pg.draw.rect(screen, (25, 16, 25), (sprite_rect.x, sprite_rect.y - 13, bar_width, 7))
+            pg.draw.rect(
+                screen,
+                (160, 70, 220),
+                (sprite_rect.x, sprite_rect.y - 13, int(bar_width * enemy.hp / enemy.max_hp), 7),
+            )
+        elif enemy.boss:
+            # Boss 67: crimson classic
             body_color = (125, 29, 66)
             pg.draw.ellipse(screen, (48, 10, 32), sprite_rect.inflate(size // 3, size // 10))
             pg.draw.rect(screen, body_color, sprite_rect, border_radius=max(3, size // 8))
@@ -543,7 +738,7 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         screen.blit(overlay, (0, 0))
         title = big_font.render("DUNGEON CLEARED" if game.won else "YOU WERE LOST", True, (173, 246, 205) if game.won else (255, 125, 140))
         subtitle_text = (
-            "Press R to play again"
+            "R replay · Esc menu"
             if game.won
             else f"Respawning in {math.ceil(game.respawn_timer)} seconds — movement disabled"
         )
@@ -621,6 +816,14 @@ _MC_SWORD_PALETTES: dict[str, dict[str, tuple[int, int, int]]] = {
         "D": (140, 70, 45),
         "H": (90, 55, 30),
         "G": (100, 70, 45),
+    },
+    "Void Blade": {
+        "O": (40, 10, 70),
+        "L": (230, 200, 255),
+        "M": (160, 90, 255),
+        "D": (90, 40, 160),
+        "H": (50, 30, 40),
+        "G": (120, 60, 200),
     },
 }
 
@@ -715,11 +918,11 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
     screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, 46))
     screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, 70))
     screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, 92))
-    stage_label = font.render(
-        f"LEVEL {game.stage_index + 1}/2  {game.stage_name}",
-        True,
-        (224, 204, 162),
-    )
+    if game.campaign_mode:
+        stage_text = f"CAMPAIGN {game.stage_index + 1}/{len(CAMPAIGN_KEYS)}  {game.stage_name}"
+    else:
+        stage_text = f"ROOM  {game.stage_name}"
+    stage_label = font.render(stage_text, True, (224, 204, 162))
     screen.blit(stage_label, (SCREEN_W - stage_label.get_width() - 20, 54))
     boss = next((enemy for enemy in game.living_enemies if enemy.boss), None)
     if boss is not None:
@@ -796,6 +999,39 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
             screen.blit(count_text, count_text.get_rect(topright=(slot.right - 5, top + 5)))
 
 
+def draw_menu(
+    screen: pg.Surface,
+    font: pg.font.Font,
+    big_font: pg.font.Font,
+    selected: int,
+) -> None:
+    """Map-select / campaign menu."""
+    screen.fill((8, 10, 18))
+    title = big_font.render("DUNGEON 67", True, (255, 220, 140))
+    screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 56)))
+    sub = font.render("Choose a room map, or run the full campaign (Boss 3 finale).", True, (180, 190, 210))
+    screen.blit(sub, sub.get_rect(center=(SCREEN_W // 2, 100)))
+
+    options: list[tuple[str, str]] = [
+        ("campaign", "Full Campaign  (Crypt → Depths → Boss 3)"),
+    ]
+    for room in ROOM_MAPS:
+        options.append((room.key, f"{room.name}  —  {room.blurb}"))
+
+    for index, (_key, label) in enumerate(options):
+        y = 150 + index * 52
+        row = pg.Rect(120, y, SCREEN_W - 240, 44)
+        active = index == selected
+        pg.draw.rect(screen, (50, 70, 50) if active else (22, 26, 38), row, border_radius=8)
+        pg.draw.rect(screen, (180, 255, 160) if active else (70, 80, 100), row, 2, border_radius=8)
+        color = (240, 255, 230) if active else (200, 205, 215)
+        text = font.render(f"{index + 1}.  {label}", True, color)
+        screen.blit(text, (row.x + 18, row.y + 12))
+
+    hint = font.render("↑↓ / W S select   ·   Enter play   ·   Esc quit", True, (160, 170, 190))
+    screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 36)))
+
+
 def main() -> int:
     pg.init()
     pg.display.set_caption("Dungeon 67: The Crypt Below")
@@ -804,30 +1040,69 @@ def main() -> int:
     font = pg.font.SysFont("consolas", 17)
     big_font = pg.font.SysFont("consolas", 44, bold=True)
     game = DungeonGame()
-    pg.mouse.set_visible(False)
-    pg.event.set_grab(True)
+    scene = "menu"  # menu | play
+    menu_index = 0
+    menu_count = 1 + len(ROOM_MAPS)
     running = True
+
     while running:
         dt = min(clock.tick(FPS) / 1000.0, 0.05)
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
             elif event.type == pg.KEYDOWN:
-                if event.key == pg.K_ESCAPE:
-                    running = False
-                elif event.key == pg.K_r and (game.health > 0 or game.won):
-                    game.reset()
-                elif game.health > 0 and event.key in (pg.K_1, pg.K_2, pg.K_3, pg.K_4, pg.K_5):
-                    game.select_slot(event.key - pg.K_1)
-                elif game.health > 0 and event.key == pg.K_SPACE:
-                    game.use_selected_item()
-            elif event.type == pg.MOUSEMOTION and game.health > 0:
+                if scene == "menu":
+                    if event.key == pg.K_ESCAPE:
+                        running = False
+                    elif event.key in (pg.K_UP, pg.K_w):
+                        menu_index = (menu_index - 1) % menu_count
+                    elif event.key in (pg.K_DOWN, pg.K_s):
+                        menu_index = (menu_index + 1) % menu_count
+                    elif event.key in (pg.K_RETURN, pg.K_SPACE):
+                        if menu_index == 0:
+                            game.start_campaign()
+                        else:
+                            game.start_room(ROOM_MAPS[menu_index - 1].key)
+                        scene = "play"
+                        pg.mouse.set_visible(False)
+                        pg.event.set_grab(True)
+                    elif pg.K_1 <= event.key <= pg.K_9:
+                        choice = event.key - pg.K_1
+                        if choice < menu_count:
+                            menu_index = choice
+                            if menu_index == 0:
+                                game.start_campaign()
+                            else:
+                                game.start_room(ROOM_MAPS[menu_index - 1].key)
+                            scene = "play"
+                            pg.mouse.set_visible(False)
+                            pg.event.set_grab(True)
+                else:
+                    if event.key == pg.K_ESCAPE:
+                        scene = "menu"
+                        pg.event.set_grab(False)
+                        pg.mouse.set_visible(True)
+                    elif event.key == pg.K_r and (game.health > 0 or game.won):
+                        game.reset()
+                    elif game.health > 0 and event.key in (pg.K_1, pg.K_2, pg.K_3, pg.K_4, pg.K_5):
+                        game.select_slot(event.key - pg.K_1)
+                    elif game.health > 0 and event.key == pg.K_SPACE:
+                        game.use_selected_item()
+            elif scene == "play" and event.type == pg.MOUSEMOTION and game.health > 0:
                 game.angle += event.rel[0] * MOUSE_SENSITIVITY
-            elif event.type == pg.MOUSEBUTTONDOWN and game.health > 0 and event.button in (1, 3):
+            elif (
+                scene == "play"
+                and event.type == pg.MOUSEBUTTONDOWN
+                and game.health > 0
+                and event.button in (1, 3)
+            ):
                 game.use_selected_item()
 
-        game.update(dt, pg.key.get_pressed())
-        draw_world(screen, game, font, big_font)
+        if scene == "menu":
+            draw_menu(screen, font, big_font, menu_index)
+        else:
+            game.update(dt, pg.key.get_pressed())
+            draw_world(screen, game, font, big_font)
         pg.display.flip()
 
     pg.event.set_grab(False)

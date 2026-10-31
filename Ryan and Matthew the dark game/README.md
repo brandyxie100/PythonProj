@@ -1,8 +1,8 @@
 # Dungeon 67: The Crypt Below
 
 An original first-person 3D-style dungeon crawler made with Pygame raycasting.
-Clear the Crypt of 67, then descend automatically into the tougher Warden's
-Depths for a second dungeon and a final boss fight.
+Use the **map menu** to pick a room, or run the full campaign:
+Crypt of 67 → Warden's Depths → **Boss 3** (1000 HP) in the Abyssal Halls.
 
 ## Run
 
@@ -11,7 +11,17 @@ python3 -m pip install -r requirements.txt
 python3 main.py
 ```
 
-## Controls
+## Menu
+
+| Key | Action |
+|---|---|
+| ↑↓ / W S | Move selection |
+| Enter / 1–6 | Start selected option |
+| Esc | Quit |
+
+Options: Full Campaign, plus five room maps (Crypt, Depths, Abyss/Boss 3, Crossroads, Spiral).
+
+## In-game controls
 
 | Key | Action |
 |---|---|
@@ -21,8 +31,8 @@ python3 main.py
 | 1-5 | Select a hotbar slot |
 | Left click / Space | Use the selected item |
 | Left / Right arrows | Turn |
-| R | Restart the dungeon |
-| Esc | Quit |
+| R | Restart the current room |
+| Esc | Back to map menu |
 
 When your health reaches zero, movement and combat stop. You automatically
 respawn at the start of the current level after five seconds with full health.

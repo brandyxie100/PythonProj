@@ -8,9 +8,15 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame as pg
 
 from main import (
+    BOSS3_HP,
     DUNGEON,
     BOSS_DAMAGE,
     BOSS_HP,
+    BOSS_LOOT,
+    CAMPAIGN_KEYS,
+    DUNGEON_FIVE,
+    DUNGEON_FOUR,
+    DUNGEON_THREE,
     DUNGEON_TWO,
     DEPTH_ZOMBIE_LOOT,
     DungeonGame,
@@ -19,13 +25,16 @@ from main import (
     HOTBAR_SIZE,
     POTION_HEAL,
     RESPAWN_DELAY,
+    ROOM_MAPS,
     SCREEN_H,
     SCREEN_W,
+    VOID_BLADE_LOOT,
     ZOMBIE_DAMAGE,
     ZOMBIE_HP,
     WARDEN_HP,
     cast_ray,
     draw_hotbar,
+    draw_menu,
     draw_world,
 )
 
@@ -40,11 +49,16 @@ class DungeonGameTests(unittest.TestCase):
         pg.quit()
 
     def test_dungeon_is_enclosed_and_rectangular(self) -> None:
-        for dungeon in (DUNGEON, DUNGEON_TWO):
+        for dungeon in (DUNGEON, DUNGEON_TWO, DUNGEON_THREE, DUNGEON_FOUR, DUNGEON_FIVE):
             self.assertTrue(all(len(row) == len(dungeon[0]) for row in dungeon))
             self.assertTrue(all(cell == "#" for cell in dungeon[0]))
             self.assertTrue(all(cell == "#" for cell in dungeon[-1]))
             self.assertTrue(all(row[0] == row[-1] == "#" for row in dungeon))
+
+    def test_room_catalog_and_campaign_include_boss3(self) -> None:
+        self.assertGreaterEqual(len(ROOM_MAPS), 5)
+        self.assertEqual(CAMPAIGN_KEYS[-1], "abyss")
+        self.assertEqual(BOSS3_HP, 1000)
 
     def test_game_starts_with_zombies_and_67_boss(self) -> None:
         game = DungeonGame()
@@ -153,10 +167,11 @@ class DungeonGameTests(unittest.TestCase):
         self.assertEqual(game.health, 100 - (ZOMBIE_DAMAGE - 4))
 
         boss = next(enemy for enemy in game.enemies if enemy.boss)
+        game.rng.random = lambda: 0.99  # type: ignore[method-assign]
         game._drop_loot(boss)
         boss_drop = game.loot_drops[-1]
         self.assertEqual(boss_drop.loot.kind, "weapon")
-        self.assertEqual(boss_drop.loot.name, "Iron Sword")
+        self.assertEqual(boss_drop.loot.name, BOSS_LOOT.name)
         self.assertGreater(boss_drop.loot.value, 6)
 
     def test_ray_finds_wall_ahead(self) -> None:
@@ -171,19 +186,66 @@ class DungeonGameTests(unittest.TestCase):
             enemy.alive = False
         game.update(0.01, pg.key.get_pressed())
         self.assertEqual(game.stage_index, 1)
-        self.assertEqual(game.stage_name, "The Warden's Depths")
+        self.assertEqual(game.stage_name, "Warden's Depths")
         self.assertEqual(len(game.living_enemies), 5)
         self.assertEqual(game.weapon_name, "Iron Sword")
         self.assertFalse(game.won)
 
-    def test_clearing_level_two_wins_the_game(self) -> None:
+    def test_clearing_level_two_advances_to_boss3_abyss(self) -> None:
         game = DungeonGame()
+        game.start_campaign()
         game._load_stage(1)
         for enemy in game.enemies:
             enemy.alive = False
         game.update(0.01, pg.key.get_pressed())
+        self.assertFalse(game.won)
+        self.assertEqual(game.stage_index, 2)
+        self.assertEqual(game.room_key, "abyss")
+        boss = next(enemy for enemy in game.living_enemies if enemy.boss)
+        self.assertEqual(boss.name, "Boss 3")
+        self.assertEqual(boss.hp, BOSS3_HP)
+        self.assertEqual(boss.kind, "boss3")
+
+    def test_clearing_boss3_wins_campaign(self) -> None:
+        game = DungeonGame()
+        game.start_campaign()
+        game._load_stage(2)
+        for enemy in game.enemies:
+            enemy.alive = False
+        game.update(0.01, pg.key.get_pressed())
         self.assertTrue(game.won)
-        self.assertEqual(game.stage_index, 1)
+
+    def test_single_room_mode_wins_without_campaign_advance(self) -> None:
+        game = DungeonGame()
+        game.start_room("crossroads")
+        self.assertFalse(game.campaign_mode)
+        for enemy in game.enemies:
+            enemy.alive = False
+        game.update(0.01, pg.key.get_pressed())
+        self.assertTrue(game.won)
+        self.assertEqual(game.room_key, "crossroads")
+
+    def test_boss3_grants_void_blade(self) -> None:
+        game = DungeonGame()
+        game.start_room("abyss")
+        boss = next(enemy for enemy in game.enemies if enemy.kind == "boss3")
+        for enemy in game.enemies:
+            if enemy is not boss:
+                enemy.alive = False
+        boss.x, boss.y = game.x + 1, game.y
+        game.weapon_bonus = 30
+        hits = (BOSS3_HP + 39) // 40
+        for _ in range(hits):
+            game.attack_timer = 0
+            game.attack()
+        self.assertFalse(boss.alive)
+        self.assertEqual(game.weapon_name, VOID_BLADE_LOOT.name)
+        self.assertEqual(game.weapon_bonus, VOID_BLADE_LOOT.value)
+
+    def test_menu_draws(self) -> None:
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        draw_menu(screen, pg.font.SysFont("consolas", 17), pg.font.SysFont("consolas", 44, bold=True), 0)
+        self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
 
     def test_level_two_boss_has_100_health_and_drops_gold_sword(self) -> None:
         game = DungeonGame()
