@@ -102,6 +102,19 @@ class DungeonGameTests(unittest.TestCase):
         draw_hotbar(screen, game, pg.font.SysFont("consolas", 17))
         self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
 
+    def test_held_item_draws_for_blade_and_potion(self) -> None:
+        from main import draw_held_item
+
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        game = DungeonGame()
+        game.select_slot(0)
+        draw_held_item(screen, game)
+        game.select_slot(1)
+        draw_held_item(screen, game)
+        game.select_slot(2)
+        draw_held_item(screen, game)
+        self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
+
 
 if __name__ == "__main__":
     unittest.main()

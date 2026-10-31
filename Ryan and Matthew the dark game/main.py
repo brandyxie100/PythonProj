@@ -293,11 +293,7 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
             for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
                 pg.draw.circle(screen, (255, 71, 51), (eye_x, eye_y), max(2, size // 20))
 
-    if game.attack_flash > 0:
-        blade = pg.Rect(SCREEN_W // 2 + 30, SCREEN_H // 2 - 60, 12, 112)
-        pg.draw.polygon(screen, (208, 222, 230), [blade.midtop, blade.topright, blade.midbottom, blade.bottomleft])
-        pg.draw.line(screen, (255, 240, 178), blade.midtop, blade.midbottom, 2)
-
+    draw_held_item(screen, game)
     draw_hud(screen, game, font)
     if game.message_timer > 0:
         message = font.render(game.message, True, (255, 230, 178))
@@ -313,6 +309,72 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         subtitle = font.render("Press R to play again", True, (235, 231, 220))
         screen.blit(title, title.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 - 20)))
         screen.blit(subtitle, subtitle.get_rect(center=(SCREEN_W // 2, SCREEN_H // 2 + 28)))
+
+
+def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
+    """Draw a first-person view of whatever is in the selected hotbar slot."""
+    # Slight idle bob + attack swing so the held item feels alive.
+    bob = math.sin(pg.time.get_ticks() * 0.006) * 6
+    swing = 0.0
+    if game.attack_flash > 0:
+        swing = (0.16 - game.attack_flash) / 0.16
+    base_x = SCREEN_W - 210
+    base_y = SCREEN_H - 210 + int(bob)
+
+    if game.selected_slot == 0:
+        # Blade held in the lower-right, tip up; swings left when attacking.
+        tip_x = base_x + 90 - int(swing * 120)
+        tip_y = base_y - 20 - int(swing * 40)
+        guard_x = base_x + 130 - int(swing * 40)
+        guard_y = base_y + 110
+        pommel_x = base_x + 150 - int(swing * 20)
+        pommel_y = base_y + 160
+        blade = [
+            (tip_x, tip_y),
+            (tip_x + 28, tip_y + 18),
+            (guard_x + 18, guard_y),
+            (guard_x - 10, guard_y + 8),
+        ]
+        pg.draw.polygon(screen, (208, 222, 230), blade)
+        pg.draw.polygon(screen, (160, 175, 190), blade, 2)
+        pg.draw.line(screen, (255, 240, 178), (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
+        pg.draw.line(screen, (120, 78, 48), (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
+        pg.draw.line(screen, (246, 220, 166), (guard_x - 18, guard_y + 2), (guard_x + 30, guard_y - 4), 2)
+        pg.draw.line(screen, (92, 58, 36), (guard_x + 4, guard_y), (pommel_x, pommel_y), 10)
+        pg.draw.circle(screen, (180, 140, 70), (pommel_x, pommel_y), 8)
+    elif game.selected_slot == 1:
+        # Health potion bottle in the lower-right hand.
+        raise_y = int(swing * 50)
+        bottle = pg.Rect(base_x + 95, base_y + 40 - raise_y, 52, 90)
+        neck = pg.Rect(bottle.centerx - 10, bottle.y - 18, 20, 22)
+        pg.draw.ellipse(screen, (40, 28, 36), bottle.inflate(18, 10).move(0, 70))
+        pg.draw.rect(screen, (137, 54, 74), bottle, border_radius=12)
+        pg.draw.rect(screen, (214, 112, 121), (bottle.x + 10, bottle.y + 28, 32, 40), border_radius=8)
+        pg.draw.rect(screen, (90, 70, 58), neck, border_radius=4)
+        pg.draw.rect(screen, (192, 169, 136), (neck.x - 2, neck.y - 6, 24, 10), border_radius=3)
+        # Liquid shine
+        pg.draw.line(
+            screen,
+            (255, 180, 190),
+            (bottle.x + 14, bottle.y + 36),
+            (bottle.x + 14, bottle.y + 70),
+            3,
+        )
+        if game.health_potions <= 0:
+            # Dim empty bottle
+            empty = pg.Surface(bottle.inflate(8, 8).size, pg.SRCALPHA)
+            empty.fill((10, 10, 16, 140))
+            screen.blit(empty, bottle.inflate(8, 8).topleft)
+    else:
+        # Empty hand silhouette for unused slots.
+        palm = [
+            (base_x + 100, base_y + 120),
+            (base_x + 160, base_y + 100),
+            (base_x + 180, base_y + 150),
+            (base_x + 110, base_y + 170),
+        ]
+        pg.draw.polygon(screen, (70, 52, 48), palm)
+        pg.draw.polygon(screen, (40, 28, 26), palm, 2)
 
 
 def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
