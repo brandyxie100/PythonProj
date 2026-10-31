@@ -25,6 +25,8 @@ ZOMBIE_HP = 45
 BOSS_HP = 134
 WARDEN_HP = 600
 GOLD_SWORD_DAMAGE = 24
+DIAMOND_SWORD_DAMAGE = 18
+DIAMOND_SWORD_CHANCE = 0.10
 ZOMBIE_DAMAGE = 12
 BOSS_DAMAGE = 25
 ZOMBIE_ATTACK_INTERVAL = 0.85
@@ -107,6 +109,9 @@ DEPTH_ZOMBIE_LOOT = (
     Loot("Dreadplate", "armor", 12, (109, 188, 195)),
 )
 BOSS_LOOT = Loot("Iron Sword", "weapon", 12, (210, 216, 225))
+DIAMOND_SWORD_LOOT = Loot(
+    "Diamond Sword", "weapon", DIAMOND_SWORD_DAMAGE, (120, 220, 255)
+)
 GOLD_SWORD_LOOT = Loot("Gold Sword", "weapon", GOLD_SWORD_DAMAGE, (255, 209, 79))
 
 
@@ -225,7 +230,18 @@ class DungeonGame:
                         self.message = "The Warden falls! Gold Sword replaces your Iron Sword."
                     else:
                         self._drop_loot(enemy)
-                        self.message = f"{enemy.name} defeated!"
+                        rare = (
+                            enemy.boss
+                            and self.stage_index == 0
+                            and self.loot_drops
+                            and self.loot_drops[-1].loot.name == DIAMOND_SWORD_LOOT.name
+                        )
+                        if rare:
+                            self.message = (
+                                f"{enemy.name} defeated! Rare Diamond Sword dropped!"
+                            )
+                        else:
+                            self.message = f"{enemy.name} defeated!"
                     self.message_timer = 1.8
                 else:
                     self.message = f"{enemy.name}: {enemy.hp} HP"
@@ -237,7 +253,14 @@ class DungeonGame:
         return hit_any
 
     def _drop_loot(self, enemy: Enemy) -> None:
-        if enemy.boss:
+        """Drop loot at the enemy. First boss: 10% Diamond Sword, else Iron Sword."""
+        if enemy.boss and self.stage_index == 0:
+            loot = (
+                DIAMOND_SWORD_LOOT
+                if self.rng.random() < DIAMOND_SWORD_CHANCE
+                else BOSS_LOOT
+            )
+        elif enemy.boss:
             loot = BOSS_LOOT
         else:
             loot_table = DEPTH_ZOMBIE_LOOT if self.stage_index == 1 else ZOMBIE_LOOT
@@ -573,10 +596,10 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
             (guard_x + 18, guard_y),
             (guard_x - 10, guard_y + 8),
         ]
-        pg.draw.polygon(screen, blade_color, blade)
-        pg.draw.polygon(screen, blade_edge, blade, 2)
-        pg.draw.line(screen, blade_edge, (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
-        pg.draw.line(screen, guard_color, (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
+        pg.draw.polygon(screen, (208, 222, 230), blade)
+        pg.draw.polygon(screen, (160, 175, 190), blade, 2)
+        pg.draw.line(screen, (255, 240, 178), (tip_x + 8, tip_y + 10), (guard_x + 4, guard_y - 4), 3)
+        pg.draw.line(screen, (120, 78, 48), (guard_x - 22, guard_y + 4), (guard_x + 34, guard_y - 6), 8)
         pg.draw.line(screen, (246, 220, 166), (guard_x - 18, guard_y + 2), (guard_x + 30, guard_y - 4), 2)
         pg.draw.line(screen, (92, 58, 36), (guard_x + 4, guard_y), (pommel_x, pommel_y), 10)
         pg.draw.circle(screen, (180, 140, 70), (pommel_x, pommel_y), 8)
