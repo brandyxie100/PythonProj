@@ -21,6 +21,15 @@ MOUSE_SENSITIVITY = 0.003
 ATTACK_COOLDOWN = 0.35
 HOTBAR_SIZE = 5
 POTION_HEAL = 40
+ZOMBIE_HP = 45
+BOSS_HP = 134
+ZOMBIE_DAMAGE = 12
+BOSS_DAMAGE = 25
+ZOMBIE_ATTACK_INTERVAL = 0.85
+BOSS_ATTACK_INTERVAL = 0.75
+ZOMBIE_SPEED = 0.55
+BOSS_SPEED = 0.75
+LOOT_PICKUP_DISTANCE = 0.55
 
 DUNGEON = (
     "###############",
@@ -54,6 +63,28 @@ class Enemy:
     wander_angle: float = 0.0
 
 
+@dataclass(frozen=True)
+class Loot:
+    name: str
+    kind: str
+    value: int
+    color: tuple[int, int, int]
+
+
+@dataclass
+class LootDrop:
+    x: float
+    y: float
+    loot: Loot
+
+
+ZOMBIE_LOOT = (
+    Loot("Grave Axe", "weapon", 6, (206, 119, 80)),
+    Loot("Bone Guard", "armor", 4, (177, 219, 167)),
+)
+BOSS_LOOT = Loot("67's Cleaver", "weapon", 12, (255, 91, 131))
+
+
 class DungeonGame:
     def __init__(self) -> None:
         self.rng = random.Random()
@@ -64,6 +95,11 @@ class DungeonGame:
         self.angle = 0.0
         self.health = 100
         self.kills = 0
+        self.weapon_bonus = 0
+        self.weapon_name = "Crypt Blade"
+        self.armor_value = 0
+        self.armor_name = "None"
+        self.loot_drops: list[LootDrop] = []
         self.attack_timer = 0.0
         self.attack_flash = 0.0
         self.selected_slot = 0
@@ -72,10 +108,10 @@ class DungeonGame:
         self.message = "Find the dungeon exit. The boss is waiting below."
         self.message_timer = 4.0
         self.enemies = [
-            Enemy(9.5, 2.5, "Crypt Zombie", 30, 30, wander_angle=2.1),
-            Enemy(11.5, 7.5, "Crypt Zombie", 30, 30, wander_angle=4.4),
-            Enemy(3.5, 11.5, "Crypt Zombie", 30, 30, wander_angle=0.8),
-            Enemy(10.5, 11.5, "67", 67, 67, boss=True),
+            Enemy(9.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=2.1),
+            Enemy(11.5, 7.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=4.4),
+            Enemy(3.5, 11.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.8),
+            Enemy(10.5, 11.5, "67", BOSS_HP, BOSS_HP, boss=True),
         ]
 
     @property
@@ -108,11 +144,13 @@ class DungeonGame:
             distance = math.hypot(dx, dy)
             facing_error = abs((math.atan2(dy, dx) - self.angle + math.pi) % (2 * math.pi) - math.pi)
             if distance <= (1.75 if enemy.boss else 1.45) and facing_error < (0.8 if enemy.boss else 0.65):
-                enemy.hp -= 10 if enemy.boss else 15
+                base_damage = 10 if enemy.boss else 15
+                enemy.hp -= base_damage + self.weapon_bonus
                 hit_any = True
                 if enemy.hp <= 0:
                     enemy.alive = False
                     self.kills += 1
+                    self._drop_loot(enemy)
                     self.message = f"{enemy.name} defeated!"
                     self.message_timer = 1.8
                 else:
@@ -123,6 +161,34 @@ class DungeonGame:
             self.message = "Your blade cuts through the dark."
             self.message_timer = 0.45
         return hit_any
+
+    def _drop_loot(self, enemy: Enemy) -> None:
+        loot = BOSS_LOOT if enemy.boss else self.rng.choice(ZOMBIE_LOOT)
+        self.loot_drops.append(LootDrop(enemy.x, enemy.y, loot))
+
+    def _collect_loot(self) -> None:
+        remaining: list[LootDrop] = []
+        for drop in self.loot_drops:
+            if math.hypot(drop.x - self.x, drop.y - self.y) > LOOT_PICKUP_DISTANCE:
+                remaining.append(drop)
+                continue
+            loot = drop.loot
+            if loot.kind == "weapon":
+                if loot.value > self.weapon_bonus:
+                    self.weapon_bonus = loot.value
+                    self.weapon_name = loot.name
+                    self.message = f"Equipped {loot.name}: +{loot.value} damage."
+                else:
+                    self.message = f"Found {loot.name}, but your weapon is stronger."
+            elif loot.kind == "armor":
+                if loot.value > self.armor_value:
+                    self.armor_value = loot.value
+                    self.armor_name = loot.name
+                    self.message = f"Equipped {loot.name}: blocks {loot.value} damage."
+                else:
+                    self.message = f"Found {loot.name}, but your armor is stronger."
+            self.message_timer = 1.8
+        self.loot_drops = remaining
 
     def select_slot(self, slot: int) -> None:
         if 0 <= slot < HOTBAR_SIZE:
@@ -173,24 +239,29 @@ class DungeonGame:
             distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
             if distance < 0.58:
                 if enemy.attack_timer <= 0:
-                    self.health -= 20 if enemy.boss else 8
-                    enemy.attack_timer = 0.9 if enemy.boss else 1.1
+                    incoming_damage = BOSS_DAMAGE if enemy.boss else ZOMBIE_DAMAGE
+                    self.health -= max(1, incoming_damage - self.armor_value)
+                    enemy.attack_timer = (
+                        BOSS_ATTACK_INTERVAL if enemy.boss else ZOMBIE_ATTACK_INTERVAL
+                    )
                     self.message = f"{enemy.name} hit you!"
                     self.message_timer = 0.8
                     if self.health <= 0:
                         self.health = 0
                         self.message = "You fell in the dungeon. Press R to try again."
                         self.message_timer = 999
-            elif distance < (5.0 if enemy.boss else 4.0):
+            elif distance < (6.0 if enemy.boss else 5.0):
                 dx = (self.x - enemy.x) / distance
                 dy = (self.y - enemy.y) / distance
-                speed = 0.6 if enemy.boss else 0.42
+                speed = BOSS_SPEED if enemy.boss else ZOMBIE_SPEED
                 new_x = enemy.x + dx * speed * dt
                 new_y = enemy.y + dy * speed * dt
                 if not self.is_wall(new_x, enemy.y):
                     enemy.x = new_x
                 if not self.is_wall(enemy.x, new_y):
                     enemy.y = new_y
+
+        self._collect_loot()
 
         if self.health > 0 and math.hypot(self.x - 7.5, self.y - 13.5) < 0.65:
             if self.living_enemies:
@@ -260,6 +331,30 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         key=lambda enemy: math.hypot(enemy.x - game.x, enemy.y - game.y),
         reverse=True,
     )
+    for drop in sorted(
+        game.loot_drops,
+        key=lambda item: math.hypot(item.x - game.x, item.y - game.y),
+        reverse=True,
+    ):
+        dx, dy = drop.x - game.x, drop.y - game.y
+        distance = math.hypot(dx, dy)
+        relative_angle = (math.atan2(dy, dx) - game.angle + math.pi) % (2 * math.pi) - math.pi
+        if distance < 0.1 or abs(relative_angle) > FOV / 2 + 0.2:
+            continue
+        screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
+        ray_index = min(RAY_COUNT - 1, max(0, screen_x // RAY_WIDTH))
+        if distance >= depths[ray_index]:
+            continue
+        size = min(58, max(8, int(38 / distance)))
+        center_y = horizon + int(SCREEN_H * 0.16 / distance)
+        icon = pg.Rect(screen_x - size // 2, center_y - size // 2, size, size)
+        pg.draw.circle(screen, (24, 22, 29), icon.center, size // 2 + 5)
+        pg.draw.rect(screen, drop.loot.color, icon, border_radius=max(2, size // 5))
+        pg.draw.rect(screen, (240, 233, 202), icon, 2, border_radius=max(2, size // 5))
+        if size >= 24:
+            loot_label = font.render(drop.loot.name, True, (255, 239, 199))
+            screen.blit(loot_label, loot_label.get_rect(center=(screen_x, icon.top - 10)))
+
     for enemy in sprites:
         dx, dy = enemy.x - game.x, enemy.y - game.y
         distance = math.hypot(dx, dy)
@@ -378,11 +473,13 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
 
 
 def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
-    panel = pg.Rect(16, 14, 220, 58)
+    panel = pg.Rect(16, 14, 270, 104)
     pg.draw.rect(screen, (10, 12, 21), panel, border_radius=8)
     pg.draw.rect(screen, (78, 78, 94), panel, 1, border_radius=8)
     screen.blit(font.render(f"HEALTH  {game.health}", True, (255, 146, 151)), (28, 22))
     screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, 46))
+    screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, 70))
+    screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, 92))
     boss = next((enemy for enemy in game.living_enemies if enemy.boss), None)
     if boss is not None:
         boss_bar = pg.Rect(SCREEN_W // 2 - 170, 18, 340, 24)
@@ -390,7 +487,7 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
         ratio = boss.hp / boss.max_hp
         fill = pg.Rect(boss_bar.x + 3, boss_bar.y + 3, int((boss_bar.width - 6) * ratio), boss_bar.height - 6)
         pg.draw.rect(screen, (168, 30, 65), fill, border_radius=6)
-        label = font.render(f"BOSS 67  {boss.hp}/67", True, (255, 239, 223))
+        label = font.render(f"BOSS 67  {boss.hp}/{boss.max_hp}", True, (255, 239, 223))
         screen.blit(label, label.get_rect(center=boss_bar.center))
     cross = SCREEN_W // 2, SCREEN_H // 2
     pg.draw.line(screen, (235, 236, 220), (cross[0] - 8, cross[1]), (cross[0] + 8, cross[1]), 2)
@@ -407,7 +504,13 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
     total_width = HOTBAR_SIZE * slot_width + (HOTBAR_SIZE - 1) * gap
     start_x = (SCREEN_W - total_width) // 2
     top = SCREEN_H - slot_height - 34
-    labels = ("Blade", "Potion", "", "", "")
+    labels = (
+        "Blade",
+        "Potion",
+        game.weapon_name[:9] if game.weapon_bonus else "",
+        game.armor_name[:9] if game.armor_value else "",
+        "",
+    )
 
     for index in range(HOTBAR_SIZE):
         x = start_x + index * (slot_width + gap)
@@ -431,6 +534,20 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
             pg.draw.rect(screen, (214, 112, 121), (x + 29, top + 30, 14, 12), border_radius=3)
             pg.draw.rect(screen, (192, 169, 136), (x + 31, top + 14, 10, 7), border_radius=2)
             count = str(game.health_potions)
+        elif index == 2 and game.weapon_bonus:
+            pg.draw.polygon(
+                screen,
+                (206, 119, 80),
+                [(x + 21, top + 18), (x + 45, top + 37), (x + 29, top + 34), (x + 20, top + 46)],
+            )
+            count = f"+{game.weapon_bonus}"
+        elif index == 3 and game.armor_value:
+            pg.draw.polygon(
+                screen,
+                (177, 219, 167),
+                [(x + 36, top + 16), (x + 49, top + 22), (x + 46, top + 38), (x + 36, top + 47), (x + 26, top + 38), (x + 23, top + 22)],
+            )
+            count = f"-{game.armor_value}"
         else:
             count = ""
 

@@ -9,11 +9,15 @@ import pygame as pg
 
 from main import (
     DUNGEON,
+    BOSS_DAMAGE,
+    BOSS_HP,
     DungeonGame,
     HOTBAR_SIZE,
     POTION_HEAL,
     SCREEN_H,
     SCREEN_W,
+    ZOMBIE_DAMAGE,
+    ZOMBIE_HP,
     cast_ray,
     draw_hotbar,
     draw_world,
@@ -41,8 +45,65 @@ class DungeonGameTests(unittest.TestCase):
         boss = next(enemy for enemy in game.living_enemies if enemy.boss)
         self.assertEqual(len(zombies), 3)
         self.assertEqual(boss.name, "67")
-        self.assertEqual(boss.hp, 67)
-        self.assertEqual(boss.max_hp, 67)
+        self.assertEqual(boss.hp, BOSS_HP)
+        self.assertEqual(boss.max_hp, BOSS_HP)
+        self.assertGreater(BOSS_HP, 67)
+        self.assertGreater(ZOMBIE_HP, 30)
+
+    def test_zombie_and_boss_deal_increased_contact_damage(self) -> None:
+        game = DungeonGame()
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+        zombie.x, zombie.y = game.x + 0.5, game.y
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 100 - ZOMBIE_DAMAGE)
+
+        game.health = 100
+        game.enemies = [enemy for enemy in game.enemies if enemy.boss]
+        boss = game.enemies[0]
+        boss.x, boss.y = game.x + 0.5, game.y
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 100 - BOSS_DAMAGE)
+
+    def test_defeated_zombie_drops_collectible_weapon_or_armor(self) -> None:
+        game = DungeonGame()
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+        for enemy in game.enemies:
+            if enemy is not zombie:
+                enemy.alive = False
+        zombie.x, zombie.y = game.x + 1, game.y
+
+        for _ in range(3):
+            game.attack_timer = 0
+            self.assertTrue(game.attack())
+
+        self.assertFalse(zombie.alive)
+        self.assertEqual(len(game.loot_drops), 1)
+        drop = game.loot_drops[0]
+        self.assertIn(drop.loot.kind, ("weapon", "armor"))
+        drop.x, drop.y = game.x, game.y
+        game._collect_loot()
+        self.assertEqual(game.loot_drops, [])
+        if drop.loot.kind == "weapon":
+            self.assertEqual(game.weapon_name, drop.loot.name)
+            self.assertEqual(game.weapon_bonus, drop.loot.value)
+        else:
+            self.assertEqual(game.armor_name, drop.loot.name)
+            self.assertEqual(game.armor_value, drop.loot.value)
+
+    def test_armor_reduces_zombie_damage_and_boss_has_guaranteed_weapon_drop(self) -> None:
+        game = DungeonGame()
+        game.armor_value = 4
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+        zombie.x, zombie.y = game.x + 0.5, game.y
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 100 - (ZOMBIE_DAMAGE - 4))
+
+        boss = next(enemy for enemy in game.enemies if enemy.boss)
+        game._drop_loot(boss)
+        boss_drop = game.loot_drops[-1]
+        self.assertEqual(boss_drop.loot.kind, "weapon")
+        self.assertEqual(boss_drop.loot.name, "67's Cleaver")
+        self.assertGreater(boss_drop.loot.value, 6)
 
     def test_ray_finds_wall_ahead(self) -> None:
         game = DungeonGame()
@@ -55,7 +116,8 @@ class DungeonGameTests(unittest.TestCase):
             if enemy is not boss:
                 enemy.alive = False
         boss.x, boss.y = game.x + 1, game.y
-        for _ in range(7):
+        hits_needed = (BOSS_HP + 9) // 10
+        for _ in range(hits_needed):
             game.attack_timer = 0
             self.assertTrue(game.attack())
         self.assertFalse(boss.alive)

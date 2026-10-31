@@ -28,6 +28,13 @@ The hotbar starts with an infinite-use blade and three healing potions.
 Select the potion and use it to restore up to 40 health. The other three
 slots are empty.
 
+The crypt enemies have been made tougher: zombies have 45 HP and deal 12
+damage, while boss 67 has 134 HP and deals 25 damage per hit.
+
+Defeated zombies drop a random Grave Axe or Bone Guard. Walk over a drop to
+equip it: axes increase your attack damage, while armor reduces incoming
+damage. Boss 67 always drops its stronger cleaver.
+
 The first-person view is drawn with a small raycasting renderer; no 3D engine,
 external art, or network service is needed. The mouse is captured while the
 game runs.
