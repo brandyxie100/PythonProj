@@ -23,6 +23,8 @@ HOTBAR_SIZE = 5
 POTION_HEAL = 40
 ZOMBIE_HP = 45
 BOSS_HP = 134
+WARDEN_HP = 100
+GOLD_SWORD_DAMAGE = 24
 ZOMBIE_DAMAGE = 12
 BOSS_DAMAGE = 25
 ZOMBIE_ATTACK_INTERVAL = 0.85
@@ -45,6 +47,23 @@ DUNGEON = (
     "#.....#.......#",
     "#.....#.......#",
     "#.....#.......#",
+    "#.............#",
+    "###############",
+)
+
+DUNGEON_TWO = (
+    "###############",
+    "#.......#.....#",
+    "#.###...#.....#",
+    "#...#...#..##.#",
+    "#...#.........#",
+    "#.#####.#####.#",
+    "#.......#.....#",
+    "###.##..#..##.#",
+    "#...#...#.....#",
+    "#...#..###.##.#",
+    "#..##..###....#",
+    "#.............#",
     "#.............#",
     "###############",
 )
@@ -82,7 +101,8 @@ ZOMBIE_LOOT = (
     Loot("Grave Axe", "weapon", 6, (206, 119, 80)),
     Loot("Bone Guard", "armor", 4, (177, 219, 167)),
 )
-BOSS_LOOT = Loot("67's Cleaver", "weapon", 12, (255, 91, 131))
+BOSS_LOOT = Loot("Iron Sword", "weapon", 12, (210, 216, 225))
+GOLD_SWORD_LOOT = Loot("Gold Sword", "weapon", GOLD_SWORD_DAMAGE, (255, 209, 79))
 
 
 class DungeonGame:
@@ -91,8 +111,6 @@ class DungeonGame:
         self.reset()
 
     def reset(self) -> None:
-        self.x, self.y = 2.5, 2.5
-        self.angle = 0.0
         self.health = 100
         self.kills = 0
         self.weapon_bonus = 0
@@ -104,25 +122,68 @@ class DungeonGame:
         self.attack_flash = 0.0
         self.selected_slot = 0
         self.health_potions = 3
+        self.stage_index = 0
         self.won = False
-        self.message = "Find the dungeon exit. The boss is waiting below."
-        self.message_timer = 4.0
-        self.enemies = [
-            Enemy(9.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=2.1),
-            Enemy(11.5, 7.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=4.4),
-            Enemy(3.5, 11.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.8),
-            Enemy(10.5, 11.5, "67", BOSS_HP, BOSS_HP, boss=True),
-        ]
+        self.message = ""
+        self.message_timer = 0.0
+        self._load_stage(0)
 
     @property
     def living_enemies(self) -> list[Enemy]:
         return [enemy for enemy in self.enemies if enemy.alive]
 
+    @property
+    def stage_name(self) -> str:
+        return "Crypt of 67" if self.stage_index == 0 else "The Warden's Depths"
+
+    def _load_stage(self, stage_index: int) -> None:
+        self.stage_index = stage_index
+        self.dungeon_map = DUNGEON if stage_index == 0 else DUNGEON_TWO
+        self.x, self.y = (2.5, 2.5) if stage_index == 0 else (2.5, 1.5)
+        self.angle = 0.0
+        self.attack_timer = 0.0
+        self.attack_flash = 0.0
+        self.loot_drops.clear()
+        if stage_index == 0:
+            self.enemies = [
+                Enemy(9.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=2.1),
+                Enemy(11.5, 7.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=4.4),
+                Enemy(3.5, 11.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.8),
+                Enemy(10.5, 11.5, "67", BOSS_HP, BOSS_HP, boss=True),
+            ]
+            self.message = "Clear every zombie and defeat 67 to descend."
+        else:
+            self.enemies = [
+                Enemy(11.5, 1.5, "Depth Zombie", 60, 60, wander_angle=1.4),
+                Enemy(12.5, 4.5, "Depth Zombie", 60, 60, wander_angle=4.2),
+                Enemy(2.5, 8.5, "Depth Zombie", 60, 60, wander_angle=3.0),
+                Enemy(11.5, 12.5, "Depth Zombie", 60, 60, wander_angle=0.7),
+                Enemy(7.5, 12.5, "The Warden", WARDEN_HP, WARDEN_HP, boss=True),
+            ]
+            self.message = "Level 2: defeat the Depth Zombies and the Warden!"
+        self.message_timer = 4.0
+
+    def _advance_stage(self) -> None:
+        for drop in self.loot_drops:
+            if drop.loot.kind == "weapon" and drop.loot.value > self.weapon_bonus:
+                self.weapon_bonus = drop.loot.value
+                self.weapon_name = drop.loot.name
+            elif drop.loot.kind == "armor" and drop.loot.value > self.armor_value:
+                self.armor_value = drop.loot.value
+                self.armor_name = drop.loot.name
+        self.loot_drops.clear()
+        if self.stage_index == 0:
+            self._load_stage(1)
+        else:
+            self.won = True
+            self.message = "Dungeon cleared! Press R to explore again."
+            self.message_timer = 999
+
     def is_wall(self, x: float, y: float) -> bool:
         cell_x, cell_y = int(x), int(y)
-        if not (0 <= cell_y < len(DUNGEON) and 0 <= cell_x < len(DUNGEON[cell_y])):
+        if not (0 <= cell_y < len(self.dungeon_map) and 0 <= cell_x < len(self.dungeon_map[cell_y])):
             return True
-        return DUNGEON[cell_y][cell_x] == "#"
+        return self.dungeon_map[cell_y][cell_x] == "#"
 
     def move(self, forward: float, sideways: float, dt: float) -> None:
         dx = (math.cos(self.angle) * forward - math.sin(self.angle) * sideways) * PLAYER_SPEED * dt
@@ -150,8 +211,13 @@ class DungeonGame:
                 if enemy.hp <= 0:
                     enemy.alive = False
                     self.kills += 1
-                    self._drop_loot(enemy)
-                    self.message = f"{enemy.name} defeated!"
+                    if enemy.boss and self.stage_index == 1:
+                        self.weapon_name = GOLD_SWORD_LOOT.name
+                        self.weapon_bonus = GOLD_SWORD_LOOT.value
+                        self.message = "The Warden falls! Gold Sword replaces your Iron Sword."
+                    else:
+                        self._drop_loot(enemy)
+                        self.message = f"{enemy.name} defeated!"
                     self.message_timer = 1.8
                 else:
                     self.message = f"{enemy.name}: {enemy.hp} HP"
@@ -163,7 +229,10 @@ class DungeonGame:
         return hit_any
 
     def _drop_loot(self, enemy: Enemy) -> None:
-        loot = BOSS_LOOT if enemy.boss else self.rng.choice(ZOMBIE_LOOT)
+        if enemy.boss:
+            loot = BOSS_LOOT
+        else:
+            loot = self.rng.choice(ZOMBIE_LOOT)
         self.loot_drops.append(LootDrop(enemy.x, enemy.y, loot))
 
     def _collect_loot(self) -> None:
@@ -239,10 +308,24 @@ class DungeonGame:
             distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
             if distance < 0.58:
                 if enemy.attack_timer <= 0:
-                    incoming_damage = BOSS_DAMAGE if enemy.boss else ZOMBIE_DAMAGE
+                    incoming_damage = (
+                        BOSS_DAMAGE + 10
+                        if enemy.boss and self.stage_index == 1
+                        else BOSS_DAMAGE
+                        if enemy.boss
+                        else ZOMBIE_DAMAGE + 4
+                        if self.stage_index == 1
+                        else ZOMBIE_DAMAGE
+                    )
                     self.health -= max(1, incoming_damage - self.armor_value)
                     enemy.attack_timer = (
-                        BOSS_ATTACK_INTERVAL if enemy.boss else ZOMBIE_ATTACK_INTERVAL
+                        0.6
+                        if enemy.boss and self.stage_index == 1
+                        else BOSS_ATTACK_INTERVAL
+                        if enemy.boss
+                        else 0.7
+                        if self.stage_index == 1
+                        else ZOMBIE_ATTACK_INTERVAL
                     )
                     self.message = f"{enemy.name} hit you!"
                     self.message_timer = 0.8
@@ -253,7 +336,15 @@ class DungeonGame:
             elif distance < (6.0 if enemy.boss else 5.0):
                 dx = (self.x - enemy.x) / distance
                 dy = (self.y - enemy.y) / distance
-                speed = BOSS_SPEED if enemy.boss else ZOMBIE_SPEED
+                speed = (
+                    BOSS_SPEED + 0.2
+                    if enemy.boss and self.stage_index == 1
+                    else BOSS_SPEED
+                    if enemy.boss
+                    else ZOMBIE_SPEED + 0.1
+                    if self.stage_index == 1
+                    else ZOMBIE_SPEED
+                )
                 new_x = enemy.x + dx * speed * dt
                 new_y = enemy.y + dy * speed * dt
                 if not self.is_wall(new_x, enemy.y):
@@ -263,13 +354,8 @@ class DungeonGame:
 
         self._collect_loot()
 
-        if self.health > 0 and math.hypot(self.x - 7.5, self.y - 13.5) < 0.65:
-            if self.living_enemies:
-                self.message = "The exit is sealed. Defeat every zombie and boss 67!"
-                self.message_timer = 1.0
-            else:
-                self.won = True
-                self.message = "Dungeon cleared! Press R to explore again."
+        if self.health > 0 and not self.living_enemies:
+            self._advance_stage()
 
 
 def cast_ray(game: DungeonGame, ray_angle: float) -> float:
@@ -375,7 +461,7 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
             pg.draw.rect(screen, (224, 56, 103), (sprite_rect.x + size // 8, sprite_rect.y + size // 8, size // 2, size // 5), border_radius=6)
             for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
                 pg.draw.circle(screen, (255, 218, 98), (eye_x, sprite_rect.y + size // 3), max(2, size // 18))
-            label = big_font.render("67", True, (255, 226, 120))
+            label = big_font.render(enemy.name, True, (255, 226, 120))
             screen.blit(label, label.get_rect(center=(screen_x, sprite_rect.y - size // 10)))
             bar_width = size * 2 // 3
             pg.draw.rect(screen, (25, 16, 25), (sprite_rect.x, sprite_rect.y - 13, bar_width, 7))
@@ -480,6 +566,12 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
     screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, 46))
     screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, 70))
     screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, 92))
+    stage_label = font.render(
+        f"LEVEL {game.stage_index + 1}/2  {game.stage_name}",
+        True,
+        (224, 204, 162),
+    )
+    screen.blit(stage_label, (SCREEN_W - stage_label.get_width() - 20, 54))
     boss = next((enemy for enemy in game.living_enemies if enemy.boss), None)
     if boss is not None:
         boss_bar = pg.Rect(SCREEN_W // 2 - 170, 18, 340, 24)
@@ -487,7 +579,7 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
         ratio = boss.hp / boss.max_hp
         fill = pg.Rect(boss_bar.x + 3, boss_bar.y + 3, int((boss_bar.width - 6) * ratio), boss_bar.height - 6)
         pg.draw.rect(screen, (168, 30, 65), fill, border_radius=6)
-        label = font.render(f"BOSS 67  {boss.hp}/{boss.max_hp}", True, (255, 239, 223))
+        label = font.render(f"BOSS {boss.name}  {boss.hp}/{boss.max_hp}", True, (255, 239, 223))
         screen.blit(label, label.get_rect(center=boss_bar.center))
     cross = SCREEN_W // 2, SCREEN_H // 2
     pg.draw.line(screen, (235, 236, 220), (cross[0] - 8, cross[1]), (cross[0] + 8, cross[1]), 2)

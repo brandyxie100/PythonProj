@@ -1,8 +1,8 @@
 # Dungeon 67: The Crypt Below
 
 An original first-person 3D-style dungeon crawler made with Pygame raycasting.
-Explore a maze of dark stone corridors, fight the crypt zombies, and face the
-boss known as **67**. Defeat every enemy to unseal the exit.
+Clear the Crypt of 67, then descend automatically into the tougher Warden's
+Depths for a second dungeon and a final boss fight.
 
 ## Run
 
@@ -33,7 +33,12 @@ damage, while boss 67 has 134 HP and deals 25 damage per hit.
 
 Defeated zombies drop a random Grave Axe or Bone Guard. Walk over a drop to
 equip it: axes increase your attack damage, while armor reduces incoming
-damage. Boss 67 always drops its stronger cleaver.
+damage. Boss 67 drops an Iron Sword.
+
+Defeat every enemy in level 1 to enter level 2 automatically. Your health,
+potions, and equipment carry over. The level 2 boss has 100 HP; defeating it
+automatically replaces the Iron Sword with a stronger Gold Sword. Clear level
+2 to finish the game.
 
 The first-person view is drawn with a small raycasting renderer; no 3D engine,
 external art, or network service is needed. The mouse is captured while the

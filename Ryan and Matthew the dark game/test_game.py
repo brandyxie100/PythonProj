@@ -11,13 +11,17 @@ from main import (
     DUNGEON,
     BOSS_DAMAGE,
     BOSS_HP,
+    DUNGEON_TWO,
     DungeonGame,
+    GOLD_SWORD_DAMAGE,
+    GOLD_SWORD_LOOT,
     HOTBAR_SIZE,
     POTION_HEAL,
     SCREEN_H,
     SCREEN_W,
     ZOMBIE_DAMAGE,
     ZOMBIE_HP,
+    WARDEN_HP,
     cast_ray,
     draw_hotbar,
     draw_world,
@@ -34,10 +38,11 @@ class DungeonGameTests(unittest.TestCase):
         pg.quit()
 
     def test_dungeon_is_enclosed_and_rectangular(self) -> None:
-        self.assertTrue(all(len(row) == len(DUNGEON[0]) for row in DUNGEON))
-        self.assertTrue(all(cell == "#" for cell in DUNGEON[0]))
-        self.assertTrue(all(cell == "#" for cell in DUNGEON[-1]))
-        self.assertTrue(all(row[0] == row[-1] == "#" for row in DUNGEON))
+        for dungeon in (DUNGEON, DUNGEON_TWO):
+            self.assertTrue(all(len(row) == len(dungeon[0]) for row in dungeon))
+            self.assertTrue(all(cell == "#" for cell in dungeon[0]))
+            self.assertTrue(all(cell == "#" for cell in dungeon[-1]))
+            self.assertTrue(all(row[0] == row[-1] == "#" for row in dungeon))
 
     def test_game_starts_with_zombies_and_67_boss(self) -> None:
         game = DungeonGame()
@@ -102,28 +107,57 @@ class DungeonGameTests(unittest.TestCase):
         game._drop_loot(boss)
         boss_drop = game.loot_drops[-1]
         self.assertEqual(boss_drop.loot.kind, "weapon")
-        self.assertEqual(boss_drop.loot.name, "67's Cleaver")
+        self.assertEqual(boss_drop.loot.name, "Iron Sword")
         self.assertGreater(boss_drop.loot.value, 6)
 
     def test_ray_finds_wall_ahead(self) -> None:
         game = DungeonGame()
         self.assertAlmostEqual(cast_ray(game, 0), 3.5)
 
-    def test_boss_can_be_defeated_and_exit_unlocks(self) -> None:
+    def test_clearing_first_dungeon_advances_to_level_two(self) -> None:
         game = DungeonGame()
+        game.weapon_name = "Iron Sword"
+        game.weapon_bonus = 12
+        for enemy in game.enemies:
+            enemy.alive = False
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.stage_index, 1)
+        self.assertEqual(game.stage_name, "The Warden's Depths")
+        self.assertEqual(len(game.living_enemies), 5)
+        self.assertEqual(game.weapon_name, "Iron Sword")
+        self.assertFalse(game.won)
+
+    def test_clearing_level_two_wins_the_game(self) -> None:
+        game = DungeonGame()
+        game._load_stage(1)
+        for enemy in game.enemies:
+            enemy.alive = False
+        game.update(0.01, pg.key.get_pressed())
+        self.assertTrue(game.won)
+        self.assertEqual(game.stage_index, 1)
+
+    def test_level_two_boss_has_100_health_and_drops_gold_sword(self) -> None:
+        game = DungeonGame()
+        game._load_stage(1)
         boss = next(enemy for enemy in game.enemies if enemy.boss)
         for enemy in game.enemies:
             if enemy is not boss:
                 enemy.alive = False
+        self.assertEqual(boss.hp, WARDEN_HP)
+        self.assertEqual(boss.max_hp, 100)
+
+        game.weapon_name = "Iron Sword"
+        game.weapon_bonus = 12
         boss.x, boss.y = game.x + 1, game.y
-        hits_needed = (BOSS_HP + 9) // 10
+        hits_needed = (WARDEN_HP + 21) // 22
         for _ in range(hits_needed):
             game.attack_timer = 0
             self.assertTrue(game.attack())
+
         self.assertFalse(boss.alive)
-        game.x, game.y = 7.5, 13.5
-        game.update(0.01, pg.key.get_pressed())
-        self.assertTrue(game.won)
+        self.assertEqual(game.weapon_name, GOLD_SWORD_LOOT.name)
+        self.assertEqual(game.weapon_bonus, GOLD_SWORD_DAMAGE)
+        self.assertIn("replaces your Iron Sword", game.message)
 
     def test_first_person_scene_renders(self) -> None:
         screen = pg.Surface((SCREEN_W, SCREEN_H))
