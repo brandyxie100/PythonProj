@@ -75,20 +75,21 @@ DUNGEON_TWO = (
     "###############",
 )
 
+# Open center arena so Boss 3 is reachable (not stuck in a wall).
 DUNGEON_THREE = (
     "#################",
     "#.......#.......#",
-    "#.#####.#.#####.#",
-    "#.#...#...#...#.#",
-    "#.#.#.#####.#.#.#",
-    "#...#...#...#...#",
-    "###.###.#.###.###",
-    "#.....#...#.....#",
-    "#.###.#####.###.#",
-    "#.#...........#.#",
-    "#.#.#########.#.#",
-    "#.#.....#.....#.#",
-    "#.#####.#.#####.#",
+    "#.###...#...###.#",
+    "#.#.............#",
+    "#.#...#######...#",
+    "#.....#.....#...#",
+    "###...#.....#.###",
+    "#.....#.....#...#",
+    "#.....#.....#...#",
+    "#.....#.....#...#",
+    "#....#########..#",
+    "#...............#",
+    "#.###.......###.#",
     "#...............#",
     "#################",
 )
@@ -183,19 +184,48 @@ class RoomMap:
     blurb: str
     dungeon: tuple[str, ...]
     spawn: tuple[float, float]
+    theme: str = "dungeon"  # dungeon | forest
 
 
 ROOM_MAPS: tuple[RoomMap, ...] = (
     RoomMap("crypt", "Crypt of 67", "Boss 1: 67", DUNGEON, (2.5, 2.5)),
     RoomMap("depths", "Warden's Depths", "Boss 2: The Warden", DUNGEON_TWO, (2.5, 1.5)),
-    RoomMap("abyss", "Abyssal Halls", "Boss 3: 1000 HP titan", DUNGEON_THREE, (1.5, 1.5)),
-    RoomMap("crossroads", "Crossroads", "Open lanes, mid fight", DUNGEON_FOUR, (2.5, 2.5)),
+    RoomMap(
+        "abyss",
+        "Abyssal Halls",
+        "FIND Boss 3 here (1000 HP)",
+        DUNGEON_THREE,
+        (1.5, 1.5),
+    ),
+    RoomMap(
+        "crossroads",
+        "Sunlit Grove",
+        "Bright forest — trees, not stone",
+        DUNGEON_FOUR,
+        (2.5, 2.5),
+        theme="forest",
+    ),
     RoomMap("spiral", "Spiral Pit", "Tight spiral corridors", DUNGEON_FIVE, (1.5, 1.5)),
 )
 
 # Full campaign order (Boss 3 is the finale).
 CAMPAIGN_KEYS: tuple[str, ...] = ("crypt", "depths", "abyss")
 ROOM_BY_KEY: dict[str, RoomMap] = {room.key: room for room in ROOM_MAPS}
+
+# Decorative tree billboards for the bright forest map (open floor cells).
+FOREST_TREES: tuple[tuple[float, float], ...] = (
+    (5.5, 1.5),
+    (12.5, 2.5),
+    (4.5, 3.5),
+    (8.5, 3.5),
+    (2.5, 5.5),
+    (11.5, 5.5),
+    (2.5, 7.5),
+    (4.5, 9.5),
+    (2.5, 11.5),
+    (7.5, 12.5),
+    (9.5, 12.5),
+)
 
 
 class DungeonGame:
@@ -261,6 +291,7 @@ class DungeonGame:
         if self.campaign_mode and room_key in CAMPAIGN_KEYS:
             self.stage_index = CAMPAIGN_KEYS.index(room_key)
         self.dungeon_map = room.dungeon
+        self.theme = room.theme
         self.x, self.y = room.spawn
         self.angle = 0.0
         self.attack_timer = 0.0
@@ -287,19 +318,20 @@ class DungeonGame:
                 Enemy(7.5, 12.5, "The Warden", WARDEN_HP, WARDEN_HP, boss=True, kind="warden"),
             ]
         if room_key == "abyss":
+            # Positions verified as open floor cells (Boss 3 in the center arena).
             return [
-                Enemy(8.5, 3.5, "Abyss Wraith", 80, 80, wander_angle=1.1),
-                Enemy(14.5, 7.5, "Abyss Wraith", 80, 80, wander_angle=2.7),
-                Enemy(3.5, 12.5, "Abyss Wraith", 80, 80, wander_angle=4.0),
-                Enemy(12.5, 12.5, "Abyss Wraith", 80, 80, wander_angle=0.5),
+                Enemy(3.5, 3.5, "Abyss Wraith", 80, 80, wander_angle=1.1),
+                Enemy(13.5, 3.5, "Abyss Wraith", 80, 80, wander_angle=2.7),
+                Enemy(3.5, 11.5, "Abyss Wraith", 80, 80, wander_angle=4.0),
+                Enemy(13.5, 11.5, "Abyss Wraith", 80, 80, wander_angle=0.5),
                 Enemy(8.5, 8.5, "Boss 3", BOSS3_HP, BOSS3_HP, boss=True, kind="boss3"),
             ]
         if room_key == "crossroads":
             return [
-                Enemy(7.5, 2.5, "Crypt Zombie", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.9),
-                Enemy(12.5, 7.5, "Crypt Zombie", ZOMBIE_HP + 10, ZOMBIE_HP + 10, wander_angle=2.2),
-                Enemy(4.5, 11.5, "Depth Zombie", 55, 55, wander_angle=3.5),
-                Enemy(11.5, 11.5, "Depth Zombie", 55, 55, wander_angle=5.0),
+                Enemy(7.5, 2.5, "Grove Beast", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.9),
+                Enemy(12.5, 7.5, "Grove Beast", ZOMBIE_HP + 10, ZOMBIE_HP + 10, wander_angle=2.2),
+                Enemy(4.5, 11.5, "Grove Beast", 55, 55, wander_angle=3.5),
+                Enemy(11.5, 11.5, "Grove Beast", 55, 55, wander_angle=5.0),
             ]
         # spiral
         return [
@@ -592,8 +624,15 @@ def cast_ray(game: DungeonGame, ray_angle: float) -> float:
 
 def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_font: pg.font.Font) -> None:
     horizon = SCREEN_H // 2
-    screen.fill((10, 12, 21))
-    pg.draw.rect(screen, (24, 23, 35), (0, horizon, SCREEN_W, horizon))
+    forest = getattr(game, "theme", "dungeon") == "forest"
+    if forest:
+        # Bright daylight grove: sky + grass instead of crypt gloom.
+        screen.fill((150, 205, 245))
+        pg.draw.rect(screen, (95, 170, 75), (0, horizon, SCREEN_W, horizon))
+        pg.draw.rect(screen, (120, 195, 95), (0, horizon, SCREEN_W, horizon // 3))
+    else:
+        screen.fill((10, 12, 21))
+        pg.draw.rect(screen, (24, 23, 35), (0, horizon, SCREEN_W, horizon))
     depths: list[float] = []
     for ray in range(RAY_COUNT):
         ray_angle = game.angle - FOV / 2 + FOV * ray / RAY_COUNT
@@ -602,15 +641,51 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         depths.append(distance)
         wall_height = min(SCREEN_H, int(SCREEN_H / max(distance, 0.1)))
         top = horizon - wall_height // 2
-        shade = max(15, 150 - int(distance * 11))
-        if math.sin(ray_angle) < 0:
-            shade = int(shade * 0.78)
-        wall_color = (shade, int(shade * 0.86), int(shade * 0.72))
+        if forest:
+            # Tree-trunk / canopy walls — brighter greens and bark browns.
+            shade = max(40, 210 - int(distance * 9))
+            if math.sin(ray_angle) < 0:
+                shade = int(shade * 0.88)
+            bark = int(shade * 0.55)
+            wall_color = (bark + 20, shade, int(shade * 0.45))
+            seam_color = (max(20, bark - 10), max(30, shade - 35), max(15, int(shade * 0.3)))
+        else:
+            shade = max(15, 150 - int(distance * 11))
+            if math.sin(ray_angle) < 0:
+                shade = int(shade * 0.78)
+            wall_color = (shade, int(shade * 0.86), int(shade * 0.72))
+            seam_color = (max(8, shade - 22), max(8, int(shade * 0.72)), max(8, int(shade * 0.6)))
         rect = pg.Rect(ray * RAY_WIDTH, top, RAY_WIDTH + 1, wall_height)
         pg.draw.rect(screen, wall_color, rect)
         if wall_height > 32:
-            seam_color = (max(8, shade - 22), max(8, int(shade * 0.72)), max(8, int(shade * 0.6)))
             pg.draw.line(screen, seam_color, (rect.left, top + wall_height // 2), (rect.right, top + wall_height // 2), 1)
+            if forest and wall_height > 48:
+                # Canopy fringe on tall tree walls.
+                leaf = (max(30, int(shade * 0.55)), min(255, shade + 40), max(25, int(shade * 0.4)))
+                pg.draw.line(screen, leaf, (rect.left, top + 4), (rect.right, top + 4), 3)
+
+    if forest:
+        for tx, ty in FOREST_TREES:
+            dx, dy = tx - game.x, ty - game.y
+            distance = math.hypot(dx, dy)
+            relative_angle = (math.atan2(dy, dx) - game.angle + math.pi) % (2 * math.pi) - math.pi
+            if distance < 0.35 or abs(relative_angle) > FOV / 2 + 0.25:
+                continue
+            screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
+            ray_index = min(RAY_COUNT - 1, max(0, screen_x // RAY_WIDTH))
+            if distance >= depths[ray_index]:
+                continue
+            size = min(SCREEN_H, int(SCREEN_H * 0.55 / distance))
+            center_y = horizon + int(SCREEN_H * 0.06 / distance)
+            trunk = pg.Rect(screen_x - size // 14, center_y - size // 8, max(4, size // 7), size // 2)
+            pg.draw.rect(screen, (110, 70, 35), trunk)
+            canopy = (screen_x, center_y - size // 3)
+            for radius, color in (
+                (size // 3, (40, 130, 55)),
+                (size // 4, (55, 160, 70)),
+                (size // 6, (80, 190, 90)),
+            ):
+                pg.draw.circle(screen, color, canopy, max(6, radius))
 
     sprites = sorted(
         game.living_enemies,

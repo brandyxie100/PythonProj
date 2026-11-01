@@ -60,6 +60,23 @@ class DungeonGameTests(unittest.TestCase):
         self.assertEqual(CAMPAIGN_KEYS[-1], "abyss")
         self.assertEqual(BOSS3_HP, 1000)
 
+    def test_boss3_spawns_on_open_floor_in_abyss(self) -> None:
+        game = DungeonGame()
+        game.start_room("abyss")
+        boss = next(enemy for enemy in game.enemies if enemy.kind == "boss3")
+        self.assertFalse(game.is_wall(boss.x, boss.y))
+        for enemy in game.enemies:
+            self.assertFalse(game.is_wall(enemy.x, enemy.y), msg=f"{enemy.name} in wall")
+        self.assertFalse(game.is_wall(game.x, game.y))
+
+    def test_sunlit_grove_is_bright_forest_theme(self) -> None:
+        game = DungeonGame()
+        game.start_room("crossroads")
+        self.assertEqual(game.theme, "forest")
+        grove = next(room for room in ROOM_MAPS if room.key == "crossroads")
+        self.assertEqual(grove.name, "Sunlit Grove")
+        self.assertIn("forest", grove.blurb.lower())
+
     def test_game_starts_with_zombies_and_67_boss(self) -> None:
         game = DungeonGame()
         zombies = [enemy for enemy in game.living_enemies if not enemy.boss]
