@@ -45,6 +45,8 @@ BOSS6_SPECIAL_INTERVAL = 7.0
 BOSS6_HEAL_INTERVAL = 1.0
 LOOT_PICKUP_DISTANCE = 0.55
 RESPAWN_DELAY = 5.0
+MINIMAP_SIZE = 148
+MINIMAP_MARGIN = 12
 BOSS6_TELEPORT_POSITIONS = (
     (7.5, 3.5),
     (10.5, 3.5),
@@ -1622,6 +1624,98 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
         pg.draw.polygon(screen, (40, 28, 26), palm, 2)
 
 
+def draw_minimap(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> pg.Rect:
+    """Top-right tracker map: walls, player facing, zombies, and bosses."""
+    dungeon = game.dungeon_map
+    rows = len(dungeon)
+    cols = len(dungeon[0]) if rows else 1
+    top = 42 if getattr(game, "net_role", "solo") != "solo" else 14
+    frame = pg.Rect(
+        SCREEN_W - MINIMAP_SIZE - MINIMAP_MARGIN,
+        top,
+        MINIMAP_SIZE,
+        MINIMAP_SIZE,
+    )
+    pg.draw.rect(screen, (8, 10, 18), frame, border_radius=8)
+    pg.draw.rect(screen, (110, 120, 140), frame, 2, border_radius=8)
+
+    pad = 8
+    inner = frame.inflate(-pad * 2, -pad * 2)
+    cell = min(inner.width / cols, inner.height / rows)
+    map_w = cell * cols
+    map_h = cell * rows
+    origin_x = inner.x + (inner.width - map_w) / 2
+    origin_y = inner.y + (inner.height - map_h) / 2
+
+    def to_screen(wx: float, wy: float) -> tuple[int, int]:
+        return (int(origin_x + wx * cell), int(origin_y + wy * cell))
+
+    for row_i, row in enumerate(dungeon):
+        for col_i, tile in enumerate(row):
+            rect = pg.Rect(
+                int(origin_x + col_i * cell),
+                int(origin_y + row_i * cell),
+                max(1, int(cell) + 1),
+                max(1, int(cell) + 1),
+            )
+            pg.draw.rect(screen, (48, 52, 68) if tile == "#" else (22, 26, 36), rect)
+
+    for enemy in game.living_enemies:
+        px, py = to_screen(enemy.x, enemy.y)
+        if enemy.boss or enemy.kind in ("boss6_healer", "boss6_guardian"):
+            if enemy.kind == "boss3":
+                color = (230, 190, 100)
+            elif enemy.kind in ("warden", "boss6_healer"):
+                color = (150, 200, 255)
+            elif enemy.kind in ("boss6", "boss6_guardian"):
+                color = (220, 80, 255)
+            else:
+                color = (255, 120, 70)
+            radius = max(3, int(cell * 0.55))
+            pg.draw.circle(screen, color, (px, py), radius)
+            pg.draw.circle(screen, (255, 255, 255), (px, py), radius, 1)
+        else:
+            pg.draw.circle(screen, (90, 210, 90), (px, py), max(2, int(cell * 0.35)))
+
+    for peer in getattr(game, "remote_players", []):
+        if peer.hp <= 0:
+            continue
+        px, py = to_screen(peer.x, peer.y)
+        pg.draw.circle(screen, (255, 200, 80), (px, py), max(2, int(cell * 0.35)))
+
+    # Cyan wedge = you, tip points where you are looking.
+    you_x, you_y = to_screen(game.x, game.y)
+    tip_len = max(6, int(cell * 1.1))
+    tip = (
+        you_x + int(math.cos(game.angle) * tip_len),
+        you_y + int(math.sin(game.angle) * tip_len),
+    )
+    left = (
+        you_x + int(math.cos(game.angle + 2.4) * tip_len * 0.55),
+        you_y + int(math.sin(game.angle + 2.4) * tip_len * 0.55),
+    )
+    right = (
+        you_x + int(math.cos(game.angle - 2.4) * tip_len * 0.55),
+        you_y + int(math.sin(game.angle - 2.4) * tip_len * 0.55),
+    )
+    pg.draw.polygon(screen, (90, 230, 255), [tip, left, right])
+    pg.draw.circle(screen, (255, 255, 255), (you_x, you_y), 2)
+
+    screen.blit(font.render("MAP", True, (210, 220, 235)), (frame.x + 8, frame.y + 4))
+    legend_y = frame.bottom + 6
+    x = frame.x
+    for color, label in (
+        ((90, 230, 255), "you"),
+        ((90, 210, 90), "zombie"),
+        ((255, 120, 70), "boss"),
+    ):
+        pg.draw.circle(screen, color, (x + 4, legend_y + 7), 4)
+        text = font.render(label, True, (170, 180, 195))
+        screen.blit(text, (x + 12, legend_y))
+        x += text.get_width() + 22
+    return frame
+
+
 def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
     panel_top = 42 if game.net_role != "solo" else 14
     panel = pg.Rect(16, panel_top, 270, 104)
@@ -1631,12 +1725,13 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
     screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, panel_top + 32))
     screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, panel_top + 56))
     screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, panel_top + 78))
+    minimap = draw_minimap(screen, game, font)
     if game.campaign_mode:
         stage_text = f"CAMPAIGN {game.stage_index + 1}/{len(CAMPAIGN_KEYS)}  {game.stage_name}"
     else:
         stage_text = f"ROOM  {game.stage_name}"
     stage_label = font.render(stage_text, True, (224, 204, 162))
-    screen.blit(stage_label, (SCREEN_W - stage_label.get_width() - 20, 54))
+    screen.blit(stage_label, (minimap.x - stage_label.get_width() - 12, minimap.y + 6))
     boss = next((enemy for enemy in game.living_enemies if enemy.boss), None)
     if boss is not None:
         boss_bar = pg.Rect(SCREEN_W // 2 - 170, 18, 340, 24)

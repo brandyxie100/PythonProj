@@ -30,6 +30,7 @@ from main import (
     GOLD_SWORD_DAMAGE,
     GOLD_SWORD_LOOT,
     HOTBAR_SIZE,
+    MINIMAP_SIZE,
     POTION_HEAL,
     RESPAWN_DELAY,
     ROOM_MAPS,
@@ -44,7 +45,9 @@ from main import (
     draw_boss_deer,
     draw_boss_ghost,
     draw_hotbar,
+    draw_hud,
     draw_menu,
+    draw_minimap,
     draw_world,
 )
 
@@ -428,6 +431,17 @@ class DungeonGameTests(unittest.TestCase):
         screen = pg.Surface((SCREEN_W, SCREEN_H))
         draw_held_item(screen, game)
         self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
+
+    def test_minimap_marks_player_zombies_and_boss(self) -> None:
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        game = DungeonGame()
+        frame = draw_minimap(screen, game, pg.font.SysFont("consolas", 17))
+        self.assertEqual(frame.width, MINIMAP_SIZE)
+        self.assertEqual(frame.right, SCREEN_W - 12)
+        self.assertNotEqual(screen.get_at((frame.centerx, frame.centery))[:3], (0, 0, 0))
+        self.assertTrue(any(enemy.boss for enemy in game.living_enemies))
+        self.assertTrue(any(not enemy.boss for enemy in game.living_enemies))
+        draw_hud(screen, game, pg.font.SysFont("consolas", 17))
 
     def test_first_person_scene_renders(self) -> None:
         screen = pg.Surface((SCREEN_W, SCREEN_H))
