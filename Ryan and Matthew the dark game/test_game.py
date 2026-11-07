@@ -40,11 +40,14 @@ from main import (
     ZOMBIE_HP,
     WARDEN_HP,
     cast_ray,
+    MINIMAP_SIZE,
     draw_boss_bear,
     draw_boss_deer,
     draw_boss_ghost,
     draw_hotbar,
+    draw_hud,
     draw_menu,
+    draw_minimap,
     draw_world,
 )
 
@@ -359,6 +362,21 @@ class DungeonGameTests(unittest.TestCase):
         screen = pg.Surface((SCREEN_W, SCREEN_H))
         draw_held_item(screen, game)
         self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
+
+    def test_minimap_marks_player_zombies_and_boss(self) -> None:
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        game = DungeonGame()
+        frame = draw_minimap(screen, game, pg.font.SysFont("consolas", 17))
+        self.assertEqual(frame.width, MINIMAP_SIZE)
+        self.assertEqual(frame.right, SCREEN_W - 12)
+        # Top-right corner of the HUD should contain non-empty map pixels.
+        sample = screen.get_at((frame.centerx, frame.centery))
+        self.assertNotEqual(sample[:3], (0, 0, 0))
+        boss = next(enemy for enemy in game.living_enemies if enemy.boss)
+        zombie = next(enemy for enemy in game.living_enemies if not enemy.boss)
+        self.assertTrue(boss.alive)
+        self.assertTrue(zombie.alive)
+        draw_hud(screen, game, pg.font.SysFont("consolas", 17))
 
     def test_first_person_scene_renders(self) -> None:
         screen = pg.Surface((SCREEN_W, SCREEN_H))
