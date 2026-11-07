@@ -40,6 +40,9 @@ from main import (
     ZOMBIE_HP,
     WARDEN_HP,
     cast_ray,
+    draw_boss_bear,
+    draw_boss_deer,
+    draw_boss_ghost,
     draw_hotbar,
     draw_menu,
     draw_world,
@@ -75,6 +78,26 @@ class DungeonGameTests(unittest.TestCase):
         for enemy in game.enemies:
             self.assertFalse(game.is_wall(enemy.x, enemy.y), msg=f"{enemy.name} in wall")
         self.assertFalse(game.is_wall(game.x, game.y))
+
+    def test_bloxd_boss_sprites_draw_distinct_shapes(self) -> None:
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        bear = draw_boss_bear(screen, 200, 300, 160)
+        ghost = draw_boss_ghost(screen, 480, 300, 160)
+        deer = draw_boss_deer(screen, 760, 300, 160)
+        self.assertGreater(bear.width, 40)
+        self.assertGreater(ghost.height, 40)
+        self.assertGreater(deer.height, 40)
+        def has_color(rect: pg.Rect, color: tuple[int, int, int]) -> bool:
+            for y in range(rect.top, rect.bottom, 4):
+                for x in range(rect.left, rect.right, 4):
+                    if 0 <= x < SCREEN_W and 0 <= y < SCREEN_H and screen.get_at((x, y))[:3] == color:
+                        return True
+            return False
+
+        self.assertTrue(has_color(bear, (120, 72, 36)))
+        self.assertTrue(has_color(ghost, (210, 230, 255)))
+        self.assertTrue(has_color(deer, (150, 105, 55)))
+        self.assertTrue(has_color(deer, (210, 190, 140)))  # antlers
 
     def test_sunlit_grove_is_bright_forest_theme(self) -> None:
         game = DungeonGame()
