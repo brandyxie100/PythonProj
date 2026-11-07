@@ -19,7 +19,7 @@ python3 main.py
 | Enter / 1–6 | Start selected option |
 | Esc | Quit |
 
-Options: Full Campaign, plus five room maps (Crypt, Depths, Abyss/Boss 3, Crossroads, Spiral).
+Options: Full Campaign, five room maps (Crypt, Depths, Abyss/Boss 3, Sunlit Grove, Spiral), Create LAN room, and Join LAN room.
 
 ## In-game controls
 
@@ -58,6 +58,18 @@ potions, and equipment carry over. The level 2 boss has 600 HP; defeating it
 automatically replaces the Iron Sword with a stronger Gold Sword. Clear level
 2 to finish the game.
 
-The first-person view is drawn with a small raycasting renderer; no 3D engine,
-external art, or network service is needed. The mouse is captured while the
-game runs.
+The first-person view is drawn with a small raycasting renderer; no 3D engine
+or external art is needed. The mouse is captured while the game runs.
+
+## Same-WiFi co-op (~3 minutes, two windows)
+
+Both PCs must be on the same WiFi. macOS may ask to allow local network for
+Python — allow it. Up to 4 players. One person hosts; the others join. Everyone
+shares one map, the same enemies, and the same loot.
+
+1. Window A: menu → **Create LAN room**. Note the 6-digit code. Pick a map and press Enter.
+2. Window B: menu → **Join LAN room**. Type that code.
+3. Both windows show the same zombies. A kill on one PC disappears on the other.
+4. Esc leaves the room and returns to the menu.
+
+Solo menu rows still start a game with no room open.
