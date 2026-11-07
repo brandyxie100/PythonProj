@@ -224,12 +224,12 @@ class RoomMap:
 
 
 ROOM_MAPS: tuple[RoomMap, ...] = (
-    RoomMap("crypt", "Crypt of 67", "Boss 1: 67", DUNGEON, (2.5, 2.5)),
-    RoomMap("depths", "Warden's Depths", "Boss 2: The Warden", DUNGEON_TWO, (2.5, 1.5)),
+    RoomMap("crypt", "Crypt of 67", "Boss 1: Big Bear (Bloxd)", DUNGEON, (2.5, 2.5)),
+    RoomMap("depths", "Warden's Depths", "Boss 2: Ghost (Bloxd)", DUNGEON_TWO, (2.5, 1.5)),
     RoomMap(
         "abyss",
         "Abyssal Halls",
-        "FIND Boss 3 here (1000 HP)",
+        "Boss 3: Deer (Bloxd, 1000 HP)",
         DUNGEON_THREE,
         (1.5, 1.5),
     ),
@@ -886,6 +886,198 @@ class DungeonGame:
         self.won = bool(snap.get("won"))
 
 
+def _voxel_block(
+    screen: pg.Surface,
+    rect: pg.Rect,
+    fill: tuple[int, int, int],
+    rim: tuple[int, int, int] | None = None,
+) -> None:
+    """One Bloxd.io-style cube face: flat fill, dark edge, no round corners."""
+    pg.draw.rect(screen, fill, rect)
+    edge = rim if rim is not None else (
+        max(0, fill[0] - 35),
+        max(0, fill[1] - 35),
+        max(0, fill[2] - 35),
+    )
+    pg.draw.rect(screen, edge, rect, max(1, min(3, max(1, rect.width // 14))))
+
+
+def draw_boss_bear(screen: pg.Surface, cx: int, cy: int, size: int) -> pg.Rect:
+    """Bloxd.io Bear: huge light-brown body, dark top stripe, darker legs, red eyes."""
+    body_w = max(28, int(size * 0.72))
+    body_h = max(32, int(size * 0.82))
+    body = pg.Rect(cx - body_w // 2, cy - body_h // 2, body_w, body_h)
+    light = (176, 126, 78)
+    mid = (140, 92, 52)
+    dark = (96, 60, 32)
+    stripe = (110, 70, 38)
+    # Ground shadow
+    pg.draw.ellipse(screen, (28, 16, 8), body.inflate(size // 6, size // 10).move(0, size // 9))
+    # Darker lower half (wiki: darker the lower down)
+    _voxel_block(screen, body, mid, dark)
+    lower = pg.Rect(body.x, body.centery, body_w, body_h // 2)
+    _voxel_block(screen, lower, dark, (60, 35, 18))
+    # Darker stripe along the top of the back
+    top_stripe = pg.Rect(body.x + body_w // 10, body.y, body_w * 4 // 5, max(6, body_h // 7))
+    _voxel_block(screen, top_stripe, stripe, dark)
+    # Upper light-brown chest / head plate
+    head = pg.Rect(body.x + body_w // 8, body.y + body_h // 9, body_w * 3 // 4, body_h // 3)
+    _voxel_block(screen, head, light, mid)
+    # Block ears
+    ear = max(7, size // 9)
+    left_ear = pg.Rect(body.x + ear // 3, body.y - ear // 3, ear, ear)
+    right_ear = pg.Rect(body.right - ear - ear // 3, body.y - ear // 3, ear, ear)
+    _voxel_block(screen, left_ear, mid, dark)
+    _voxel_block(screen, right_ear, mid, dark)
+    _voxel_block(screen, left_ear.inflate(-ear // 3, -ear // 3), light, mid)
+    _voxel_block(screen, right_ear.inflate(-ear // 3, -ear // 3), light, mid)
+    # Short snout
+    muzzle = pg.Rect(head.centerx - body_w // 7, head.centery, body_w // 3, body_h // 8)
+    _voxel_block(screen, muzzle, (198, 150, 100), mid)
+    pg.draw.rect(
+        screen,
+        (40, 24, 14),
+        (muzzle.centerx - max(2, size // 30), muzzle.y + 2, max(4, size // 14), max(3, size // 22)),
+    )
+    # Red eyes (wiki)
+    eye = max(4, size // 16)
+    for eye_x in (head.x + head.width // 4, head.right - head.width // 4):
+        hole = pg.Rect(eye_x - eye // 2, head.y + head.height // 3, eye, eye)
+        pg.draw.rect(screen, (40, 10, 10), hole)
+        pg.draw.rect(screen, (220, 40, 40), hole.inflate(-eye // 3, -eye // 3))
+    return body.union(left_ear).union(right_ear)
+
+
+def draw_boss_ghost(screen: pg.Surface, cx: int, cy: int, size: int) -> pg.Rect:
+    """Bloxd-style spirit ghost: pale translucent voxels, hollow eyes, wavy hem."""
+    body_w = max(22, size // 2)
+    body_h = max(32, int(size * 0.8))
+    body = pg.Rect(cx - body_w // 2, cy - body_h // 2 - size // 18, body_w, body_h)
+    sheet = (220, 235, 255)
+    mid = (170, 195, 230)
+    rim = (110, 140, 180)
+    # Soft spirit glow
+    glow = pg.Surface((body_w + 24, body_h + 28), pg.SRCALPHA)
+    pg.draw.ellipse(glow, (150, 200, 255, 80), glow.get_rect())
+    screen.blit(glow, glow.get_rect(center=body.center))
+    # Semi-transparent sheet body
+    sheet_surf = pg.Surface((body_w, body_h), pg.SRCALPHA)
+    sheet_surf.fill((*sheet, 200))
+    screen.blit(sheet_surf, body.topleft)
+    pg.draw.rect(screen, rim, body, max(1, min(3, body_w // 14)))
+    # Head plate slightly brighter
+    head = pg.Rect(body.x + body_w // 8, body.y + body_h // 12, body_w * 3 // 4, body_h // 4)
+    _voxel_block(screen, head, sheet, rim)
+    # Hollow eyes + mouth
+    eye = max(5, size // 13)
+    for eye_x in (body.x + body_w // 3, body.right - body_w // 3):
+        hole = pg.Rect(eye_x - eye // 2, head.centery - eye // 2, eye, eye)
+        pg.draw.rect(screen, (25, 35, 55), hole)
+        pg.draw.rect(screen, (90, 220, 255), hole.inflate(-eye // 2, -eye // 2))
+    mouth = pg.Rect(body.centerx - eye, body.y + body_h * 2 // 5, eye * 2, max(3, eye // 2))
+    pg.draw.rect(screen, (30, 40, 60), mouth)
+    # Wavy hem flaps
+    wave = max(4, body_w // 5)
+    for index in range(5):
+        wx = body.x + index * wave
+        drop = wave // 2 if index % 2 else 0
+        flap = pg.Rect(wx, body.bottom - wave // 2, max(2, wave - 1), wave + drop)
+        fill = sheet if index % 2 == 0 else mid
+        flap_surf = pg.Surface(flap.size, pg.SRCALPHA)
+        flap_surf.fill((*fill, 190))
+        screen.blit(flap_surf, flap.topleft)
+        pg.draw.rect(screen, rim, flap, 1)
+    return body
+
+
+def draw_boss_deer(screen: pg.Surface, cx: int, cy: int, size: int) -> pg.Rect:
+    """Bloxd.io Deer: beige body, dark-brown spots, darker legs, slim head + ears."""
+    body_w = max(20, int(size * 0.48))
+    body_h = max(28, int(size * 0.7))
+    body = pg.Rect(cx - body_w // 2, cy - body_h // 3, body_w, body_h)
+    beige = (214, 188, 140)
+    mid = (180, 148, 100)
+    dark = (118, 82, 48)
+    spot = (92, 62, 34)
+    cream = (236, 220, 185)
+    pg.draw.ellipse(screen, (32, 22, 12), body.inflate(size // 7, size // 12).move(0, size // 10))
+    _voxel_block(screen, body, beige, mid)
+    # Darker lower half
+    lower = pg.Rect(body.x, body.y + body_h * 2 // 5, body_w, body_h * 3 // 5)
+    _voxel_block(screen, lower, mid, dark)
+    # Dark-brown spots around the body (wiki)
+    spot_r = max(3, size // 22)
+    for ox, oy in (
+        (body_w // 5, body_h // 5),
+        (body_w * 3 // 5, body_h // 4),
+        (body_w // 3, body_h // 2),
+        (body_w * 2 // 3, body_h * 3 // 5),
+        (body_w // 4, body_h * 3 // 4),
+    ):
+        pg.draw.rect(screen, spot, (body.x + ox, body.y + oy, spot_r, spot_r))
+    # Neck + head
+    neck = pg.Rect(body.centerx - body_w // 8, body.y - body_h // 5, body_w // 4, body_h // 4)
+    _voxel_block(screen, neck, beige, mid)
+    head = pg.Rect(neck.centerx - body_w // 3, neck.y - body_h // 9, body_w * 2 // 3, body_h // 4)
+    _voxel_block(screen, head, (200, 168, 118), mid)
+    # Long snout
+    muzzle = pg.Rect(head.centerx - body_w // 10, head.centery - 1, body_w // 3, body_h // 9)
+    _voxel_block(screen, muzzle, cream, mid)
+    pg.draw.rect(
+        screen,
+        dark,
+        (muzzle.right - max(3, size // 20), muzzle.centery - 2, max(3, size // 18), max(3, size // 18)),
+    )
+    # Ears
+    ear = max(4, size // 16)
+    _voxel_block(screen, pg.Rect(head.x - ear // 2, head.y + ear // 4, ear, ear), mid, dark)
+    _voxel_block(screen, pg.Rect(head.right - ear // 2, head.y + ear // 4, ear, ear), mid, dark)
+    # Small branched antlers so the boss reads as a deer/stag silhouette
+    stem = max(3, size // 22)
+    antler = (205, 185, 145)
+    for side in (-1, 1):
+        base_x = head.centerx + side * head.width // 4
+        trunk = pg.Rect(base_x - stem // 2, head.y - size // 6, stem, size // 6)
+        _voxel_block(screen, trunk, antler, dark)
+        branch = pg.Rect(
+            base_x - (size // 9 if side < 0 else 0),
+            head.y - size // 6,
+            size // 9,
+            stem,
+        )
+        _voxel_block(screen, branch, antler, dark)
+    # Dark eyes
+    eye = max(2, size // 22)
+    for eye_x in (head.x + head.width // 3, head.right - head.width // 3):
+        pg.draw.rect(screen, (25, 15, 10), (eye_x - eye // 2, head.y + head.height // 3, eye, eye))
+    # Cream belly
+    belly = pg.Rect(body.x + body_w // 3, body.y + body_h // 3, body_w // 3, body_h // 2)
+    _voxel_block(screen, belly, cream, mid)
+    antler_box = pg.Rect(cx - size // 3, cy - size // 2, size * 2 // 3, size // 4)
+    return body.union(head).union(antler_box)
+
+
+def _draw_boss_chrome(
+    screen: pg.Surface,
+    big_font: pg.font.Font,
+    bounds: pg.Rect,
+    title: str,
+    hp: int,
+    max_hp: int,
+    *,
+    label_color: tuple[int, int, int],
+    bar_color: tuple[int, int, int],
+) -> None:
+    """Boss nameplate and HP bar above a Bloxd-style sprite."""
+    label = big_font.render(title, True, label_color)
+    screen.blit(label, label.get_rect(center=(bounds.centerx, bounds.y - 22)))
+    bar_width = max(40, bounds.width)
+    bar = pg.Rect(bounds.centerx - bar_width // 2, bounds.y - 14, bar_width, 8)
+    pg.draw.rect(screen, (20, 18, 24), bar)
+    fill = max(0, int(bar_width * hp / max(1, max_hp)))
+    pg.draw.rect(screen, bar_color, (bar.x, bar.y, fill, bar.height))
+
+
 def cast_ray(game: DungeonGame, ray_angle: float) -> float:
     """Grid-step a ray through the dungeon and return wall distance."""
     ray_x, ray_y = math.cos(ray_angle), math.sin(ray_angle)
@@ -1039,7 +1231,13 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         if abs(relative_angle) > FOV / 2 + 0.3 or distance < 0.1:
             continue
         screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
-        scale = 0.9 if enemy.kind == "boss3" else 0.72 if enemy.kind == "warden" else 0.65 if enemy.boss else 0.48
+        # Bear is largest (Bloxd: almost player height). Deer a bit shorter. Ghost tall/floaty.
+        scale = (
+            0.82 if enemy.kind == "boss3"
+            else 0.78 if enemy.kind == "warden"
+            else 0.95 if enemy.boss
+            else 0.48
+        )
         size = min(SCREEN_H, int(SCREEN_H * scale / distance))
         center_y = horizon + int(SCREEN_H * 0.08 / distance)
         sprite_rect = pg.Rect(screen_x - size // 3, center_y - size // 2, size * 2 // 3, size)
@@ -1047,66 +1245,44 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         if distance >= depths[ray_index]:
             continue
         if enemy.kind == "boss3":
-            # Boss 3: tall bone-white / void crown — distinct from crimson/purple bosses.
-            body = sprite_rect.inflate(size // 5, size // 6)
-            pg.draw.ellipse(screen, (20, 40, 55), body.inflate(size // 2, size // 8))
-            pg.draw.rect(screen, (210, 230, 240), body, border_radius=max(4, size // 10))
-            pg.draw.rect(screen, (40, 60, 80), body, 3, border_radius=max(4, size // 10))
-            # Crown spikes
-            for i, ox in enumerate((-size // 3, 0, size // 3)):
-                tip = (body.centerx + ox, body.y - size // 6 - (i % 2) * 8)
-                pg.draw.polygon(
-                    screen,
-                    (120, 220, 255),
-                    [tip, (tip[0] - 8, body.y + 4), (tip[0] + 8, body.y + 4)],
-                )
-            # Hollow eyes
-            for eye_x in (body.x + size // 5, body.right - size // 5):
-                pg.draw.circle(screen, (10, 20, 30), (eye_x, body.y + size // 4), max(4, size // 14))
-                pg.draw.circle(screen, (80, 255, 255), (eye_x, body.y + size // 4), max(2, size // 28))
-            label = big_font.render("BOSS 3", True, (160, 240, 255))
-            screen.blit(label, label.get_rect(center=(screen_x, body.y - size // 5)))
-            bar_width = body.width
-            pg.draw.rect(screen, (15, 25, 35), (body.x, body.y - 16, bar_width, 8))
-            pg.draw.rect(
+            # Boss 3: Bloxd.io deer (beige + spots + antlers).
+            bounds = draw_boss_deer(screen, screen_x, center_y, size)
+            _draw_boss_chrome(
                 screen,
-                (80, 220, 255),
-                (body.x, body.y - 16, int(bar_width * enemy.hp / enemy.max_hp), 8),
+                big_font,
+                bounds,
+                "DEER",
+                enemy.hp,
+                enemy.max_hp,
+                label_color=(240, 220, 160),
+                bar_color=(190, 140, 70),
             )
         elif enemy.kind == "warden":
-            # Warden: tall violet cloak
-            pg.draw.ellipse(screen, (30, 12, 48), sprite_rect.inflate(size // 3, size // 10))
-            pg.draw.rect(screen, (70, 35, 110), sprite_rect, border_radius=max(3, size // 8))
-            pg.draw.rect(
+            # Boss 2: Bloxd-style ghost / spirit sheet.
+            bounds = draw_boss_ghost(screen, screen_x, center_y, size)
+            _draw_boss_chrome(
                 screen,
-                (160, 90, 220),
-                (sprite_rect.x + size // 8, sprite_rect.y + size // 8, size // 2, size // 5),
-                border_radius=6,
-            )
-            for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
-                pg.draw.circle(screen, (255, 120, 255), (eye_x, sprite_rect.y + size // 3), max(2, size // 18))
-            label = big_font.render(enemy.name, True, (220, 180, 255))
-            screen.blit(label, label.get_rect(center=(screen_x, sprite_rect.y - size // 10)))
-            bar_width = size * 2 // 3
-            pg.draw.rect(screen, (25, 16, 25), (sprite_rect.x, sprite_rect.y - 13, bar_width, 7))
-            pg.draw.rect(
-                screen,
-                (160, 70, 220),
-                (sprite_rect.x, sprite_rect.y - 13, int(bar_width * enemy.hp / enemy.max_hp), 7),
+                big_font,
+                bounds,
+                "GHOST",
+                enemy.hp,
+                enemy.max_hp,
+                label_color=(190, 220, 255),
+                bar_color=(130, 180, 255),
             )
         elif enemy.boss:
-            # Boss 67: crimson classic
-            body_color = (125, 29, 66)
-            pg.draw.ellipse(screen, (48, 10, 32), sprite_rect.inflate(size // 3, size // 10))
-            pg.draw.rect(screen, body_color, sprite_rect, border_radius=max(3, size // 8))
-            pg.draw.rect(screen, (224, 56, 103), (sprite_rect.x + size // 8, sprite_rect.y + size // 8, size // 2, size // 5), border_radius=6)
-            for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
-                pg.draw.circle(screen, (255, 218, 98), (eye_x, sprite_rect.y + size // 3), max(2, size // 18))
-            label = big_font.render(enemy.name, True, (255, 226, 120))
-            screen.blit(label, label.get_rect(center=(screen_x, sprite_rect.y - size // 10)))
-            bar_width = size * 2 // 3
-            pg.draw.rect(screen, (25, 16, 25), (sprite_rect.x, sprite_rect.y - 13, bar_width, 7))
-            pg.draw.rect(screen, (221, 42, 75), (sprite_rect.x, sprite_rect.y - 13, int(bar_width * enemy.hp / enemy.max_hp), 7))
+            # Boss 1: Bloxd.io big bear (light brown, red eyes).
+            bounds = draw_boss_bear(screen, screen_x, center_y, size)
+            _draw_boss_chrome(
+                screen,
+                big_font,
+                bounds,
+                "BEAR",
+                enemy.hp,
+                enemy.max_hp,
+                label_color=(255, 200, 120),
+                bar_color=(180, 70, 35),
+            )
         else:
             pg.draw.ellipse(screen, (30, 43, 34), sprite_rect.inflate(size // 4, size // 12))
             pg.draw.rect(screen, (65, 110, 67), sprite_rect, border_radius=max(2, size // 7))

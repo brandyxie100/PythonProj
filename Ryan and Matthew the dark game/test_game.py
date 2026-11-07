@@ -40,6 +40,9 @@ from main import (
     ZOMBIE_HP,
     WARDEN_HP,
     cast_ray,
+    draw_boss_bear,
+    draw_boss_deer,
+    draw_boss_ghost,
     draw_hotbar,
     draw_menu,
     draw_world,
@@ -66,6 +69,30 @@ class DungeonGameTests(unittest.TestCase):
         self.assertGreaterEqual(len(ROOM_MAPS), 5)
         self.assertEqual(CAMPAIGN_KEYS[-1], "abyss")
         self.assertEqual(BOSS3_HP, 1000)
+        blurbs = {room.key: room.blurb.lower() for room in ROOM_MAPS}
+        self.assertIn("bear", blurbs["crypt"])
+        self.assertIn("ghost", blurbs["depths"])
+        self.assertIn("deer", blurbs["abyss"])
+
+    def test_bloxd_boss_sprites_use_wiki_colors(self) -> None:
+        """Bear light-brown + red eyes, ghost pale sheet, deer beige + spots."""
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        bear = draw_boss_bear(screen, 200, 300, 180)
+        ghost = draw_boss_ghost(screen, 480, 300, 160)
+        deer = draw_boss_deer(screen, 760, 300, 160)
+
+        def has_color(rect: pg.Rect, color: tuple[int, int, int]) -> bool:
+            for y in range(rect.top, rect.bottom, 3):
+                for x in range(rect.left, rect.right, 3):
+                    if 0 <= x < SCREEN_W and 0 <= y < SCREEN_H and screen.get_at((x, y))[:3] == color:
+                        return True
+            return False
+
+        self.assertTrue(has_color(bear, (176, 126, 78)))  # light fur
+        self.assertTrue(has_color(bear, (220, 40, 40)))  # red eyes
+        self.assertTrue(has_color(ghost, (220, 235, 255)))  # pale sheet
+        self.assertTrue(has_color(deer, (214, 188, 140)))  # beige
+        self.assertTrue(has_color(deer, (92, 62, 34)))  # dark spots
 
     def test_boss3_spawns_on_open_floor_in_abyss(self) -> None:
         game = DungeonGame()
