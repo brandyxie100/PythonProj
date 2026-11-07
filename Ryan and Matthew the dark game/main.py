@@ -34,13 +34,23 @@ VOID_BLADE_DAMAGE = 40
 ZOMBIE_DAMAGE = 12
 BOSS_DAMAGE = 25
 BOSS3_DAMAGE = 35
+BOSS6_SPECIAL_DAMAGE = 50
 ZOMBIE_ATTACK_INTERVAL = 0.85
 BOSS_ATTACK_INTERVAL = 0.75
 ZOMBIE_SPEED = 0.55
 BOSS_SPEED = 0.75
 BOSS3_SPEED = 0.85
+BOSS6_TELEPORT_INTERVAL = 4.0
+BOSS6_SPECIAL_INTERVAL = 7.0
+BOSS6_HEAL_INTERVAL = 1.0
 LOOT_PICKUP_DISTANCE = 0.55
 RESPAWN_DELAY = 5.0
+BOSS6_TELEPORT_POSITIONS = (
+    (7.5, 3.5),
+    (10.5, 3.5),
+    (11.5, 11.5),
+    (10.5, 13.5),
+)
 
 DUNGEON = (
     "###############",
@@ -95,6 +105,8 @@ DUNGEON_THREE = (
     "#...............#",
     "#################",
 )
+
+DUNGEON_SIX = DUNGEON_THREE
 
 DUNGEON_FOUR = (
     "###############",
@@ -161,10 +173,13 @@ class Enemy:
     hp: int
     max_hp: int
     boss: bool = False
-    kind: str = "zombie"  # zombie | boss67 | warden | boss3
+    kind: str = "zombie"  # zombie | boss67 | warden | boss3 | boss6 | boss6_guardian | boss6_healer
     alive: bool = True
     attack_timer: float = 0.0
     wander_angle: float = 0.0
+    teleport_timer: float = BOSS6_TELEPORT_INTERVAL
+    special_timer: float = BOSS6_SPECIAL_INTERVAL
+    heal_timer: float = BOSS6_HEAL_INTERVAL
 
 
 @dataclass(frozen=True)
@@ -242,6 +257,13 @@ ROOM_MAPS: tuple[RoomMap, ...] = (
         theme="forest",
     ),
     RoomMap("spiral", "Spiral Pit", "Tight spiral corridors", DUNGEON_FIVE, (1.5, 1.5)),
+    RoomMap(
+        "level-6",
+        "Level 6: Guardian Arena",
+        "Defeat two protectors; Boss 6 teleports and strikes for 50",
+        DUNGEON_SIX,
+        (1.5, 1.5),
+    ),
 )
 
 # Full campaign order (Boss 3 is the finale).
@@ -377,6 +399,36 @@ class DungeonGame:
                 Enemy(13.5, 11.5, "Abyss Wraith", 80, 80, wander_angle=0.5),
                 Enemy(8.5, 8.5, "Boss 3", BOSS3_HP, BOSS3_HP, boss=True, kind="boss3"),
             ]
+        if room_key == "level-6":
+            return [
+                Enemy(
+                    8.5,
+                    8.5,
+                    "Boss 6",
+                    1500,
+                    1500,
+                    boss=True,
+                    kind="boss6",
+                    teleport_timer=BOSS6_TELEPORT_INTERVAL,
+                    special_timer=BOSS6_SPECIAL_INTERVAL,
+                ),
+                Enemy(
+                    3.5,
+                    3.5,
+                    "Healing Protector",
+                    150,
+                    150,
+                    kind="boss6_healer",
+                ),
+                Enemy(
+                    13.5,
+                    11.5,
+                    "Arena Protector",
+                    180,
+                    180,
+                    kind="boss6_guardian",
+                ),
+            ]
         if room_key == "crossroads":
             return [
                 Enemy(7.5, 2.5, "Grove Beast", ZOMBIE_HP, ZOMBIE_HP, wander_angle=0.9),
@@ -455,11 +507,21 @@ class DungeonGame:
     ) -> bool:
         """Apply one melee hit from a world position. Solo and host only."""
         hit_any = False
+        blocked_boss = False
         for enemy in self.living_enemies:
             dx, dy = enemy.x - origin_x, enemy.y - origin_y
             distance = math.hypot(dx, dy)
             facing_error = abs((math.atan2(dy, dx) - facing + math.pi) % (2 * math.pi) - math.pi)
             if distance <= (1.75 if enemy.boss else 1.45) and facing_error < (0.8 if enemy.boss else 0.65):
+                if enemy.kind == "boss6" and any(
+                    protector.alive
+                    and protector.kind in ("boss6_healer", "boss6_guardian")
+                    for protector in self.enemies
+                ):
+                    blocked_boss = True
+                    self.message = "Boss 6 is shielded! Defeat both protectors first."
+                    self.message_timer = 1.2
+                    continue
                 base_damage = 10 if enemy.boss else 15
                 enemy.hp -= base_damage + weapon_bonus
                 hit_any = True
@@ -472,6 +534,14 @@ class DungeonGame:
                     elif enemy.kind == "boss3":
                         self._give_loot(VOID_BLADE_LOOT, striker_id)
                         self.message = "Boss 3 falls! Void Blade surges into your grip."
+                    elif enemy.kind == "boss6":
+                        self.message = "Boss 6 falls! The arena is yours."
+                    elif enemy.kind in ("boss6_healer", "boss6_guardian") and not any(
+                        protector.alive
+                        and protector.kind in ("boss6_healer", "boss6_guardian")
+                        for protector in self.enemies
+                    ):
+                        self.message = "Both protectors are down! Boss 6 is vulnerable!"
                     else:
                         self._drop_loot(enemy)
                         rare = (
@@ -488,7 +558,7 @@ class DungeonGame:
                     self.message = f"{enemy.name}: {enemy.hp} HP"
                     self.message_timer = 0.8
                 break
-        if not hit_any and not striker_id:
+        if not hit_any and not striker_id and not blocked_boss:
             self.message = "Your blade cuts through the dark."
             self.message_timer = 0.45
         return hit_any
@@ -639,6 +709,12 @@ class DungeonGame:
 
         for enemy in self.living_enemies:
             enemy.attack_timer = max(0.0, enemy.attack_timer - dt)
+            if enemy.kind == "boss6":
+                self._update_boss6(enemy, dt)
+                if self.health <= 0 and self.net_role != "host":
+                    return
+            elif enemy.kind == "boss6_healer":
+                self._update_boss6_healer(enemy, dt)
             target_x, target_y = self._chase_target(enemy)
             distance = math.hypot(enemy.x - target_x, enemy.y - target_y)
             self_distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
@@ -669,6 +745,46 @@ class DungeonGame:
 
         if not self.living_enemies and (self.health > 0 or self.net_role == "host"):
             self._advance_stage()
+
+    def _update_boss6(self, boss: Enemy, dt: float) -> None:
+        """Teleport around the arena and strike nearby players for 50 health."""
+        boss.teleport_timer = max(0.0, boss.teleport_timer - dt)
+        boss.special_timer = max(0.0, boss.special_timer - dt)
+        if boss.teleport_timer == 0:
+            destinations = [
+                position
+                for position in BOSS6_TELEPORT_POSITIONS
+                if position != (boss.x, boss.y)
+                and not self.is_wall(*position)
+                and math.hypot(position[0] - self.x, position[1] - self.y) >= 2.0
+            ]
+            if destinations:
+                boss.x, boss.y = self.rng.choice(destinations)
+                self.message = "Boss 6 teleports across the arena!"
+                self.message_timer = 1.0
+            boss.teleport_timer = BOSS6_TELEPORT_INTERVAL
+
+        if boss.special_timer == 0 and math.hypot(boss.x - self.x, boss.y - self.y) <= 4.5:
+            self.health -= BOSS6_SPECIAL_DAMAGE
+            boss.special_timer = BOSS6_SPECIAL_INTERVAL
+            self.message = "Boss 6 unleashes its power! You lose 50 health!"
+            self.message_timer = 1.5
+            if self.health <= 0:
+                self._begin_death()
+
+    def _update_boss6_healer(self, healer: Enemy, dt: float) -> None:
+        boss = next(
+            (enemy for enemy in self.living_enemies if enemy.kind == "boss6"),
+            None,
+        )
+        if boss is None or boss.hp >= boss.max_hp:
+            return
+        healer.heal_timer = max(0.0, healer.heal_timer - dt)
+        if healer.heal_timer == 0:
+            boss.hp = min(boss.max_hp, boss.hp + 12)
+            healer.heal_timer = BOSS6_HEAL_INTERVAL
+            self.message = "The Healing Protector restores Boss 6!"
+            self.message_timer = 1.0
 
     def _chase_target(self, enemy: Enemy) -> tuple[float, float]:
         """Solo chases the player. The host chases whoever is closest."""
@@ -780,6 +896,9 @@ class DungeonGame:
                 "alive": enemy.alive,
                 "boss": enemy.boss,
                 "kind": enemy.kind,
+                "teleport_timer": round(enemy.teleport_timer, 3),
+                "special_timer": round(enemy.special_timer, 3),
+                "heal_timer": round(enemy.heal_timer, 3),
             }
             for enemy in self.enemies
         ]
@@ -842,6 +961,13 @@ class DungeonGame:
                     boss=bool(raw.get("boss")),
                     kind=str(raw.get("kind", "zombie")),
                     alive=bool(raw.get("alive", True)),
+                    teleport_timer=float(
+                        raw.get("teleport_timer", BOSS6_TELEPORT_INTERVAL)
+                    ),
+                    special_timer=float(
+                        raw.get("special_timer", BOSS6_SPECIAL_INTERVAL)
+                    ),
+                    heal_timer=float(raw.get("heal_timer", BOSS6_HEAL_INTERVAL)),
                 )
             )
         self.loot_drops = []
@@ -1233,7 +1359,8 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
         # Bear is largest (Bloxd: almost player height). Deer a bit shorter. Ghost tall/floaty.
         scale = (
-            0.82 if enemy.kind == "boss3"
+            0.9 if enemy.kind == "boss6"
+            else 0.82 if enemy.kind == "boss3"
             else 0.78 if enemy.kind == "warden"
             else 0.95 if enemy.boss
             else 0.48
@@ -1244,7 +1371,19 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
         ray_index = min(RAY_COUNT - 1, max(0, screen_x // RAY_WIDTH))
         if distance >= depths[ray_index]:
             continue
-        if enemy.kind == "boss3":
+        if enemy.kind == "boss6":
+            bounds = draw_boss_ghost(screen, screen_x, center_y, size)
+            _draw_boss_chrome(
+                screen,
+                big_font,
+                bounds,
+                "BOSS 6",
+                enemy.hp,
+                enemy.max_hp,
+                label_color=(220, 165, 255),
+                bar_color=(155, 70, 220),
+            )
+        elif enemy.kind == "boss3":
             # Boss 3: Bloxd.io deer (beige + spots + antlers).
             bounds = draw_boss_deer(screen, screen_x, center_y, size)
             _draw_boss_chrome(
@@ -1284,12 +1423,18 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
                 bar_color=(180, 70, 35),
             )
         else:
+            if enemy.kind == "boss6_healer":
+                body_color, highlight, eye_color = (100, 45, 145), (220, 130, 255), (255, 235, 120)
+            elif enemy.kind == "boss6_guardian":
+                body_color, highlight, eye_color = (45, 95, 145), (100, 190, 235), (255, 90, 90)
+            else:
+                body_color, highlight, eye_color = (65, 110, 67), (105, 145, 83), (255, 71, 51)
             pg.draw.ellipse(screen, (30, 43, 34), sprite_rect.inflate(size // 4, size // 12))
-            pg.draw.rect(screen, (65, 110, 67), sprite_rect, border_radius=max(2, size // 7))
-            pg.draw.rect(screen, (105, 145, 83), (sprite_rect.x + size // 9, sprite_rect.y + size // 10, size * 4 // 9, size // 4), border_radius=5)
+            pg.draw.rect(screen, body_color, sprite_rect, border_radius=max(2, size // 7))
+            pg.draw.rect(screen, highlight, (sprite_rect.x + size // 9, sprite_rect.y + size // 10, size * 4 // 9, size // 4), border_radius=5)
             eye_y = sprite_rect.y + size // 3
             for eye_x in (sprite_rect.x + size // 5, sprite_rect.right - size // 5):
-                pg.draw.circle(screen, (255, 71, 51), (eye_x, eye_y), max(2, size // 20))
+                pg.draw.circle(screen, eye_color, (eye_x, eye_y), max(2, size // 20))
 
     draw_held_item(screen, game)
     draw_hud(screen, game, font)
@@ -1499,7 +1644,17 @@ def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
         ratio = boss.hp / boss.max_hp
         fill = pg.Rect(boss_bar.x + 3, boss_bar.y + 3, int((boss_bar.width - 6) * ratio), boss_bar.height - 6)
         pg.draw.rect(screen, (168, 30, 65), fill, border_radius=6)
-        label = font.render(f"BOSS {boss.name}  {boss.hp}/{boss.max_hp}", True, (255, 239, 223))
+        if boss.kind == "boss6":
+            protectors = sum(
+                enemy.alive
+                and enemy.kind in ("boss6_healer", "boss6_guardian")
+                for enemy in game.enemies
+            )
+            status = f"PROTECTORS {protectors}" if protectors else "VULNERABLE"
+            label_text = f"BOSS 6  {boss.hp}/{boss.max_hp}  {status}"
+        else:
+            label_text = f"BOSS {boss.name}  {boss.hp}/{boss.max_hp}"
+        label = font.render(label_text, True, (255, 239, 223))
         screen.blit(label, label.get_rect(center=boss_bar.center))
     cross = SCREEN_W // 2, SCREEN_H // 2
     pg.draw.line(screen, (235, 236, 220), (cross[0] - 8, cross[1]), (cross[0] + 8, cross[1]), 2)

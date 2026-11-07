@@ -103,6 +103,75 @@ class DungeonGameTests(unittest.TestCase):
             self.assertFalse(game.is_wall(enemy.x, enemy.y), msg=f"{enemy.name} in wall")
         self.assertFalse(game.is_wall(game.x, game.y))
 
+    def test_level_six_boss_is_protected_by_two_arena_enemies(self) -> None:
+        game = DungeonGame()
+        game.start_room("level-6")
+        boss = next(enemy for enemy in game.enemies if enemy.kind == "boss6")
+        protectors = [
+            enemy
+            for enemy in game.enemies
+            if enemy.kind in ("boss6_healer", "boss6_guardian")
+        ]
+        self.assertEqual(len(protectors), 2)
+        self.assertEqual(boss.max_hp, 1500)
+        for enemy in game.enemies:
+            self.assertFalse(game.is_wall(enemy.x, enemy.y), msg=f"{enemy.name} in wall")
+
+        boss.x, boss.y = game.x + 1, game.y
+        boss_hp = boss.hp
+        self.assertFalse(game.resolve_strike(game.x, game.y, 0, 0))
+        self.assertEqual(boss.hp, boss_hp)
+        self.assertIn("Defeat both protectors", game.message)
+
+        for protector in protectors:
+            protector.alive = False
+        self.assertTrue(game.resolve_strike(game.x, game.y, 0, 0))
+        self.assertLess(boss.hp, boss_hp)
+
+    def test_level_six_healer_restores_boss_health(self) -> None:
+        game = DungeonGame()
+        game.start_room("level-6")
+        boss = next(enemy for enemy in game.enemies if enemy.kind == "boss6")
+        healer = next(enemy for enemy in game.enemies if enemy.kind == "boss6_healer")
+        boss.hp -= 30
+        healer.heal_timer = 0.01
+
+        game.update(0.02, pg.key.get_pressed())
+
+        self.assertEqual(boss.hp, boss.max_hp - 18)
+        self.assertIn("restores Boss 6", game.message)
+
+    def test_level_six_boss_teleports_and_special_attack_deals_50(self) -> None:
+        game = DungeonGame()
+        game.start_room("level-6")
+        boss = next(enemy for enemy in game.enemies if enemy.kind == "boss6")
+        boss.teleport_timer = 0.01
+        boss.special_timer = 100
+        old_position = (boss.x, boss.y)
+
+        game.update(0.02, pg.key.get_pressed())
+
+        self.assertNotEqual((boss.x, boss.y), old_position)
+        self.assertFalse(game.is_wall(boss.x, boss.y))
+
+        boss.x, boss.y = game.x + 3, game.y
+        boss.special_timer = 0
+        game.health = 100
+        game.update(0.01, pg.key.get_pressed())
+        self.assertEqual(game.health, 100 - 50)
+        self.assertIn("lose 50 health", game.message)
+
+    def test_level_six_arena_renders(self) -> None:
+        game = DungeonGame()
+        game.start_room("level-6")
+        screen = pg.Surface((SCREEN_W, SCREEN_H))
+        font = pg.font.SysFont("consolas", 17)
+        big_font = pg.font.SysFont("consolas", 44, bold=True)
+
+        draw_world(screen, game, font, big_font)
+
+        self.assertEqual(screen.get_size(), (SCREEN_W, SCREEN_H))
+
     def test_sunlit_grove_is_bright_forest_theme(self) -> None:
         game = DungeonGame()
         game.start_room("crossroads")

@@ -19,7 +19,8 @@ python3 main.py
 | Enter / 1–6 | Start selected option |
 | Esc | Quit |
 
-Options: Full Campaign, five room maps (Crypt, Depths, Abyss/Boss 3, Sunlit Grove, Spiral), Create LAN room, and Join LAN room.
+Options: Full Campaign, six room maps (Crypt, Depths, Abyss/Boss 3, Sunlit
+Grove, Spiral, and Level 6: Guardian Arena), Create LAN room, and Join LAN room.
 
 ## In-game controls
 
@@ -57,6 +58,12 @@ Defeat every enemy in level 1 to enter level 2 automatically. Your health,
 potions, and equipment carry over. The level 2 boss has 600 HP; defeating it
 automatically replaces the Iron Sword with a stronger Gold Sword. Clear level
 2 to finish the game.
+
+The standalone Level 6: Guardian Arena features a 1500-HP boss, a healer, and
+an arena protector. The protectors shield the boss from your attacks, and the
+healer restores its health until both protectors are defeated. Boss 6
+teleports around the arena and can unleash a special attack that deals 50
+health points.
 
 The first-person view is drawn with a small raycasting renderer; no 3D engine
 or external art is needed. The mouse is captured while the game runs.
