@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import os
+import time
 import unittest
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame as pg
 
+from lan import (
+    MAX_PLAYERS,
+    LanSession,
+    port_for_code,
+    validate_room_code,
+)
 from main import (
     BOSS3_HP,
     DUNGEON,
@@ -386,6 +393,196 @@ class DungeonGameTests(unittest.TestCase):
             self.assertEqual(surf.get_size(), (64, 64))
             # Opaque pixels exist (sword is not blank)
             self.assertTrue(any(surf.get_at((x, y)).a > 0 for x in range(64) for y in range(64)))
+
+
+class LanCoopTests(unittest.TestCase):
+    """Same-WiFi room codes, host snapshots, and shared combat."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        pg.init()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        pg.quit()
+
+    def setUp(self) -> None:
+        self.sessions: list[LanSession] = []
+
+    def tearDown(self) -> None:
+        for session in self.sessions:
+            session.close()
+
+    def _open(self, code: str, *, host: bool) -> LanSession:
+        session = LanSession(code, host=host)
+        self.sessions.append(session)
+        return session
+
+    def _pump(self, *sessions: LanSession, seconds: float = 0.25) -> None:
+        """Poll until a localhost datagram has time to land."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            for session in sessions:
+                session.poll()
+            time.sleep(0.01)
+
+    def test_room_code_rules_and_stable_port(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_room_code("12345")
+        with self.assertRaises(ValueError):
+            validate_room_code("abcdef")
+        self.assertEqual(validate_room_code("12-34-56"), "123456")
+        self.assertEqual(port_for_code("123456"), port_for_code("123456"))
+        self.assertNotEqual(port_for_code("000001"), port_for_code("000002"))
+
+    def test_joiner_hello_and_snapshot_include_both_poses(self) -> None:
+        host = self._open("246810", host=True)
+        joiner = self._open("246810", host=False)
+        joiner.send_hello()
+        self._pump(host, joiner)
+        self.assertIn(joiner.player_id, host.peers)
+        self.assertGreaterEqual(joiner.lobby_count, 2)
+        joiner.send_pose(
+            x=4.25,
+            y=6.5,
+            angle=1.2,
+            hp=88,
+            attack=False,
+            slot=1,
+            weapon_bonus=6,
+            force=True,
+        )
+        self._pump(host, joiner)
+        peer = host.peers[joiner.player_id]
+        self.assertAlmostEqual(peer.x, 4.25)
+        self.assertAlmostEqual(peer.y, 6.5)
+        self.assertEqual(peer.hp, 88)
+        host.send_snapshot(
+            {
+                "room_key": "crypt",
+                "campaign": False,
+                "seq": 1,
+                "players": [
+                    {"id": host.player_id, "name": "P1", "x": 2.5, "y": 2.5, "angle": 0, "hp": 100},
+                    {"id": joiner.player_id, "name": "P2", "x": peer.x, "y": peer.y, "angle": peer.angle, "hp": peer.hp},
+                ],
+                "enemies": [],
+                "loot": [],
+                "grants": [],
+                "won": False,
+            },
+            force=True,
+        )
+        self._pump(host, joiner)
+        self.assertIsNotNone(joiner.snapshot)
+        assert joiner.snapshot is not None
+        self.assertEqual(joiner.snapshot["room_key"], "crypt")
+        self.assertEqual(len(joiner.snapshot["players"]), 2)
+
+    def test_duplicate_attack_pose_counts_once(self) -> None:
+        host = self._open("135791", host=True)
+        joiner = self._open("135791", host=False)
+        joiner.send_hello()
+        host.poll()
+        # One swing is delivered twice (localhost + broadcast) and must count once.
+        joiner.send_pose(x=1, y=1, angle=0, hp=100, attack=True, slot=0, force=True)
+        host.poll()
+        swings = host.take_attacks()
+        self.assertEqual(len(swings), 1)
+        host.poll()
+        self.assertEqual(host.take_attacks(), [])
+
+    def test_fifth_player_is_rejected(self) -> None:
+        host = self._open("112233", host=True)
+        for _ in range(MAX_PLAYERS - 1):
+            joiner = self._open("112233", host=False)
+            joiner.send_hello()
+            host.poll()
+            joiner.poll()
+            self.assertFalse(joiner.rejected)
+        self.assertEqual(len(host.peers), MAX_PLAYERS - 1)
+        extra = self._open("112233", host=False)
+        extra.send_hello()
+        self._pump(host, extra)
+        self.assertTrue(extra.rejected)
+        self.assertEqual(len(host.peers), MAX_PLAYERS - 1)
+
+    def test_silent_peer_is_dropped(self) -> None:
+        host = self._open("445566", host=True)
+        joiner = self._open("445566", host=False)
+        joiner.send_hello()
+        host.poll()
+        self.assertEqual(len(host.peers), 1)
+        peer = next(iter(host.peers.values()))
+        peer.seen_at = 0.0
+        host.poll()
+        self.assertEqual(host.peers, {})
+
+    def test_solo_game_has_no_session_and_starts_on_crypt(self) -> None:
+        game = DungeonGame()
+        self.assertEqual(game.net_role, "solo")
+        self.assertEqual(game.room_key, "crypt")
+        boss = next(enemy for enemy in game.living_enemies if enemy.boss)
+        self.assertEqual(boss.name, "67")
+
+    def test_host_applies_remote_attack_and_client_snapshot_does_not_move_enemies(self) -> None:
+        host_game = DungeonGame()
+        host_game.net_role = "host"
+        host_game.start_room("crypt")
+        zombie = next(enemy for enemy in host_game.enemies if not enemy.boss)
+        zombie.x, zombie.y = 4.0, 2.5
+        before = zombie.hp
+        hit = host_game.resolve_strike(2.7, 2.5, 0.0, 0)
+        self.assertTrue(hit)
+        self.assertLess(zombie.hp, before)
+
+        client = DungeonGame()
+        client.net_role = "client"
+        client.net_id = "c" * 16
+        client.start_room("crypt")
+        before_pos = [(enemy.x, enemy.y) for enemy in client.enemies]
+        client.apply_snapshot(
+            {
+                "room_key": "crypt",
+                "campaign": False,
+                "seq": 1,
+                "players": [
+                    {"id": "h" * 16, "name": "P1", "x": 8.0, "y": 8.0, "angle": 0.4, "hp": 100},
+                    {"id": client.net_id, "name": "P2", "x": client.x, "y": client.y, "angle": 0, "hp": 100},
+                ],
+                "enemies": [
+                    {
+                        "name": enemy.name,
+                        "x": enemy.x,
+                        "y": enemy.y,
+                        "hp": enemy.hp,
+                        "max_hp": enemy.max_hp,
+                        "alive": enemy.alive,
+                        "boss": enemy.boss,
+                        "kind": enemy.kind,
+                    }
+                    for enemy in client.enemies
+                ],
+                "loot": [],
+                "grants": [],
+                "won": False,
+            }
+        )
+        client.update(1.0, pg.key.get_pressed())
+        self.assertEqual([(enemy.x, enemy.y) for enemy in client.enemies], before_pos)
+        self.assertEqual(len(client.remote_players), 1)
+        self.assertEqual(client.remote_players[0].name, "P1")
+
+    def test_client_swing_does_not_damage_enemies_locally(self) -> None:
+        game = DungeonGame()
+        game.net_role = "client"
+        game.start_room("crypt")
+        zombie = next(enemy for enemy in game.enemies if not enemy.boss)
+        zombie.x, zombie.y = game.x + 1.0, game.y
+        before = zombie.hp
+        game.attack()
+        self.assertEqual(zombie.hp, before)
+        self.assertTrue(game.pending_attack)
 
 
 if __name__ == "__main__":

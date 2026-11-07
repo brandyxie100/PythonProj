@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 import pygame as pg
 
+from lan import LanSession, create_room_code, validate_room_code
+
 SCREEN_W = 960
 SCREEN_H = 600
 FPS = 60
@@ -131,6 +133,27 @@ DUNGEON_FIVE = (
 
 
 @dataclass
+class RemotePlayer:
+    """Another co-op player sharing this dungeon."""
+
+    player_id: str
+    name: str
+    x: float
+    y: float
+    angle: float
+    hp: int
+    weapon_bonus: int = 0
+
+
+REMOTE_COLORS = {
+    "P2": (255, 196, 87),
+    "P3": (120, 220, 255),
+    "P4": (255, 140, 90),
+}
+SPAWN_NUDGES = ((0.0, 0.0), (0.7, 0.0), (0.0, 0.7), (0.7, 0.7))
+
+
+@dataclass
 class Enemy:
     x: float
     y: float
@@ -173,6 +196,19 @@ DIAMOND_SWORD_LOOT = Loot(
 )
 GOLD_SWORD_LOOT = Loot("Gold Sword", "weapon", GOLD_SWORD_DAMAGE, (255, 209, 79))
 VOID_BLADE_LOOT = Loot("Void Blade", "weapon", VOID_BLADE_DAMAGE, (180, 120, 255))
+
+
+def _loot_by_name() -> dict[str, Loot]:
+    """Lookup table so a snapshot can rebuild a drop from its name."""
+    items = (
+        BOSS_LOOT,
+        DIAMOND_SWORD_LOOT,
+        GOLD_SWORD_LOOT,
+        VOID_BLADE_LOOT,
+        *ZOMBIE_LOOT,
+        *DEPTH_ZOMBIE_LOOT,
+    )
+    return {item.name: item for item in items}
 
 
 @dataclass(frozen=True)
@@ -233,6 +269,16 @@ class DungeonGame:
         self.rng = random.Random()
         self.campaign_mode = True
         self.room_key = CAMPAIGN_KEYS[0]
+        self.net_role = "solo"  # solo | host | client
+        self.net_id = ""
+        self.net_slot = 0
+        self.remote_players: list[RemotePlayer] = []
+        self.pending_attack = False
+        self._grant_seq = 0
+        self._grant_buffer: list[dict] = []
+        self._seen_grants: set[int] = set()
+        self._hurt_cooldown = 0.0
+        self._applied_room: str | None = None
         self.reset()
 
     def reset(self) -> None:
@@ -252,6 +298,11 @@ class DungeonGame:
         self.won = False
         self.message = ""
         self.message_timer = 0.0
+        self.remote_players = []
+        self.pending_attack = False
+        self._grant_buffer = []
+        self._applied_room = None
+        self._hurt_cooldown = 0.0
         if self.campaign_mode:
             self._load_room(CAMPAIGN_KEYS[0])
         else:
@@ -380,29 +431,46 @@ class DungeonGame:
             self.y += dy
 
     def attack(self) -> bool:
+        """Swing the held weapon. Clients only record the swing; the host applies it."""
         if self.attack_timer > 0 or self.won or self.health <= 0:
             return False
         self.attack_timer = ATTACK_COOLDOWN
         self.attack_flash = 0.16
+        if self.net_role == "client":
+            # One pose flag. The host resolves range so both PCs cannot double-hit.
+            self.pending_attack = True
+            self.message = "You swing."
+            self.message_timer = 0.35
+            return True
+        return self.resolve_strike(self.x, self.y, self.angle, self.weapon_bonus)
+
+    def resolve_strike(
+        self,
+        origin_x: float,
+        origin_y: float,
+        facing: float,
+        weapon_bonus: int,
+        *,
+        striker_id: str = "",
+    ) -> bool:
+        """Apply one melee hit from a world position. Solo and host only."""
         hit_any = False
         for enemy in self.living_enemies:
-            dx, dy = enemy.x - self.x, enemy.y - self.y
+            dx, dy = enemy.x - origin_x, enemy.y - origin_y
             distance = math.hypot(dx, dy)
-            facing_error = abs((math.atan2(dy, dx) - self.angle + math.pi) % (2 * math.pi) - math.pi)
+            facing_error = abs((math.atan2(dy, dx) - facing + math.pi) % (2 * math.pi) - math.pi)
             if distance <= (1.75 if enemy.boss else 1.45) and facing_error < (0.8 if enemy.boss else 0.65):
                 base_damage = 10 if enemy.boss else 15
-                enemy.hp -= base_damage + self.weapon_bonus
+                enemy.hp -= base_damage + weapon_bonus
                 hit_any = True
                 if enemy.hp <= 0:
                     enemy.alive = False
                     self.kills += 1
                     if enemy.kind == "warden":
-                        self.weapon_name = GOLD_SWORD_LOOT.name
-                        self.weapon_bonus = GOLD_SWORD_LOOT.value
+                        self._give_loot(GOLD_SWORD_LOOT, striker_id)
                         self.message = "The Warden falls! Gold Sword replaces your Iron Sword."
                     elif enemy.kind == "boss3":
-                        self.weapon_name = VOID_BLADE_LOOT.name
-                        self.weapon_bonus = VOID_BLADE_LOOT.value
+                        self._give_loot(VOID_BLADE_LOOT, striker_id)
                         self.message = "Boss 3 falls! Void Blade surges into your grip."
                     else:
                         self._drop_loot(enemy)
@@ -412,9 +480,7 @@ class DungeonGame:
                             and self.loot_drops[-1].loot.name == DIAMOND_SWORD_LOOT.name
                         )
                         if rare:
-                            self.message = (
-                                f"{enemy.name} defeated! Rare Diamond Sword dropped!"
-                            )
+                            self.message = f"{enemy.name} defeated! Rare Diamond Sword dropped!"
                         else:
                             self.message = f"{enemy.name} defeated!"
                     self.message_timer = 1.8
@@ -422,10 +488,34 @@ class DungeonGame:
                     self.message = f"{enemy.name}: {enemy.hp} HP"
                     self.message_timer = 0.8
                 break
-        if not hit_any:
+        if not hit_any and not striker_id:
             self.message = "Your blade cuts through the dark."
             self.message_timer = 0.45
         return hit_any
+
+    def _give_loot(self, loot: Loot, striker_id: str) -> None:
+        """Equip boss loot locally, or queue it for the joiner who landed the hit."""
+        if not striker_id:
+            if loot.kind == "weapon":
+                self.weapon_name = loot.name
+                self.weapon_bonus = loot.value
+            elif loot.kind == "armor":
+                self.armor_name = loot.name
+                self.armor_value = loot.value
+            return
+        self._grant_seq += 1
+        self._grant_buffer.append(
+            {"id": striker_id, "name": loot.name, "nonce": self._grant_seq, "ttl": 8}
+        )
+
+    def _coop_spawn(self) -> tuple[float, float]:
+        """Spawn point nudged so co-op players do not stack on one cell."""
+        base_x, base_y = ROOM_BY_KEY[self.room_key].spawn
+        dx, dy = SPAWN_NUDGES[self.net_slot % len(SPAWN_NUDGES)]
+        x, y = base_x + dx, base_y + dy
+        if self.is_wall(x, y):
+            return base_x, base_y
+        return x, y
 
     def _drop_loot(self, enemy: Enemy) -> None:
         """Drop loot at the enemy. Boss 67: 10% Diamond Sword, else Iron Sword."""
@@ -445,28 +535,47 @@ class DungeonGame:
             loot = self.rng.choice(loot_table)
         self.loot_drops.append(LootDrop(enemy.x, enemy.y, loot))
 
+    def _equip(self, loot: Loot) -> None:
+        """Keep a drop when it is stronger than what is already held."""
+        if loot.kind == "weapon":
+            if loot.value > self.weapon_bonus:
+                self.weapon_bonus = loot.value
+                self.weapon_name = loot.name
+                self.message = f"Equipped {loot.name}: +{loot.value} damage."
+            else:
+                self.message = f"Found {loot.name}, but your weapon is stronger."
+        elif loot.kind == "armor":
+            if loot.value > self.armor_value:
+                self.armor_value = loot.value
+                self.armor_name = loot.name
+                self.message = f"Equipped {loot.name}: blocks {loot.value} damage."
+            else:
+                self.message = f"Found {loot.name}, but your armor is stronger."
+        self.message_timer = 1.8
+
     def _collect_loot(self) -> None:
+        """Pick up nearby drops. The host can also award a drop to a joiner."""
+        seekers: list[tuple[float, float, str]] = []
+        if self.health > 0:
+            seekers.append((self.x, self.y, ""))
+        if self.net_role == "host":
+            for peer in self.remote_players:
+                if peer.hp > 0:
+                    seekers.append((peer.x, peer.y, peer.player_id))
         remaining: list[LootDrop] = []
         for drop in self.loot_drops:
-            if math.hypot(drop.x - self.x, drop.y - self.y) > LOOT_PICKUP_DISTANCE:
+            taken_by: str | None = None
+            for seek_x, seek_y, who in seekers:
+                if math.hypot(drop.x - seek_x, drop.y - seek_y) <= LOOT_PICKUP_DISTANCE:
+                    taken_by = who
+                    break
+            if taken_by is None:
                 remaining.append(drop)
                 continue
-            loot = drop.loot
-            if loot.kind == "weapon":
-                if loot.value > self.weapon_bonus:
-                    self.weapon_bonus = loot.value
-                    self.weapon_name = loot.name
-                    self.message = f"Equipped {loot.name}: +{loot.value} damage."
-                else:
-                    self.message = f"Found {loot.name}, but your weapon is stronger."
-            elif loot.kind == "armor":
-                if loot.value > self.armor_value:
-                    self.armor_value = loot.value
-                    self.armor_name = loot.name
-                    self.message = f"Equipped {loot.name}: blocks {loot.value} damage."
-                else:
-                    self.message = f"Found {loot.name}, but your armor is stronger."
-            self.message_timer = 1.8
+            if taken_by == "":
+                self._equip(drop.loot)
+            else:
+                self._give_loot(drop.loot, taken_by)
         self.loot_drops = remaining
 
     def select_slot(self, slot: int) -> None:
@@ -505,61 +614,50 @@ class DungeonGame:
             self.respawn_timer = max(0.0, self.respawn_timer - dt)
             if self.respawn_timer == 0:
                 self._respawn()
-            return
-        self.attack_timer = max(0.0, self.attack_timer - dt)
-        self.attack_flash = max(0.0, self.attack_flash - dt)
-        self.message_timer = max(0.0, self.message_timer - dt)
+            # Solo and joiners freeze on death. The host still runs the shared fight.
+            if self.net_role != "host":
+                return
+        if self.health > 0:
+            self.attack_timer = max(0.0, self.attack_timer - dt)
+            self.attack_flash = max(0.0, self.attack_flash - dt)
+            self.message_timer = max(0.0, self.message_timer - dt)
 
-        forward = float(keys[pg.K_w] or keys[pg.K_UP]) - float(keys[pg.K_s] or keys[pg.K_DOWN])
-        sideways = float(keys[pg.K_d]) - float(keys[pg.K_a])
-        if keys[pg.K_LEFT]:
-            self.angle -= 1.8 * dt
-        if keys[pg.K_RIGHT]:
-            self.angle += 1.8 * dt
-        if forward or sideways:
-            length = math.hypot(forward, sideways)
-            self.move(forward / length, sideways / length, dt)
+            forward = float(keys[pg.K_w] or keys[pg.K_UP]) - float(keys[pg.K_s] or keys[pg.K_DOWN])
+            sideways = float(keys[pg.K_d]) - float(keys[pg.K_a])
+            if keys[pg.K_LEFT]:
+                self.angle -= 1.8 * dt
+            if keys[pg.K_RIGHT]:
+                self.angle += 1.8 * dt
+            if forward or sideways:
+                length = math.hypot(forward, sideways)
+                self.move(forward / length, sideways / length, dt)
+
+        if self.net_role == "client":
+            # Joiners mirror enemy positions from the host. They only feel hits.
+            self._hurt_from_enemies(dt)
+            return
 
         for enemy in self.living_enemies:
             enemy.attack_timer = max(0.0, enemy.attack_timer - dt)
-            distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
-            if distance < 0.58:
+            target_x, target_y = self._chase_target(enemy)
+            distance = math.hypot(enemy.x - target_x, enemy.y - target_y)
+            self_distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
+            # Contact damage hits the local body only. Joiners apply their own.
+            if self.health > 0 and self_distance < 0.58:
                 if enemy.attack_timer <= 0:
-                    if enemy.kind == "boss3":
-                        incoming_damage = BOSS3_DAMAGE
-                        enemy.attack_timer = 0.55
-                    elif enemy.kind == "warden":
-                        incoming_damage = BOSS_DAMAGE + 10
-                        enemy.attack_timer = 0.6
-                    elif enemy.boss:
-                        incoming_damage = BOSS_DAMAGE
-                        enemy.attack_timer = BOSS_ATTACK_INTERVAL
-                    elif self.room_key in ("depths", "abyss", "spiral"):
-                        incoming_damage = ZOMBIE_DAMAGE + 4
-                        enemy.attack_timer = 0.7
-                    else:
-                        incoming_damage = ZOMBIE_DAMAGE
-                        enemy.attack_timer = ZOMBIE_ATTACK_INTERVAL
+                    incoming_damage, cooldown = self._contact_hit(enemy)
+                    enemy.attack_timer = cooldown
                     self.health -= max(1, incoming_damage - self.armor_value)
                     self.message = f"{enemy.name} hit you!"
                     self.message_timer = 0.8
                     if self.health <= 0:
                         self._begin_death()
-                        return
-            elif distance < (7.0 if enemy.kind == "boss3" else 6.0 if enemy.boss else 5.0):
-                dx = (self.x - enemy.x) / distance
-                dy = (self.y - enemy.y) / distance
-                if enemy.kind == "boss3":
-                    speed = BOSS3_SPEED
-                elif enemy.kind == "warden":
-                    speed = BOSS_SPEED + 0.2
-                elif enemy.boss:
-                    speed = BOSS_SPEED
-                elif self.room_key in ("depths", "abyss", "spiral"):
-                    speed = ZOMBIE_SPEED + 0.1
-                else:
-                    speed = ZOMBIE_SPEED
-
+                        if self.net_role != "host":
+                            return
+            elif 0.05 < distance < (7.0 if enemy.kind == "boss3" else 6.0 if enemy.boss else 5.0):
+                dx = (target_x - enemy.x) / distance
+                dy = (target_y - enemy.y) / distance
+                speed = self._chase_speed(enemy)
                 new_x = enemy.x + dx * speed * dt
                 new_y = enemy.y + dy * speed * dt
                 if not self.is_wall(new_x, enemy.y):
@@ -569,8 +667,64 @@ class DungeonGame:
 
         self._collect_loot()
 
-        if self.health > 0 and not self.living_enemies:
+        if not self.living_enemies and (self.health > 0 or self.net_role == "host"):
             self._advance_stage()
+
+    def _chase_target(self, enemy: Enemy) -> tuple[float, float]:
+        """Solo chases the player. The host chases whoever is closest."""
+        if self.net_role != "host" or not self.remote_players:
+            return self.x, self.y
+        options: list[tuple[float, float]] = []
+        if self.health > 0:
+            options.append((self.x, self.y))
+        for peer in self.remote_players:
+            if peer.hp > 0:
+                options.append((peer.x, peer.y))
+        if not options:
+            return enemy.x, enemy.y
+        return min(options, key=lambda point: math.hypot(enemy.x - point[0], enemy.y - point[1]))
+
+    def _contact_hit(self, enemy: Enemy) -> tuple[int, float]:
+        """Damage and cooldown for one enemy melee swing."""
+        if enemy.kind == "boss3":
+            return BOSS3_DAMAGE, 0.55
+        if enemy.kind == "warden":
+            return BOSS_DAMAGE + 10, 0.6
+        if enemy.boss:
+            return BOSS_DAMAGE, BOSS_ATTACK_INTERVAL
+        if self.room_key in ("depths", "abyss", "spiral"):
+            return ZOMBIE_DAMAGE + 4, 0.7
+        return ZOMBIE_DAMAGE, ZOMBIE_ATTACK_INTERVAL
+
+    def _chase_speed(self, enemy: Enemy) -> float:
+        """Move speed while an enemy is chasing a player."""
+        if enemy.kind == "boss3":
+            return BOSS3_SPEED
+        if enemy.kind == "warden":
+            return BOSS_SPEED + 0.2
+        if enemy.boss:
+            return BOSS_SPEED
+        if self.room_key in ("depths", "abyss", "spiral"):
+            return ZOMBIE_SPEED + 0.1
+        return ZOMBIE_SPEED
+
+    def _hurt_from_enemies(self, dt: float) -> None:
+        """Client-side contact damage using the host's enemy positions."""
+        self._hurt_cooldown = max(0.0, self._hurt_cooldown - dt)
+        self.message_timer = max(0.0, self.message_timer - dt)
+        if self._hurt_cooldown > 0 or self.health <= 0:
+            return
+        for enemy in self.living_enemies:
+            if math.hypot(enemy.x - self.x, enemy.y - self.y) >= 0.58:
+                continue
+            incoming_damage, cooldown = self._contact_hit(enemy)
+            self._hurt_cooldown = cooldown
+            self.health -= max(1, incoming_damage - self.armor_value)
+            self.message = f"{enemy.name} hit you!"
+            self.message_timer = 0.8
+            if self.health <= 0:
+                self._begin_death()
+            return
 
     def _begin_death(self) -> None:
         if self.health <= 0 and self.respawn_timer > 0:
@@ -585,9 +739,151 @@ class DungeonGame:
     def _respawn(self) -> None:
         self.health = 100
         self.respawn_timer = 0.0
-        self._load_stage(self.stage_index)
+        if self.net_role == "solo":
+            self._load_stage(self.stage_index)
+        else:
+            # Co-op death reloads this player only. The host keeps the enemies.
+            self.x, self.y = self._coop_spawn()
         self.message = "Respawned. Your equipment and potions are safe."
         self.message_timer = 2.5
+
+    def build_snapshot(self) -> dict:
+        """Pack the host world so joiners can mirror it."""
+        players = [
+            {
+                "id": self.net_id,
+                "name": "P1",
+                "x": round(self.x, 3),
+                "y": round(self.y, 3),
+                "angle": round(self.angle, 4),
+                "hp": int(self.health),
+            }
+        ]
+        for peer in self.remote_players:
+            players.append(
+                {
+                    "id": peer.player_id,
+                    "name": peer.name,
+                    "x": round(peer.x, 3),
+                    "y": round(peer.y, 3),
+                    "angle": round(peer.angle, 4),
+                    "hp": int(peer.hp),
+                }
+            )
+        enemies = [
+            {
+                "name": enemy.name,
+                "x": round(enemy.x, 3),
+                "y": round(enemy.y, 3),
+                "hp": int(enemy.hp),
+                "max_hp": int(enemy.max_hp),
+                "alive": enemy.alive,
+                "boss": enemy.boss,
+                "kind": enemy.kind,
+            }
+            for enemy in self.enemies
+        ]
+        loot = [{"x": drop.x, "y": drop.y, "name": drop.loot.name} for drop in self.loot_drops]
+        grants = [{key: value for key, value in grant.items() if key != "ttl"} for grant in self._grant_buffer]
+        for grant in self._grant_buffer:
+            grant["ttl"] = int(grant.get("ttl", 1)) - 1
+        self._grant_buffer = [grant for grant in self._grant_buffer if int(grant.get("ttl", 0)) > 0]
+        return {
+            "room_key": self.room_key,
+            "campaign": self.campaign_mode,
+            "seq": self._grant_seq,
+            "players": players,
+            "enemies": enemies,
+            "loot": loot,
+            "grants": grants,
+            "won": self.won,
+        }
+
+    def apply_snapshot(self, snap: dict) -> None:
+        """Copy the host's map, enemies, loot, and other players. Do not run AI."""
+        room_key = str(snap.get("room_key") or self.room_key)
+        if room_key not in ROOM_BY_KEY:
+            return
+        campaign = bool(snap.get("campaign"))
+        players = snap.get("players") if isinstance(snap.get("players"), list) else []
+        slot = 1
+        for index, player in enumerate(players):
+            if isinstance(player, dict) and player.get("id") == self.net_id:
+                slot = index
+                break
+        self.net_slot = slot
+        if self._applied_room != room_key or self.campaign_mode != campaign:
+            health = self.health
+            potions = self.health_potions
+            weapon_name, weapon_bonus = self.weapon_name, self.weapon_bonus
+            armor_name, armor_value = self.armor_name, self.armor_value
+            self.campaign_mode = campaign
+            self._load_room(room_key)
+            self.health = health
+            self.health_potions = potions
+            self.weapon_name = weapon_name
+            self.weapon_bonus = weapon_bonus
+            self.armor_name = armor_name
+            self.armor_value = armor_value
+            self.x, self.y = self._coop_spawn()
+            self._applied_room = room_key
+        catalog = _loot_by_name()
+        self.enemies = []
+        for raw in snap.get("enemies") or []:
+            if not isinstance(raw, dict):
+                continue
+            self.enemies.append(
+                Enemy(
+                    x=float(raw.get("x", 0)),
+                    y=float(raw.get("y", 0)),
+                    name=str(raw.get("name", "Enemy")),
+                    hp=int(raw.get("hp", 1)),
+                    max_hp=int(raw.get("max_hp", 1)),
+                    boss=bool(raw.get("boss")),
+                    kind=str(raw.get("kind", "zombie")),
+                    alive=bool(raw.get("alive", True)),
+                )
+            )
+        self.loot_drops = []
+        for raw in snap.get("loot") or []:
+            if not isinstance(raw, dict):
+                continue
+            loot = catalog.get(str(raw.get("name", "")))
+            if loot is None:
+                continue
+            self.loot_drops.append(LootDrop(float(raw.get("x", 0)), float(raw.get("y", 0)), loot))
+        self.remote_players = []
+        for raw in players:
+            if not isinstance(raw, dict) or raw.get("id") == self.net_id:
+                continue
+            self.remote_players.append(
+                RemotePlayer(
+                    player_id=str(raw.get("id", "")),
+                    name=str(raw.get("name", "P?")),
+                    x=float(raw.get("x", 0)),
+                    y=float(raw.get("y", 0)),
+                    angle=float(raw.get("angle", 0)),
+                    hp=int(raw.get("hp", 100)),
+                )
+            )
+        for grant in snap.get("grants") or []:
+            if not isinstance(grant, dict) or grant.get("id") != self.net_id:
+                continue
+            nonce = grant.get("nonce")
+            if type(nonce) is not int or nonce in self._seen_grants:
+                continue
+            loot = catalog.get(str(grant.get("name", "")))
+            if loot is None:
+                continue
+            self._seen_grants.add(nonce)
+            if loot.name in (GOLD_SWORD_LOOT.name, VOID_BLADE_LOOT.name):
+                self.weapon_name = loot.name
+                self.weapon_bonus = loot.value
+                self.message = f"Equipped {loot.name}."
+                self.message_timer = 1.8
+            else:
+                self._equip(loot)
+        self.won = bool(snap.get("won"))
 
 
 def cast_ray(game: DungeonGame, ray_angle: float) -> float:
@@ -686,6 +982,26 @@ def draw_world(screen: pg.Surface, game: DungeonGame, font: pg.font.Font, big_fo
                 (size // 6, (80, 190, 90)),
             ):
                 pg.draw.circle(screen, color, canopy, max(6, radius))
+
+    for peer in game.remote_players:
+        dx, dy = peer.x - game.x, peer.y - game.y
+        distance = math.hypot(dx, dy)
+        relative_angle = (math.atan2(dy, dx) - game.angle + math.pi) % (2 * math.pi) - math.pi
+        if distance < 0.2 or abs(relative_angle) > FOV / 2 + 0.25:
+            continue
+        screen_x = int((0.5 + relative_angle / FOV) * SCREEN_W)
+        ray_index = min(RAY_COUNT - 1, max(0, screen_x // RAY_WIDTH))
+        # A nearer wall hides the other player.
+        if distance >= depths[ray_index]:
+            continue
+        size = min(SCREEN_H, int(SCREEN_H * 0.42 / distance))
+        center_y = horizon + int(SCREEN_H * 0.08 / distance)
+        color = REMOTE_COLORS.get(peer.name, (255, 220, 160))
+        body = pg.Rect(screen_x - size // 6, center_y - size // 2, size // 3, size)
+        pg.draw.rect(screen, color, body, border_radius=max(3, size // 10))
+        pg.draw.circle(screen, (30, 24, 20), (body.centerx, body.y + size // 8), max(4, size // 10))
+        name = font.render(peer.name, True, color)
+        screen.blit(name, name.get_rect(center=(screen_x, body.y - 14)))
 
     sprites = sorted(
         game.living_enemies,
@@ -986,13 +1302,14 @@ def draw_held_item(screen: pg.Surface, game: DungeonGame) -> None:
 
 
 def draw_hud(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> None:
-    panel = pg.Rect(16, 14, 270, 104)
+    panel_top = 42 if game.net_role != "solo" else 14
+    panel = pg.Rect(16, panel_top, 270, 104)
     pg.draw.rect(screen, (10, 12, 21), panel, border_radius=8)
     pg.draw.rect(screen, (78, 78, 94), panel, 1, border_radius=8)
-    screen.blit(font.render(f"HEALTH  {game.health}", True, (255, 146, 151)), (28, 22))
-    screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, 46))
-    screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, 70))
-    screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, 92))
+    screen.blit(font.render(f"HEALTH  {game.health}", True, (255, 146, 151)), (28, panel_top + 8))
+    screen.blit(font.render(f"ZOMBIES  {sum(not e.boss for e in game.living_enemies)}", True, (180, 218, 163)), (28, panel_top + 32))
+    screen.blit(font.render(f"WEAPON  {game.weapon_name}  (+{game.weapon_bonus})", True, (232, 187, 133)), (28, panel_top + 56))
+    screen.blit(font.render(f"ARMOR  {game.armor_name}  (-{game.armor_value})", True, (178, 221, 175)), (28, panel_top + 78))
     if game.campaign_mode:
         stage_text = f"CAMPAIGN {game.stage_index + 1}/{len(CAMPAIGN_KEYS)}  {game.stage_name}"
     else:
@@ -1074,6 +1391,16 @@ def draw_hotbar(screen: pg.Surface, game: DungeonGame, font: pg.font.Font) -> No
             screen.blit(count_text, count_text.get_rect(topright=(slot.right - 5, top + 5)))
 
 
+def menu_entries() -> list[tuple[str, str]]:
+    """Solo maps, then create/join for same-WiFi co-op."""
+    entries = [("campaign", "Full Campaign  (Crypt → Depths → Boss 3)")]
+    for room in ROOM_MAPS:
+        entries.append((room.key, f"{room.name}  —  {room.blurb}"))
+    entries.append(("lan-create", "Create LAN room"))
+    entries.append(("lan-join", "Join LAN room"))
+    return entries
+
+
 def draw_menu(
     screen: pg.Surface,
     font: pg.font.Font,
@@ -1083,18 +1410,12 @@ def draw_menu(
     """Map-select / campaign menu."""
     screen.fill((8, 10, 18))
     title = big_font.render("DUNGEON 67", True, (255, 220, 140))
-    screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 56)))
-    sub = font.render("Choose a room map, or run the full campaign (Boss 3 finale).", True, (180, 190, 210))
-    screen.blit(sub, sub.get_rect(center=(SCREEN_W // 2, 100)))
+    screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 48)))
+    sub = font.render("Solo maps, or create / join a room on the same WiFi.", True, (180, 190, 210))
+    screen.blit(sub, sub.get_rect(center=(SCREEN_W // 2, 88)))
 
-    options: list[tuple[str, str]] = [
-        ("campaign", "Full Campaign  (Crypt → Depths → Boss 3)"),
-    ]
-    for room in ROOM_MAPS:
-        options.append((room.key, f"{room.name}  —  {room.blurb}"))
-
-    for index, (_key, label) in enumerate(options):
-        y = 150 + index * 52
+    for index, (_key, label) in enumerate(menu_entries()):
+        y = 112 + index * 52
         row = pg.Rect(120, y, SCREEN_W - 240, 44)
         active = index == selected
         pg.draw.rect(screen, (50, 70, 50) if active else (22, 26, 38), row, border_radius=8)
@@ -1104,10 +1425,44 @@ def draw_menu(
         screen.blit(text, (row.x + 18, row.y + 12))
 
     hint = font.render("↑↓ / W S select   ·   Enter play   ·   Esc quit", True, (160, 170, 190))
-    screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 36)))
+    screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 28)))
+
+
+def draw_lan_bar(screen: pg.Surface, font: pg.font.Font, *, code: str, role: str, count: int) -> None:
+    """Top bar with the room code, role, and player count."""
+    bar = pg.Rect(0, 0, SCREEN_W, 32)
+    pg.draw.rect(screen, (16, 28, 24), bar)
+    pg.draw.line(screen, (120, 200, 140), (0, 31), (SCREEN_W, 31), 2)
+    label = font.render(f"ROOM {code}    {role}    Players {count}", True, (220, 255, 220))
+    screen.blit(label, (16, 8))
+
+
+def _draw_choice_rows(
+    screen: pg.Surface,
+    font: pg.font.Font,
+    entries: list[tuple[str, str]],
+    selected: int,
+    top: int,
+) -> None:
+    """Draw a vertical list of selectable rows."""
+    for index, (_key, label) in enumerate(entries):
+        y = top + index * 48
+        row = pg.Rect(120, y, SCREEN_W - 240, 40)
+        active = index == selected
+        pg.draw.rect(screen, (50, 70, 50) if active else (22, 26, 38), row, border_radius=8)
+        pg.draw.rect(screen, (180, 255, 160) if active else (70, 80, 100), row, 2, border_radius=8)
+        color = (240, 255, 230) if active else (200, 205, 215)
+        text = font.render(f"{index + 1}.  {label}", True, color)
+        screen.blit(text, (row.x + 18, row.y + 10))
+
+
+def lobby_entries() -> list[tuple[str, str]]:
+    """Maps the host can start once the room exists."""
+    return menu_entries()[:-2]
 
 
 def main() -> int:
+    """Run the menu, solo crawler, or a same-WiFi co-op room."""
     pg.init()
     pg.display.set_caption("Dungeon 67: The Crypt Below")
     screen = pg.display.set_mode((SCREEN_W, SCREEN_H))
@@ -1115,13 +1470,102 @@ def main() -> int:
     font = pg.font.SysFont("consolas", 17)
     big_font = pg.font.SysFont("consolas", 44, bold=True)
     game = DungeonGame()
-    scene = "menu"  # menu | play
+    scene = "menu"  # menu | lobby | join | wait | play
     menu_index = 0
-    menu_count = 1 + len(ROOM_MAPS)
+    lobby_index = 0
+    join_code = ""
+    lan_status = ""
+    hello_timer = 0.0
+    session: LanSession | None = None
     running = True
+
+    def close_session() -> None:
+        """Leave the LAN room and return this window to solo."""
+        nonlocal session
+        if session is not None:
+            session.close()
+            session = None
+        game.net_role = "solo"
+        game.remote_players = []
+        game.pending_attack = False
+
+    def enter_play() -> None:
+        nonlocal scene
+        scene = "play"
+        pg.mouse.set_visible(False)
+        pg.event.set_grab(True)
+
+    def leave_play() -> None:
+        nonlocal scene
+        close_session()
+        scene = "menu"
+        pg.event.set_grab(False)
+        pg.mouse.set_visible(True)
+
+    def start_solo(index: int) -> None:
+        close_session()
+        if index == 0:
+            game.start_campaign()
+        else:
+            game.start_room(ROOM_MAPS[index - 1].key)
+        enter_play()
+
+    def create_lan() -> None:
+        nonlocal session, scene, lan_status, lobby_index
+        close_session()
+        try:
+            session = LanSession(create_room_code(), host=True)
+        except (OSError, ValueError) as exc:
+            lan_status = str(exc)
+            return
+        game.net_role = "host"
+        game.net_id = session.player_id
+        lobby_index = 0
+        lan_status = ""
+        scene = "lobby"
+
+    def confirm_join() -> None:
+        nonlocal session, scene, lan_status, hello_timer
+        try:
+            session = LanSession(validate_room_code(join_code), host=False)
+        except (OSError, ValueError) as exc:
+            lan_status = str(exc)
+            return
+        game.net_role = "client"
+        game.net_id = session.player_id
+        session.send_hello()
+        hello_timer = 0.0
+        lan_status = "Waiting for host…"
+        scene = "wait"
+
+    def start_hosted(index: int) -> None:
+        if session is None:
+            return
+        if index == 0:
+            game.start_campaign()
+        else:
+            game.start_room(lobby_entries()[index][0])
+        game.net_role = "host"
+        game.net_id = session.player_id
+        enter_play()
+
+    def activate_menu(index: int) -> None:
+        nonlocal join_code, lan_status, scene
+        key = menu_entries()[index][0]
+        if key == "lan-create":
+            create_lan()
+        elif key == "lan-join":
+            close_session()
+            join_code = ""
+            lan_status = "Type the 6-digit code, then Enter."
+            scene = "join"
+        else:
+            start_solo(index)
 
     while running:
         dt = min(clock.tick(FPS) / 1000.0, 0.05)
+        menu_count = len(menu_entries())
+        lobby_count = len(lobby_entries())
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
@@ -1134,31 +1578,50 @@ def main() -> int:
                     elif event.key in (pg.K_DOWN, pg.K_s):
                         menu_index = (menu_index + 1) % menu_count
                     elif event.key in (pg.K_RETURN, pg.K_SPACE):
-                        if menu_index == 0:
-                            game.start_campaign()
-                        else:
-                            game.start_room(ROOM_MAPS[menu_index - 1].key)
-                        scene = "play"
-                        pg.mouse.set_visible(False)
-                        pg.event.set_grab(True)
+                        activate_menu(menu_index)
                     elif pg.K_1 <= event.key <= pg.K_9:
                         choice = event.key - pg.K_1
                         if choice < menu_count:
                             menu_index = choice
-                            if menu_index == 0:
-                                game.start_campaign()
-                            else:
-                                game.start_room(ROOM_MAPS[menu_index - 1].key)
-                            scene = "play"
-                            pg.mouse.set_visible(False)
-                            pg.event.set_grab(True)
-                else:
+                            activate_menu(choice)
+                elif scene == "lobby":
+                    if event.key == pg.K_ESCAPE:
+                        close_session()
+                        scene = "menu"
+                    elif event.key in (pg.K_UP, pg.K_w):
+                        lobby_index = (lobby_index - 1) % lobby_count
+                    elif event.key in (pg.K_DOWN, pg.K_s):
+                        lobby_index = (lobby_index + 1) % lobby_count
+                    elif event.key in (pg.K_RETURN, pg.K_SPACE):
+                        start_hosted(lobby_index)
+                    elif pg.K_1 <= event.key <= pg.K_9:
+                        choice = event.key - pg.K_1
+                        if choice < lobby_count:
+                            lobby_index = choice
+                            start_hosted(choice)
+                elif scene == "join":
                     if event.key == pg.K_ESCAPE:
                         scene = "menu"
-                        pg.event.set_grab(False)
-                        pg.mouse.set_visible(True)
-                    elif event.key == pg.K_r and (game.health > 0 or game.won):
+                    elif event.key == pg.K_BACKSPACE:
+                        join_code = join_code[:-1]
+                    elif event.key in (pg.K_RETURN, pg.K_SPACE) and len(join_code) == 6:
+                        confirm_join()
+                    elif event.unicode.isdigit() and len(join_code) < 6:
+                        join_code += event.unicode
+                        if len(join_code) == 6:
+                            confirm_join()
+                elif scene == "wait":
+                    if event.key == pg.K_ESCAPE:
+                        close_session()
+                        scene = "menu"
+                else:
+                    if event.key == pg.K_ESCAPE:
+                        leave_play()
+                    elif event.key == pg.K_r and (game.health > 0 or game.won) and game.net_role != "client":
                         game.reset()
+                        if session is not None and session.host:
+                            game.net_role = "host"
+                            game.net_id = session.player_id
                     elif game.health > 0 and event.key in (pg.K_1, pg.K_2, pg.K_3, pg.K_4, pg.K_5):
                         game.select_slot(event.key - pg.K_1)
                     elif game.health > 0 and event.key == pg.K_SPACE:
@@ -1175,11 +1638,117 @@ def main() -> int:
 
         if scene == "menu":
             draw_menu(screen, font, big_font, menu_index)
-        else:
-            game.update(dt, pg.key.get_pressed())
+            if lan_status:
+                note = font.render(lan_status, True, (255, 180, 140))
+                screen.blit(note, note.get_rect(center=(SCREEN_W // 2, SCREEN_H - 52)))
+        elif scene == "lobby" and session is not None:
+            session.poll()
+            screen.fill((8, 10, 18))
+            title = big_font.render(f"ROOM {session.code}", True, (255, 220, 140))
+            screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 48)))
+            count = 1 + len(session.peers)
+            sub = font.render(
+                f"HOST  ·  {count} player{'s' if count != 1 else ''}  ·  pick a map to start",
+                True,
+                (180, 220, 190),
+            )
+            screen.blit(sub, sub.get_rect(center=(SCREEN_W // 2, 96)))
+            _draw_choice_rows(screen, font, lobby_entries(), lobby_index, 130)
+            hint = font.render("Enter start   ·   Esc leave room", True, (160, 170, 190))
+            screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 28)))
+        elif scene == "join":
+            screen.fill((8, 10, 18))
+            title = big_font.render("JOIN LAN ROOM", True, (255, 220, 140))
+            screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 160)))
+            code_label = big_font.render(join_code.ljust(6, "_"), True, (220, 255, 220))
+            screen.blit(code_label, code_label.get_rect(center=(SCREEN_W // 2, 260)))
+            note = font.render(lan_status or "Type the 6-digit code.", True, (180, 190, 210))
+            screen.blit(note, note.get_rect(center=(SCREEN_W // 2, 330)))
+            hint = font.render("Esc back", True, (160, 170, 190))
+            screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 28)))
+        elif scene == "wait" and session is not None:
+            session.poll()
+            hello_timer += dt
+            if hello_timer >= 0.4:
+                session.send_hello()
+                hello_timer = 0.0
+            if session.rejected:
+                lan_status = "That room is full (4 players)."
+            elif session.snapshot is not None:
+                game.apply_snapshot(session.snapshot)
+                enter_play()
+            else:
+                found = session.lobby_count > 1
+                lan_status = (
+                    f"Host found ({session.lobby_count}). Waiting for the map…"
+                    if found
+                    else "Waiting for host…"
+                )
+            if scene == "wait":
+                screen.fill((8, 10, 18))
+                title = big_font.render(f"ROOM {session.code}", True, (255, 220, 140))
+                screen.blit(title, title.get_rect(center=(SCREEN_W // 2, 200)))
+                note = font.render(lan_status, True, (180, 220, 190))
+                screen.blit(note, note.get_rect(center=(SCREEN_W // 2, 280)))
+                hint = font.render("Esc leave room", True, (160, 170, 190))
+                screen.blit(hint, hint.get_rect(center=(SCREEN_W // 2, SCREEN_H - 28)))
+        elif scene == "play":
+            if session is not None and session.host:
+                session.poll()
+                for peer in session.take_attacks():
+                    game.resolve_strike(
+                        peer.x,
+                        peer.y,
+                        peer.angle,
+                        peer.weapon_bonus,
+                        striker_id=peer.player_id,
+                    )
+                game.remote_players = [
+                    RemotePlayer(
+                        player_id=peer.player_id,
+                        name=peer.name,
+                        x=peer.x,
+                        y=peer.y,
+                        angle=peer.angle,
+                        hp=peer.hp,
+                        weapon_bonus=peer.weapon_bonus,
+                    )
+                    for peer in session.peers.values()
+                ]
+                game.update(dt, pg.key.get_pressed())
+                if session.snapshot_due():
+                    session.send_snapshot(game.build_snapshot(), force=True)
+            elif session is not None:
+                session.poll()
+                if session.snapshot is not None:
+                    game.apply_snapshot(session.snapshot)
+                game.update(dt, pg.key.get_pressed())
+                attacking = game.pending_attack
+                game.pending_attack = False
+                session.send_pose(
+                    x=game.x,
+                    y=game.y,
+                    angle=game.angle,
+                    hp=game.health,
+                    attack=attacking,
+                    slot=game.selected_slot,
+                    weapon_bonus=game.weapon_bonus,
+                    force=attacking,
+                )
+            else:
+                game.update(dt, pg.key.get_pressed())
             draw_world(screen, game, font, big_font)
+            if session is not None:
+                draw_lan_bar(
+                    screen,
+                    font,
+                    code=session.code,
+                    role="HOST" if session.host else "JOINED",
+                    count=1 + len(session.peers) if session.host else max(session.lobby_count, 1 + len(game.remote_players)),
+                )
         pg.display.flip()
 
+    close_session()
     pg.event.set_grab(False)
     pg.mouse.set_visible(True)
     pg.quit()
